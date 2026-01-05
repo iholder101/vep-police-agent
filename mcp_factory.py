@@ -1,0 +1,145 @@
+"""MCP (Model Context Protocol) tools integration for agents."""
+
+from typing import List, Any, Dict, Optional
+import asyncio
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from langchain_core.tools import Tool
+
+# Dictionary mapping MCP names to their configurations
+MCP_CONFIGS = {
+    "github":
+    {
+        "name": "github",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-github"],
+        "env": {}  # Add GITHUB_TOKEN to env if needed
+    },
+
+    "google-sheets":
+    {
+        "name": "google-sheets",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-google-sheets"],
+        "env": {}  # Add GOOGLE_CREDENTIALS to env if needed
+    },
+}
+
+async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
+    """
+    Retrieve tools from one or more MCP servers (async version).
+    
+    Args:
+        *mcp_configs: Variable number of MCP configuration dictionaries
+        
+    Returns:
+        List of LangChain Tool objects from all MCP servers
+    """
+    all_tools = []
+    
+    for config in mcp_configs:
+        server_params = StdioServerParameters(
+            command=config["command"],
+            args=config.get("args", []),
+            env=config.get("env", {})
+        )
+        
+        # Use context manager to ensure proper cleanup
+        async with stdio_client(server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                
+                # List available tools from the MCP server
+                tools_result = await session.list_tools()
+                
+                # Convert MCP tools to LangChain tools
+                for mcp_tool in tools_result.tools:
+                    # Create a closure to capture the tool config and name
+                    def make_tool_func(tool_name: str, tool_config: Dict[str, Any]):
+                        async def tool_func_async(**kwargs) -> str:
+                            """Async function that creates a session and calls the tool."""
+                            server_params = StdioServerParameters(
+                                command=tool_config["command"],
+                                args=tool_config.get("args", []),
+                                env=tool_config.get("env", {})
+                            )
+                            
+                            async with stdio_client(server_params) as (read, write):
+                                async with ClientSession(read, write) as sess:
+                                    await sess.initialize()
+                                    try:
+                                        result = await sess.call_tool(tool_name, arguments=kwargs)
+                                        if result.content:
+                                            # Extract text from content blocks
+                                            text_parts = []
+                                            for content_block in result.content:
+                                                if hasattr(content_block, 'text'):
+                                                    text_parts.append(content_block.text)
+                                                elif isinstance(content_block, dict) and 'text' in content_block:
+                                                    text_parts.append(content_block['text'])
+                                                else:
+                                                    text_parts.append(str(content_block))
+                                            return "\n".join(text_parts) if text_parts else ""
+                                        return ""
+                                    except Exception as e:
+                                        return f"Error calling tool {tool_name}: {str(e)}"
+                        
+                        # Wrap async function to be callable synchronously
+                        def sync_wrapper(**kwargs) -> str:
+                            return asyncio.run(tool_func_async(**kwargs))
+                        
+                        return sync_wrapper
+                    
+                    tool_func = make_tool_func(mcp_tool.name, config)
+                    
+                    langchain_tool = Tool(
+                        name=mcp_tool.name,
+                        description=mcp_tool.description or "",
+                        func=tool_func,
+                    )
+                    all_tools.append(langchain_tool)
+    
+    return all_tools
+
+
+def get_mcp_tools_by_config(*mcp_configs: Dict[str, Any]) -> List[Tool]:
+    """
+    Retrieve tools from one or more MCP servers using configuration dictionaries.
+    
+    This is the internal function that handles the complex MCP tool retrieval.
+    
+    Args:
+        *mcp_configs: Variable number of MCP configuration dictionaries
+        
+    Returns:
+        List of LangChain Tool objects from all MCP servers
+    """
+    return asyncio.run(_get_mcp_tools_async(*mcp_configs))
+
+
+def get_mcp_tools_by_name(*mcp_names: str) -> List[Tool]:
+    """
+    Retrieve tools from one or more MCP servers by name.
+    
+    Convenience function that looks up MCP configurations by name.
+    
+    Args:
+        *mcp_names: Variable number of MCP names (e.g., "github", "google-sheets")
+        
+    Returns:
+        List of LangChain Tool objects from all MCP servers
+        
+    Raises:
+        KeyError: If an MCP name is not found in MCP_CONFIGS
+    """
+    configs = []
+    for name in mcp_names:
+        if name not in MCP_CONFIGS:
+            raise KeyError(f"MCP '{name}' not found in MCP_CONFIGS. Available: {list(MCP_CONFIGS.keys())}")
+        configs.append(MCP_CONFIGS[name])
+    
+    return get_mcp_tools_by_config(*configs)
+
+def get_all_tools() -> List[Tool]:
+    """Get tools from all configured MCP servers."""
+    return get_mcp_tools_by_name(*MCP_CONFIGS.keys())
