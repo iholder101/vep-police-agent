@@ -6,7 +6,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 def get_api_key() -> str:
     """Read and return the API key from the API_KEY file."""
-    with open("API_KEY", "r") as f:
+    with open("../API_KEY", "r") as f:
         return f.read().strip()
 
 def invoke_agent(agent: CompiledStateGraph, prompt: str) -> str:

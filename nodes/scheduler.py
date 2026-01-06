@@ -1,9 +1,9 @@
 """Scheduler node - determines which tasks to run based on timing and state."""
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any
 from state import VEPState
-from utils import log
+from services.utils import log
 
 
 def scheduler_node(state: VEPState) -> Any:

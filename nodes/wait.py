@@ -3,7 +3,7 @@
 import time
 from typing import Any
 from state import VEPState
-from utils import log
+from services.utils import log
 
 # Configurable wait time (in seconds)
 WAIT_INTERVAL = 60  # Default: 1 minute

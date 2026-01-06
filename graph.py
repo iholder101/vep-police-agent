@@ -12,9 +12,9 @@ from nodes.check_activity import check_activity_node
 from nodes.check_compliance import check_compliance_node
 from nodes.check_exceptions import check_exceptions_node
 from nodes.analyze_combined import analyze_combined_node
+from nodes.merge_vep_updates import merge_vep_updates_node
 from nodes.update_sheets import update_sheets_node
 from nodes.wait import wait_node
-
 
 def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     """Create and configure the VEP governance agent graph.
@@ -22,14 +22,16 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     Graph flow:
     1. Scheduler determines which tasks to run (central coordinator)
     2. Routes to monitoring checks (which run in parallel)
-    3. Each check fetches its own data from GitHub MCP
-    4. All checks complete → analyze_combined node reasons about combinations
-    5. Analysis completes → returns to scheduler
-    6. Scheduler decides next action (update_sheets, notify, wait)
-    7. Loop continues with scheduler as the central hub
+    3. Each check fetches its own data from GitHub MCP and stores updates in vep_updates_by_check
+    4. All checks complete → merge_vep_updates node merges all parallel updates
+    5. Merged state → analyze_combined node reasons about combinations
+    6. Analysis completes → returns to scheduler
+    7. Scheduler decides next action (update_sheets, notify, wait)
+    8. Loop continues with scheduler as the central hub
     
     Architecture:
     - Parallel monitoring checks for performance
+    - Explicit merge step to combine parallel updates (LangGraph replaces lists by default)
     - Holistic analysis for cross-check reasoning
     - Scheduler-based coordination for flexibility
     """
@@ -42,6 +44,7 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     workflow.add_node("check_activity", check_activity_node)
     workflow.add_node("check_compliance", check_compliance_node)
     workflow.add_node("check_exceptions", check_exceptions_node)
+    workflow.add_node("merge_vep_updates", merge_vep_updates_node)
     workflow.add_node("analyze_combined", analyze_combined_node)
     workflow.add_node("update_sheets", update_sheets_node)
     workflow.add_node("wait", wait_node)
@@ -63,11 +66,14 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     workflow.add_edge("run_monitoring", "check_compliance")
     workflow.add_edge("run_monitoring", "check_exceptions")
     
-    # All monitoring checks complete → analyze_combined
-    workflow.add_edge("check_deadlines", "analyze_combined")
-    workflow.add_edge("check_activity", "analyze_combined")
-    workflow.add_edge("check_compliance", "analyze_combined")
-    workflow.add_edge("check_exceptions", "analyze_combined")
+    # All monitoring checks complete → merge_vep_updates (merges parallel updates)
+    workflow.add_edge("check_deadlines", "merge_vep_updates")
+    workflow.add_edge("check_activity", "merge_vep_updates")
+    workflow.add_edge("check_compliance", "merge_vep_updates")
+    workflow.add_edge("check_exceptions", "merge_vep_updates")
+    
+    # After merging, analyze combined results
+    workflow.add_edge("merge_vep_updates", "analyze_combined")
     
     # Analysis completes, returns to scheduler
     workflow.add_edge("analyze_combined", "scheduler")

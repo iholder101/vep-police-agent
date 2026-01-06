@@ -1,51 +1,86 @@
 """Activity monitoring node - checks for inactive VEPs and review lag."""
 
+import json
 from datetime import datetime
 from typing import Any
+from services.response_models import CheckResponse
 from state import VEPState
-from utils import log
+from services.utils import log
+from services.llm_helper import invoke_llm_check
+
+
+class ActivityCheckResponse(CheckResponse):
+    """Response model for activity check."""
+    pass
 
 
 def check_activity_node(state: VEPState) -> Any:
     """Monitor VEP activity and flag inactive VEPs.
     
-    This node:
-    1. Fetches issue/PR updates from GitHub (using GitHub MCP)
-    2. Fetches VEP tracking issues (using GitHub MCP)
-    3. Checks last update time for each VEP
-    4. Flags inactive VEPs (>2 weeks without updates)
-    5. Monitors review lag times (>1 week without review)
-    6. Tracks weekly SIG check-ins
-    7. Updates VEP activity fields in state
-    
-    Note: This node fetches its own data from GitHub MCP - it's self-contained.
+    Uses LLM with GitHub MCP tools to:
+    1. Fetch issue/PR updates from GitHub
+    2. Calculate activity metrics (last activity, days since update, review lag)
+    3. Flag inactive VEPs (>2 weeks without updates)
+    4. Monitor review lag times (>1 week without review)
     """
-    veps_count = len(state.get("veps", []))
-    log(f"Checking activity for {veps_count} VEP(s)", node="check_activity")
-    
-    # TODO: Implement activity checking logic
-    # 1. Fetch issue/PR updates from GitHub using GitHub MCP
-    # 2. Fetch VEP tracking issues using GitHub MCP
-    # 3. Calculate activity metrics (days since update, review lag)
-    # 4. Update VEPInfo.activity fields
-    # 5. Generate alerts for inactive VEPs
-    # For now, just update last_check_times
+    veps = state.get("veps", [])
+    veps_count = len(veps)
+    log(f"Checking activity for {veps_count} VEP(s) using LLM", node="check_activity")
     
     last_check_times = state.get("last_check_times", {})
     last_check_times["check_activity"] = datetime.now()
     
+    if not veps:
+        return {
+            "last_check_times": last_check_times,
+            "alerts": [],
+        }
+    
+    # Build system prompt
+    system_prompt = """You are a VEP governance agent monitoring activity for KubeVirt Virtualization Enhancement Proposals.
+
+Your task:
+1. For each VEP in the provided state, use GitHub MCP tools to fetch the tracking issue and related PRs
+2. Calculate activity metrics and update vep.activity:
+   - last_activity: datetime (from issues/PRs)
+   - days_since_update: int
+   - review_lag_days: Optional[int] (days since last review)
+3. Add insights to vep.analysis["activity_insights"] with notes, recommendations, and context
+4. Flag inactive VEPs (>2 weeks without updates)
+5. Flag review lag (>1 week without review)
+
+Return the updated VEP objects with activity fields filled in."""
+    
+    # Serialize full state for LLM
+    release_schedule = state.get("release_schedule")
+    context = {
+        "veps": [vep.model_dump(mode='json') for vep in veps],
+        "release_schedule": release_schedule.model_dump(mode='json') if release_schedule else None,
+        "current_release": state.get("current_release"),
+    }
+    
+    user_prompt = f"""Here is the current state:
+
+{json.dumps(context, indent=2, default=str)}
+
+Use GitHub MCP tools to check activity for each VEP. Update the VEP objects with activity information and return all updated VEPs."""
+    
+    # Invoke LLM with structured output
+    result = invoke_llm_check("activity", context, system_prompt, user_prompt, ActivityCheckResponse)
+    
+    # Replace VEPs with updated ones from LLM
     alerts = state.get("alerts", [])
-    # TODO: Add activity alerts
+    alerts.extend(result.alerts)
     
-    # Note: This node is triggered by graph edges (from run_monitoring), not by scheduler queue
-    # So we don't need to manage next_tasks here
+    # Store updates in vep_updates_by_check for the merge node to combine
+    vep_updates_by_check = state.get("vep_updates_by_check", {})
+    vep_updates_by_check["check_activity"] = result.updated_veps
     
-    # If we made changes (alerts, VEP updates), mark sheets for update
-    sheets_need_update = state.get("sheets_need_update", False)
-    # TODO: Set sheets_need_update = True if VEP data was modified
+    if alerts:
+        log(f"Generated {len(alerts)} activity alert(s)", node="check_activity")
     
     return {
         "last_check_times": last_check_times,
         "alerts": alerts,
-        "sheets_need_update": sheets_need_update,
+        "vep_updates_by_check": vep_updates_by_check,  # Store updates for merge node
     }

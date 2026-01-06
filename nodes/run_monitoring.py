@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 from state import VEPState
-from utils import log
+from services.utils import log
 
 
 def run_monitoring_node(state: VEPState) -> Any:

@@ -169,3 +169,4 @@ class VEPState(TypedDict):
     sheets_need_update: bool  # Flag indicating Google Sheets needs syncing
     errors: List[Dict[str, Any]]  # Errors encountered during processing
     config_cache: Dict[str, Any]  # Cached configuration (VEP template, process docs, etc.)
+    vep_updates_by_check: Dict[str, List[VEPInfo]]  # Temporary storage for VEP updates from parallel checks
