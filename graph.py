@@ -1,0 +1,101 @@
+"""LangGraph definition for VEP governance agent."""
+
+from typing import Literal, Any
+from langgraph.graph import StateGraph
+from langgraph.graph.state import CompiledStateGraph
+
+from state import VEPState
+from nodes.scheduler import scheduler_node
+from nodes.run_monitoring import run_monitoring_node
+from nodes.check_deadlines import check_deadlines_node
+from nodes.check_activity import check_activity_node
+from nodes.check_compliance import check_compliance_node
+from nodes.check_exceptions import check_exceptions_node
+from nodes.analyze_combined import analyze_combined_node
+from nodes.update_sheets import update_sheets_node
+from nodes.wait import wait_node
+
+
+def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
+    """Create and configure the VEP governance agent graph.
+    
+    Graph flow:
+    1. Scheduler determines which tasks to run (central coordinator)
+    2. Routes to monitoring checks (which run in parallel)
+    3. Each check fetches its own data from GitHub MCP
+    4. All checks complete → analyze_combined node reasons about combinations
+    5. Analysis completes → returns to scheduler
+    6. Scheduler decides next action (update_sheets, notify, wait)
+    7. Loop continues with scheduler as the central hub
+    
+    Architecture:
+    - Parallel monitoring checks for performance
+    - Holistic analysis for cross-check reasoning
+    - Scheduler-based coordination for flexibility
+    """
+    workflow = StateGraph(VEPState)
+    
+    # Add nodes
+    workflow.add_node("scheduler", scheduler_node)
+    workflow.add_node("run_monitoring", run_monitoring_node)
+    workflow.add_node("check_deadlines", check_deadlines_node)
+    workflow.add_node("check_activity", check_activity_node)
+    workflow.add_node("check_compliance", check_compliance_node)
+    workflow.add_node("check_exceptions", check_exceptions_node)
+    workflow.add_node("analyze_combined", analyze_combined_node)
+    workflow.add_node("update_sheets", update_sheets_node)
+    workflow.add_node("wait", wait_node)
+    
+    # Set entry point
+    workflow.set_entry_point("scheduler")
+    
+    # Define edges from scheduler
+    # No path_map needed - route_scheduler returns node names directly
+    workflow.add_conditional_edges(
+        "scheduler",
+        route_scheduler,
+    )
+    
+    # run_monitoring triggers all checks in parallel
+    # Each check fetches its own data from GitHub MCP
+    workflow.add_edge("run_monitoring", "check_deadlines")
+    workflow.add_edge("run_monitoring", "check_activity")
+    workflow.add_edge("run_monitoring", "check_compliance")
+    workflow.add_edge("run_monitoring", "check_exceptions")
+    
+    # All monitoring checks complete → analyze_combined
+    workflow.add_edge("check_deadlines", "analyze_combined")
+    workflow.add_edge("check_activity", "analyze_combined")
+    workflow.add_edge("check_compliance", "analyze_combined")
+    workflow.add_edge("check_exceptions", "analyze_combined")
+    
+    # Analysis completes, returns to scheduler
+    workflow.add_edge("analyze_combined", "scheduler")
+    
+    # update_sheets goes back to scheduler
+    workflow.add_edge("update_sheets", "scheduler")
+    
+    # wait node goes back to scheduler (creates continuous loop)
+    workflow.add_edge("wait", "scheduler")
+    
+    return workflow.compile()
+
+
+def route_scheduler(state: VEPState) -> Literal["run_monitoring", "update_sheets", "wait"]:
+    """Route based on scheduler's next_tasks.
+    
+    Routes to the first task in the queue. The scheduler queues:
+    - "run_monitoring" (triggers all checks in parallel)
+    - "update_sheets" (when sheets need updating)
+    """
+    next_tasks = state.get("next_tasks", [])
+    
+    if not next_tasks:
+        return "wait"
+    
+    # Return first task (scheduler should prioritize)
+    task = next_tasks[0]
+    
+    # Validate it's a known task, otherwise wait
+    valid_tasks = {"run_monitoring", "update_sheets"}
+    return task if task in valid_tasks else "wait"

@@ -1,4 +1,6 @@
 import os
+from datetime import datetime
+from typing import Any
 
 from langgraph.graph.state import CompiledStateGraph
 
@@ -30,3 +32,17 @@ def get_model():
         api_key=get_api_key(),
         timeout=60,
     )
+
+
+def log(message: str, node: str = "SYSTEM", level: str = "INFO") -> None:
+    """Centralized logging function.
+    
+    Currently uses print, but can be easily switched to proper logging later.
+    
+    Args:
+        message: Log message
+        node: Node/component name (e.g., "scheduler", "fetch_data")
+        level: Log level (INFO, WARNING, ERROR, DEBUG)
+    """
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}] [{level:5s}] [{node:15s}] {message}")

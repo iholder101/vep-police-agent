@@ -1,0 +1,37 @@
+"""Wait node - sleeps or waits for events before returning to scheduler."""
+
+import time
+from typing import Any
+from state import VEPState
+from utils import log
+
+# Configurable wait time (in seconds)
+WAIT_INTERVAL = 60  # Default: 1 minute
+
+
+def wait_node(state: VEPState) -> Any:
+    """Wait for a period of time or for an event.
+    
+    Currently: Sleeps for WAIT_INTERVAL seconds
+    Future: Can listen for GitHub webhooks/events, polling, etc.
+    
+    After waiting, returns to scheduler which will check what needs to run.
+    """
+    next_tasks = state.get("next_tasks", [])
+    veps_count = len(state.get("veps", []))
+    current_release = state.get("current_release", "unknown")
+    sheets_need_update = state.get("sheets_need_update", False)
+    
+    log(
+        f"Waiting {WAIT_INTERVAL}s | Release: {current_release} | "
+        f"VEPs: {veps_count} | Pending tasks: {len(next_tasks)} | "
+        f"Sheets need update: {sheets_need_update}",
+        node="wait"
+    )
+    
+    # TODO: Later, implement event-driven waiting (GitHub webhooks, polling, etc.)
+    # For now: simple sleep
+    time.sleep(WAIT_INTERVAL)
+    
+    # After waiting, return to scheduler (which will check what needs to run)
+    return {}

@@ -166,6 +166,6 @@ class VEPState(TypedDict):
 
     # State management
     alerts: List[Dict[str, Any]]  # Alerts queued for notification (deadline warnings, compliance issues, etc.)
-    sheets_updated: bool  # Flag indicating Google Sheets needs syncing
+    sheets_need_update: bool  # Flag indicating Google Sheets needs syncing
     errors: List[Dict[str, Any]]  # Errors encountered during processing
     config_cache: Dict[str, Any]  # Cached configuration (VEP template, process docs, etc.)
