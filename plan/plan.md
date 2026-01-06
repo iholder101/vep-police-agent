@@ -1,256 +1,290 @@
-# VEP Governance Agent Architecture Plan
+---
+name: VEP Governance Agent - Updated Architecture
+overview: "Updated architecture: parallel monitoring checks that each fetch their own data from GitHub MCP, holistic analysis node for cross-check reasoning, scheduler-based coordination. Currently focusing on Google Sheets integration."
+todos:
+  - id: sheets-service
+    content: Create services/sheets.py wrapper using MCP tools for Google Sheets API access
+    status: pending
+  - id: sheets-structure
+    content: Design sheet column structure matching VEP state fields (VEP number, title, owner, compliance flags, activity metrics, deadlines, etc.)
+    status: pending
+  - id: sheets-read
+    content: Implement sheet reading logic in update_sheets node - parse current sheet data into VEP-like structures
+    status: pending
+    dependencies:
+      - sheets-service
+      - sheets-structure
+  - id: sheets-compare
+    content: Implement comparison logic - identify new VEPs, updated VEPs, and changes between graph state and sheet state
+    status: pending
+    dependencies:
+      - sheets-read
+  - id: sheets-write
+    content: Implement sheet writing logic - batch update changes to Google Sheets efficiently
+    status: pending
+    dependencies:
+      - sheets-compare
+  - id: sheets-error-handling
+    content: Add error handling and logging for sheet operations - graceful degradation if sheets unavailable
+    status: pending
+    dependencies:
+      - sheets-write
+  - id: sheets-testing
+    content: Test update_sheets node with real Google Sheet - verify sync works correctly and handles edge cases
+    status: pending
+    dependencies:
+      - sheets-error-handling
+---
+
+# VEP Governance Agent - Updated Architecture
 
 ## Architecture Overview
 
-The agent will be built as a **LangGraph state machine** with specialized nodes for each monitoring task. It runs continuously, periodically checking VEP status and responding to events. State is maintained in Google Sheets and the graph's internal state.
+The agent uses a **hybrid architecture** with:
 
-## High-Level Architecture
+- **Self-contained monitoring checks** - each check fetches its own data from GitHub MCP
+- **Parallel execution** for performance
+- **Holistic analysis node** for cross-check reasoning
+- **Scheduler-based coordination** for flexible routing
+
+## Updated High-Level Architecture
 
 ```mermaid
 graph TB
     subgraph "LangGraph State Machine"
-        Start[Start Node] --> Scheduler[Scheduler Node]
-        Scheduler --> FetchData[Fetch Data Node]
-        FetchData --> CheckDeadlines[Check Deadlines Node]
-        FetchData --> CheckActivity[Check Activity Node]
-        FetchData --> CheckCompliance[Check Compliance Node]
-        FetchData --> CheckExceptions[Check Exceptions Node]
-        CheckDeadlines --> UpdateSheets[Update Sheets Node]
-        CheckActivity --> UpdateSheets
-        CheckCompliance --> UpdateSheets
-        CheckExceptions --> UpdateSheets
-        UpdateSheets --> Notify[Notification Node]
-        Notify --> Scheduler
+        Scheduler[Scheduler Node] --> FetchSchedule[Fetch Schedule Node<br/>Optional]
+        FetchSchedule --> CheckDeadlines[Check Deadlines<br/>Fetches from GH MCP<br/>PARALLEL]
+        FetchSchedule --> CheckActivity[Check Activity<br/>Fetches from GH MCP<br/>PARALLEL]
+        FetchSchedule --> CheckCompliance[Check Compliance<br/>Fetches from GH MCP<br/>PARALLEL]
+        FetchSchedule --> CheckExceptions[Check Exceptions<br/>Fetches from GH MCP<br/>PARALLEL]
+        CheckDeadlines --> Analyze[Analyze Combined Node]
+        CheckActivity --> Analyze
+        CheckCompliance --> Analyze
+        CheckExceptions --> Analyze
+        Analyze --> Scheduler
+        Scheduler --> UpdateSheets[Update Sheets Node]
+        Scheduler --> Wait[Wait Node]
+        UpdateSheets --> Scheduler
+        Wait --> Scheduler
     end
     
     subgraph "External Services"
         GitHub[GitHub API<br/>via MCP]
         Sheets[Google Sheets<br/>via MCP]
-        Email[Email Service]
-        Slack[Slack API]
     end
     
-    FetchData --> GitHub
+    CheckDeadlines --> GitHub
+    CheckActivity --> GitHub
+    CheckCompliance --> GitHub
+    CheckExceptions --> GitHub
     UpdateSheets --> Sheets
-    Notify --> Email
-    Notify --> Slack
-    
-    subgraph "State Management"
-        GraphState[Graph State<br/>Last check times<br/>Processed items]
-        SheetsState[Google Sheets<br/>VEP tracking data]
-    end
-    
-    Scheduler --> GraphState
-    UpdateSheets --> SheetsState
 ```
 
-## Core Components
+## Key Architectural Decisions
 
-### 1. State Schema (`state.py`)
+### 1. Self-Contained Monitoring Checks
 
-Define the graph state structure:
+- **Each check node fetches its own data** from GitHub MCP tools
+- No central `fetch_data` node - checks are independent
+- Each check knows what data it needs and fetches it
+- **Benefit**: Modular, testable, each check is self-contained
 
-- `messages`: Conversation history (for LLM interactions)
-- `current_release`: Active release version (e.g., "v1.8")
-- `release_schedule`: Parsed schedule data
-- `veps`: List of VEP data structures
-- `last_check_times`: Dict of last check timestamps per task
-- `alerts`: List of alerts to send
-- `sheets_updated`: Boolean flag for sheet updates
+### 2. Optional Schedule Fetching
 
-### 2. Data Fetching Node (`nodes/fetch_data.py`)
+- `fetch_schedule` node (optional) can fetch release schedule once
+- Or each check that needs schedule can fetch it
+- Schedule is relatively static, so caching makes sense
 
-- Fetch current release schedule from `kubevirt/sig-release`
-- Fetch VEP documents from `kubevirt/enhancements/veps/`
-- Fetch issues and PRs from GitHub (via MCP)
-- Parse and normalize data into state
-- Cache results with timestamps
+### 3. Parallel Execution
 
-### 3. Monitoring Nodes
+- All monitoring checks run in parallel
+- Each check updates different parts of state independently
+- LangGraph automatically merges state updates
+- **Benefit**: Faster execution, better resource utilization
 
-#### Deadline Monitoring (`nodes/check_deadlines.py`)
+### 4. Holistic Analysis Node
 
-- Calculate days until EF and CF from release schedule
-- Check each VEP's target release against deadlines
-- Generate alerts for approaching deadlines (7d, 3d, 1d)
-- Flag VEPs that won't make deadlines
+- Runs after all checks complete
+- Can reason about combinations (e.g., "low activity + close deadline = urgent")
+- Uses LLM for complex reasoning when needed
+- Generates alerts based on combined context
+- **Benefit**: Enables cross-check reasoning that individual checks can't do
 
-#### Activity Monitoring (`nodes/check_activity.py`)
+### 5. Scheduler-Based Coordination
 
-- Check last update time for each VEP
-- Flag inactive VEPs (>2 weeks)
-- Monitor review lag times (>1 week)
-- Track weekly SIG check-ins
+- Central decision point for routing
+- Decides what to do after analysis (update sheets, notify, wait)
+- Can route to individual checks if needed
+- **Benefit**: Flexible, extensible, single point of control
 
-#### Compliance Checking (`nodes/check_compliance.py`)
+## Data Fetching Strategy
 
-- Verify VEP template completeness
-- Check SIG sign-offs (all 3 SIGs)
-- Ensure VEPs merged before implementation PRs
-- Validate labels and PR linking
+### Each Check Node Fetches Its Own Data
 
-#### Exception Tracking (`nodes/check_exceptions.py`)
+**`check_deadlines`**:
 
-- Monitor for post-freeze work without exceptions
-- Track exception requests (from mailing list or issues)
-- Verify exception completeness
+- Fetches release schedule from `kubevirt/sig-release` (if not cached)
+- Fetches VEP documents to get target releases
+- Updates state with deadline calculations
 
-### 4. State Management Node (`nodes/update_sheets.py`)
+**`check_activity`**:
 
-- Read current Google Sheets state
+- Fetches issue/PR updates from GitHub
+- Fetches VEP tracking issues
+- Calculates activity metrics
+
+**`check_compliance`**:
+
+- Fetches VEP PRs and reviews
+- Fetches tracking issues for PR links
+- Checks SIG sign-offs from PR comments
+- Validates labels
+
+**`check_exceptions`**:
+
+- Fetches exception requests (from issues or mailing list)
+- Checks for post-freeze work
+- Validates exception completeness
+
+### Optional: `fetch_schedule` Node
+
+- Can fetch release schedule once and cache it
+- Other checks can use cached schedule
+- Reduces redundant API calls
+
+## Current Focus: Google Sheets Integration
+
+### Implementation Plan for `update_sheets`
+
+**Phase 1: Google Sheets Service Wrapper**
+
+- Create `services/sheets.py` using MCP tools
+- Functions needed:
+  - Read sheet data
+  - Write/update sheet data
+  - Find/create rows for VEPs
+  - Handle sheet structure (headers, formatting)
+
+**Phase 2: Sheet Structure Design**
+
+- Define column structure matching VEP state:
+  - VEP number, title, owner, owning SIG
+  - Target release, status
+  - Compliance flags (template, SIG sign-offs, etc.)
+  - Activity metrics (last update, days since update)
+  - Deadline info (days until EF/CF)
+  - Alerts, exceptions
+- Consider: Should we have separate sheets for different views?
+
+**Phase 3: Sync Logic in `update_sheets` Node**
+
+- Read current sheet state
 - Compare with graph state
-- Update sheets with new/changed VEP data
-- Maintain sync between graph state and sheets
+- Identify changes (new VEPs, updated VEPs, deleted VEPs)
+- Update sheets efficiently (batch updates)
+- Handle conflicts/errors gracefully
 
-### 5. Notification Node (`nodes/notify.py`)
+**Phase 4: State Reconciliation**
 
-- Process alerts from monitoring nodes
-- Send emails for non-urgent issues
-- Send Slack messages for urgent issues (<24h)
-- Generate weekly summary reports
+- When graph starts, optionally read from sheets to initialize state
+- Handle cases where sheets have data graph doesn't
+- Maintain sync consistency
 
-### 6. Scheduler Node (`nodes/scheduler.py`)
+## Implementation Status
 
-- Determine which tasks to run based on:
-  - Time since last check
-  - Event triggers
-  - Task priorities
-- Route to appropriate monitoring nodes
-- Handle sleep/wait logic
+### Completed
 
-## File Structure
+- ✅ State schema (`state.py`) - Complete with all models
+- ✅ Basic graph structure with scheduler
+- ✅ Wait node for continuous execution
+- ✅ Logging infrastructure
+- ✅ Node stubs for all monitoring checks
 
-```
-vep-police-agent/
-├── agent.py                 # Main entry point
-├── graph.py                 # LangGraph definition
-├── state.py                 # State schema
-├── config.py                # Configuration management
-├── nodes/
-│   ├── __init__.py
-│   ├── scheduler.py         # Task scheduling logic
-│   ├── fetch_data.py        # Data fetching from GitHub
-│   ├── check_deadlines.py   # Deadline monitoring
-│   ├── check_activity.py    # Activity monitoring
-│   ├── check_compliance.py  # Compliance checking
-│   ├── check_exceptions.py  # Exception tracking
-│   ├── update_sheets.py     # Google Sheets sync
-│   └── notify.py            # Notification sending
-├── services/
-│   ├── __init__.py
-│   ├── github.py            # GitHub API wrapper (using MCP)
-│   ├── sheets.py            # Google Sheets wrapper (using MCP)
-│   ├── email.py             # Email service
-│   └── slack.py             # Slack API client
-├── models/
-│   ├── __init__.py
-│   ├── vep.py               # VEP data model
-│   └── schedule.py          # Release schedule parser
-├── utils.py                 # Existing utilities
-├── mcp_factory.py           # Existing MCP integration
-└── agent.md                 # Existing documentation
-```
+### In Progress
 
-## Implementation Strategy
+- 🔄 **Google Sheets integration** (current focus)
 
-### Phase 1: Core Infrastructure
+### Pending
 
-1. Define state schema with TypedDict
-2. Create basic graph structure with scheduler node
-3. Set up configuration management (env vars, config file)
-4. Implement GitHub data fetching using existing MCP tools
+- Monitoring check implementations (each fetches its own data from GitHub MCP)
+- Analysis node implementation
+- Notification system (email/Slack)
 
-### Phase 2: Data Fetching & Parsing
+## Google Sheets Implementation Details
 
-1. Implement release schedule parser (markdown → structured data)
-2. Implement VEP document parser
-3. Build GitHub API wrappers using MCP tools
-4. Add caching mechanism to avoid excessive API calls
+### Sheet Structure (Proposed)
 
-### Phase 3: Monitoring Nodes
+| Column | Description | Source |
 
-1. Implement deadline monitoring node
-2. Implement activity monitoring node
-3. Implement compliance checking node
-4. Implement exception tracking node
+|--------|-------------|--------|
 
-### Phase 4: State Management
+| VEP Number | e.g., "vep-1234" | `VEPInfo.name` |
 
-1. Implement Google Sheets integration using MCP
-2. Build sync logic between graph state and sheets
-3. Add conflict resolution for concurrent updates
+| Title | VEP title | `VEPInfo.title` |
 
-### Phase 5: Notifications
+| Owner | GitHub username | `VEPInfo.owner` |
 
-1. Implement email service (SMTP or service like SendGrid)
-2. Implement Slack API client
-3. Build notification routing logic
-4. Add weekly summary generation
+| Owning SIG | compute/network/storage | `VEPInfo.owning_sig` |
 
-### Phase 6: Continuous Execution
+| Target Release | e.g., "v1.8" | `VEPInfo.target_release` |
 
-1. Build main event loop
-2. Add graceful shutdown handling
-3. Implement error recovery and retry logic
-4. Add logging and monitoring
+| Status | Current status | `VEPInfo.status` |
 
-## Key Design Decisions
+| Last Updated | Timestamp | `VEPInfo.last_updated` |
 
-1. **State Management**: Use LangGraph's state for runtime data, Google Sheets for persistent storage
-2. **MCP Integration**: Leverage existing MCP tools for GitHub and Google Sheets rather than direct API clients
-3. **Modular Nodes**: Each monitoring task is a separate node for maintainability and testability
-4. **LLM Usage**: Use LLM primarily for:
+| Days Since Update | Activity metric | `VEPInfo.activity.days_since_update` |
 
-   - Parsing unstructured data (VEP documents, issue comments)
-   - Generating human-readable notifications
-   - Analyzing compliance (checking template completeness, understanding context)
+| Days Until EF | Deadline metric | `VEPInfo.deadlines.days_until_ef` |
 
-5. **Caching**: Cache GitHub API responses to respect rate limits and reduce calls
-6. **Error Handling**: Each node should handle errors gracefully and continue processing other VEPs
+| Days Until CF | Deadline metric | `VEPInfo.deadlines.days_until_cf` |
 
-## Dependencies
+| Template Complete | Compliance flag | `VEPInfo.compliance.template_complete` |
 
-- `langchain`: Core LangChain functionality
-- `langgraph`: State machine framework
-- `langchain-google-genai`: Google Gemini integration (already in use)
-- `mcp`: Model Context Protocol (already in use)
-- `python-dotenv`: Environment variable management
-- `pydantic`: Data validation and models
-- `schedule` or `apscheduler`: Task scheduling (if needed beyond LangGraph)
-- Email: `smtplib` (built-in) or `sendgrid` package
-- Slack: `slack-sdk` package
+| All SIGs Signed Off | Compliance flag | `VEPInfo.compliance.all_sigs_signed_off` |
 
-## Configuration
+| VEP Merged | Compliance flag | `VEPInfo.compliance.vep_merged` |
 
-Environment variables needed:
+| PRs Linked | Compliance flag | `VEPInfo.compliance.prs_linked` |
 
-- `GITHUB_TOKEN`: For GitHub API access
-- `GOOGLE_CREDENTIALS`: For Google Sheets access
-- `EMAIL_SMTP_HOST`, `EMAIL_SMTP_PORT`, `EMAIL_USER`, `EMAIL_PASSWORD`: Email config
-- `SLACK_BOT_TOKEN`, `SLACK_CHANNEL`: Slack config
-- `CHECK_INTERVAL`: How often to run checks (default: 3600 seconds)
-- `SHEETS_ID`: Google Sheets document ID
+| Docs PR Created | Compliance flag | `VEPInfo.compliance.docs_pr_created` |
+
+| Labels Valid | Compliance flag | `VEPInfo.compliance.labels_valid` |
+
+| Alerts | Alert summary | `VEPInfo` analysis |
+
+| Notes | Free-form notes | `VEPInfo.notes` |
+
+### Sync Strategy
+
+1. **Read current sheet** → Parse into VEP-like structures
+2. **Compare with graph state** → Identify:
+
+   - New VEPs (in graph, not in sheet)
+   - Updated VEPs (changed data)
+   - Deleted VEPs (in sheet, not in graph) - handle carefully
+
+3. **Batch updates** → Update all changes in one operation
+4. **Error handling** → Log errors, continue with other VEPs
+
+### MCP Tools for Google Sheets
+
+Using `@modelcontextprotocol/server-google-sheets`:
+
+- Need to identify which tools are available
+- Likely: read range, write range, append rows, etc.
+- Will need to handle authentication (GOOGLE_CREDENTIALS env var)
 
 ## Next Steps
 
-After plan approval, we'll start with Phase 1 (Core Infrastructure) and build incrementally, testing each phase before moving to the next.
+1. **Implement `services/sheets.py`** - MCP wrapper for Google Sheets
+2. **Design and create sheet structure** - Define columns, create template if needed
+3. **Implement `update_sheets` node** - Full sync logic
+4. **Test with real Google Sheet** - Verify sync works correctly
+5. **Add error handling and logging** - Robust error recovery
 
-TODO:
-- [ ] Define state schema in state.py using TypedDict for graph state management
-- [ ] Create config.py for environment variables and configuration management
-- [ ] Create basic LangGraph structure in graph.py with scheduler node
-- [ ] Create agent.py main entry point with continuous execution loop
-- [ ] Create services/github.py wrapper using MCP tools for GitHub API access
-- [ ] Create models/schedule.py for parsing release schedule markdown files
-- [ ] Create models/vep.py for VEP data structure and parsing logic
-- [ ] Implement nodes/fetch_data.py to fetch and parse VEP data from GitHub
-- [ ] Implement nodes/check_deadlines.py for deadline monitoring and alert generation
-- [ ] Implement nodes/check_activity.py for activity monitoring (inactive VEPs, review lag)
-- [ ] Implement nodes/check_compliance.py for compliance checking (template, SIG sign-offs, labels)
-- [ ] Implement nodes/check_exceptions.py for exception tracking
-- [ ] Create services/sheets.py wrapper using MCP tools for Google Sheets access
-- [ ] Implement nodes/update_sheets.py for syncing graph state with Google Sheets
-- [ ] Create services/email.py for sending email notifications
-- [ ] Create services/slack.py for sending Slack notifications
-- [ ] Implement nodes/notify.py for processing alerts and sending notifications
-- [ ] Enhance agent.py with proper event loop, error handling, and graceful shutdown
+## Configuration Needed
+
+- `GOOGLE_CREDENTIALS`: Path to Google service account JSON or credentials
+- `SHEETS_ID`: Google Sheets document ID (from URL)
+- `SHEETS_RANGE`: Optional - specific range to read/write (default: entire sheet)
+- `GITHUB_TOKEN`: For GitHub API access (used by check nodes)
