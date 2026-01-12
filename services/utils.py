@@ -6,8 +6,33 @@ from langgraph.graph.state import CompiledStateGraph
 
 def get_api_key() -> str:
     """Read and return the API key from the API_KEY file."""
-    with open("../API_KEY", "r") as f:
+    # Try current directory first, then parent (for symlink support)
+    import os
+    api_key_path = "API_KEY"
+    if not os.path.exists(api_key_path):
+        api_key_path = "../API_KEY"
+    with open(api_key_path, "r") as f:
         return f.read().strip()
+
+
+def get_google_token() -> str:
+    """Read and return the Google token from the GOOGLE_TOKEN file.
+    
+    The token should be a JSON string containing Google service account credentials.
+    """
+    import os
+    # Try current directory first, then parent (for symlink support)
+    token_path = "GOOGLE_TOKEN"
+    if not os.path.exists(token_path):
+        token_path = "../GOOGLE_TOKEN"
+    
+    try:
+        with open(token_path, "r") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        raise FileNotFoundError(
+            "GOOGLE_TOKEN file not found. Please create GOOGLE_TOKEN file with your Google service account credentials (JSON)."
+        )
 
 def invoke_agent(agent: CompiledStateGraph, prompt: str) -> str:
     response = agent.invoke(

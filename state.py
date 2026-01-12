@@ -170,3 +170,6 @@ class VEPState(TypedDict):
     errors: List[Dict[str, Any]]  # Errors encountered during processing
     config_cache: Dict[str, Any]  # Cached configuration (VEP template, process docs, etc.)
     vep_updates_by_check: Dict[str, List[VEPInfo]]  # Temporary storage for VEP updates from parallel checks
+    
+    # Google Sheets configuration
+    sheet_config: Dict[str, Any]  # Sheet configuration: sheet_id, create_new, sheet_name, etc.

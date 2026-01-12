@@ -21,7 +21,7 @@ MCP_CONFIGS = {
         "name": "google-sheets",
         "command": "npx",
         "args": ["-y", "@modelcontextprotocol/server-google-sheets"],
-        "env": {}  # Add GOOGLE_CREDENTIALS to env if needed
+        "env": {}  # Will be populated with GOOGLE_CREDENTIALS at runtime
     },
 }
 
@@ -122,6 +122,7 @@ def get_mcp_tools_by_name(*mcp_names: str) -> List[Tool]:
     Retrieve tools from one or more MCP servers by name.
     
     Convenience function that looks up MCP configurations by name.
+    Automatically injects credentials from utils for Google Sheets.
     
     Args:
         *mcp_names: Variable number of MCP names (e.g., "github", "google-sheets")
@@ -136,7 +137,22 @@ def get_mcp_tools_by_name(*mcp_names: str) -> List[Tool]:
     for name in mcp_names:
         if name not in MCP_CONFIGS:
             raise KeyError(f"MCP '{name}' not found in MCP_CONFIGS. Available: {list(MCP_CONFIGS.keys())}")
-        configs.append(MCP_CONFIGS[name])
+        
+        # Create a copy of the config to avoid mutating the original
+        config = MCP_CONFIGS[name].copy()
+        
+        # Inject credentials for Google Sheets
+        if name == "google-sheets":
+            from services.utils import get_google_token
+            try:
+                token = get_google_token()
+                config["env"] = config.get("env", {}).copy()
+                config["env"]["GOOGLE_CREDENTIALS"] = token
+            except FileNotFoundError:
+                # If token file doesn't exist, continue without it (will fail at runtime)
+                pass
+        
+        configs.append(config)
     
     return get_mcp_tools_by_config(*configs)
 
