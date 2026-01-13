@@ -66,8 +66,11 @@ IMAGE_NAME=my-vep-agent ./container/build-and-push.sh
 # Custom tag
 IMAGE_TAG=v1.0.0 ./container/build-and-push.sh
 
+# Also tag as "latest" (creates both tags)
+ADD_LATEST_TAG=true IMAGE_TAG=v1.0.0 ./container/build-and-push.sh
+
 # All together
-QUAY_USERNAME=myuser IMAGE_NAME=my-vep-agent IMAGE_TAG=v1.0.0 ./container/build-and-push.sh
+QUAY_USERNAME=myuser IMAGE_NAME=my-vep-agent IMAGE_TAG=v1.0.0 ADD_LATEST_TAG=true ./container/build-and-push.sh
 ```
 
 #### Manual Build (without pushing)
@@ -146,6 +149,20 @@ IMAGE_TAG=dev ./container/build-and-push.sh
 IMAGE_TAG=v1.2.3 ./container/build-and-push.sh
 ```
 
+#### Tagging with Both Custom Tag and "latest"
+
+To tag the image with both your specified tag AND "latest" (useful for versioned releases that should also be available as "latest"):
+
+```bash
+ADD_LATEST_TAG=true IMAGE_TAG=v1.2.3 ./container/build-and-push.sh
+```
+
+This will create and push both:
+- `quay.io/YOUR_USERNAME/vep-police-agent:v1.2.3`
+- `quay.io/YOUR_USERNAME/vep-police-agent:latest`
+
+Note: If `IMAGE_TAG` is already "latest", the `ADD_LATEST_TAG` flag has no effect.
+
 ## Configuration
 
 ### Build Script Options
@@ -155,6 +172,7 @@ IMAGE_TAG=v1.2.3 ./container/build-and-push.sh
 | `QUAY_USERNAME` | `$(whoami)` | Your quay.io username |
 | `IMAGE_NAME` | `vep-police-agent` | Name of the container image |
 | `IMAGE_TAG` | Git commit hash or `latest` | Tag for the image |
+| `ADD_LATEST_TAG` | `false` | If `true` or `1`, also tag the image as "latest" (in addition to IMAGE_TAG) |
 
 ### Container Runtime Options
 

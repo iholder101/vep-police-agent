@@ -21,8 +21,12 @@ fi
 
 IMAGE_TAG="${IMAGE_TAG:-$DEFAULT_TAG}"
 
+# Option to also tag as "latest"
+ADD_LATEST_TAG="${ADD_LATEST_TAG:-false}"
+
 # Full image name
 FULL_IMAGE_NAME="quay.io/${QUAY_USERNAME}/${IMAGE_NAME}:${IMAGE_TAG}"
+LATEST_IMAGE_NAME="quay.io/${QUAY_USERNAME}/${IMAGE_NAME}:latest"
 
 echo "=========================================="
 echo "VEP Police Agent - Build and Push Script"
@@ -32,7 +36,11 @@ echo "Configuration:"
 echo "  Quay.io Username: ${QUAY_USERNAME}"
 echo "  Image Name:      ${IMAGE_NAME}"
 echo "  Image Tag:       ${IMAGE_TAG}"
+echo "  Add Latest Tag:  ${ADD_LATEST_TAG}"
 echo "  Full Image:      ${FULL_IMAGE_NAME}"
+if [ "${ADD_LATEST_TAG}" = "true" ] || [ "${ADD_LATEST_TAG}" = "1" ]; then
+    echo "  Latest Image:    ${LATEST_IMAGE_NAME}"
+fi
 echo ""
 
 # Check if podman is available
@@ -94,7 +102,17 @@ fi
 echo "✓ Image built successfully"
 echo ""
 
-# Push the image
+# Tag as "latest" if requested
+if [ "${ADD_LATEST_TAG}" = "true" ] || [ "${ADD_LATEST_TAG}" = "1" ]; then
+    if [ "${IMAGE_TAG}" != "latest" ]; then
+        echo "Tagging image as 'latest'..."
+        podman tag "${FULL_IMAGE_NAME}" "${LATEST_IMAGE_NAME}"
+        echo "✓ Image tagged as 'latest'"
+        echo ""
+    fi
+fi
+
+# Push the image(s)
 echo "Pushing image to quay.io..."
 podman push "${FULL_IMAGE_NAME}"
 
@@ -104,16 +122,45 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "✓ Image pushed successfully"
+
+# Push "latest" tag if requested and different from IMAGE_TAG
+if [ "${ADD_LATEST_TAG}" = "true" ] || [ "${ADD_LATEST_TAG}" = "1" ]; then
+    if [ "${IMAGE_TAG}" != "latest" ]; then
+        echo ""
+        echo "Pushing 'latest' tag to quay.io..."
+        podman push "${LATEST_IMAGE_NAME}"
+        
+        if [ $? -ne 0 ]; then
+            echo "ERROR: Failed to push 'latest' tag to quay.io"
+            exit 1
+        fi
+        
+        echo "✓ 'latest' tag pushed successfully"
+    fi
+fi
+
 echo ""
 echo "=========================================="
 echo "Success!"
 echo "=========================================="
 echo ""
 echo "Image available at: ${FULL_IMAGE_NAME}"
+if [ "${ADD_LATEST_TAG}" = "true" ] || [ "${ADD_LATEST_TAG}" = "1" ]; then
+    if [ "${IMAGE_TAG}" != "latest" ]; then
+        echo "Also tagged as:     ${LATEST_IMAGE_NAME}"
+    fi
+fi
 echo ""
 echo "To run the container:"
-echo "  podman run --rm \\"
-echo "    ${FULL_IMAGE_NAME} \\"
-echo "    --api-key \"your-api-key\" \\"
-echo "    --google-token \"\$(cat GOOGLE_TOKEN)\""
+if [ "${ADD_LATEST_TAG}" = "true" ] || [ "${ADD_LATEST_TAG}" = "1" ]; then
+    echo "  podman run --rm \\"
+    echo "    ${LATEST_IMAGE_NAME} \\"
+    echo "    --api-key \"your-api-key\" \\"
+    echo "    --google-token \"\$(cat GOOGLE_TOKEN)\""
+else
+    echo "  podman run --rm \\"
+    echo "    ${FULL_IMAGE_NAME} \\"
+    echo "    --api-key \"your-api-key\" \\"
+    echo "    --google-token \"\$(cat GOOGLE_TOKEN)\""
+fi
 echo ""
