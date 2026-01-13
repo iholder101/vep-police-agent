@@ -1,8 +1,27 @@
-from typing import TypedDict, Literal, Optional, List, Dict, Any
+from typing import TypedDict, Literal, Optional, List, Dict, Any, Annotated
 from datetime import datetime
 
 from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, Field
+from langgraph.graph.message import add_messages
+
+
+def merge_dict_reducer(x: Dict[str, Any], y: Dict[str, Any]) -> Dict[str, Any]:
+    """Reducer function to merge two dictionaries."""
+    if not x:
+        return y or {}
+    if not y:
+        return x or {}
+    return {**x, **y}
+
+
+def concat_list_reducer(x: List[Any], y: List[Any]) -> List[Any]:
+    """Reducer function to concatenate two lists."""
+    if not x:
+        return y or []
+    if not y:
+        return x or []
+    return x + y
 
 class ReleaseScheduleDelay(BaseModel):
     """Represents a delay in the release schedule for a specific milestone."""
@@ -161,15 +180,15 @@ class VEPState(TypedDict):
     veps: List[VEPInfo]  # All VEPs being tracked
 
     # Task scheduling and tracking
-    last_check_times: Dict[str, datetime]  # Last execution time per node/task
+    last_check_times: Annotated[Dict[str, datetime], merge_dict_reducer]  # Last execution time per node/task (merged from parallel nodes)
     next_tasks: List[str]  # Tasks the scheduler should run next
 
     # State management
-    alerts: List[Dict[str, Any]]  # Alerts queued for notification (deadline warnings, compliance issues, etc.)
+    alerts: Annotated[List[Dict[str, Any]], concat_list_reducer]  # Alerts queued for notification (deadline warnings, compliance issues, etc.) - concatenated from parallel nodes
     sheets_need_update: bool  # Flag indicating Google Sheets needs syncing
     errors: List[Dict[str, Any]]  # Errors encountered during processing
     config_cache: Dict[str, Any]  # Cached configuration (VEP template, process docs, etc.)
-    vep_updates_by_check: Dict[str, List[VEPInfo]]  # Temporary storage for VEP updates from parallel checks
+    vep_updates_by_check: Annotated[Dict[str, List[VEPInfo]], merge_dict_reducer]  # Temporary storage for VEP updates from parallel checks (merged from parallel nodes)
     
     # Google Sheets configuration
     sheet_config: Dict[str, Any]  # Sheet configuration: sheet_id, create_new, sheet_name, etc.
