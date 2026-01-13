@@ -1,6 +1,8 @@
-#!/home/iholder/Work/Repos/AI-experiments/vep-police-agent/.venv/bin/python
+#!/usr/bin/env python3
 """Main entry point for VEP governance agent."""
 
+import argparse
+import os
 from datetime import datetime
 from langchain_core.messages import HumanMessage
 from graph import create_graph
@@ -29,8 +31,58 @@ def get_initial_state():
     }
 
 
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="VEP governance agent - monitors and manages VEP status"
+    )
+    parser.add_argument(
+        "--api-key",
+        type=str,
+        help="API key for Gemini LLM (or set API_KEY environment variable)"
+    )
+    parser.add_argument(
+        "--google-token",
+        type=str,
+        help="Google service account JSON token (file path or JSON string). Can also set GOOGLE_TOKEN environment variable."
+    )
+    parser.add_argument(
+        "--github-token",
+        type=str,
+        help="GitHub token for API access (or set GITHUB_TOKEN environment variable)"
+    )
+    return parser.parse_args()
+
+
+def setup_credentials(args):
+    """Set up credentials from CLI arguments as environment variables."""
+    if args.api_key:
+        os.environ["API_KEY"] = args.api_key
+        log("API key set from CLI argument", node="main")
+    
+    if args.google_token:
+        # If it looks like a file path, read it; otherwise treat as JSON string
+        if os.path.exists(args.google_token):
+            with open(args.google_token, "r") as f:
+                os.environ["GOOGLE_TOKEN"] = f.read().strip()
+            log(f"Google token loaded from file: {args.google_token}", node="main")
+        else:
+            os.environ["GOOGLE_TOKEN"] = args.google_token
+            log("Google token set from CLI argument", node="main")
+    
+    if args.github_token:
+        os.environ["GITHUB_TOKEN"] = args.github_token
+        log("GitHub token set from CLI argument", node="main")
+
+
 def main():
     """Run the VEP governance agent."""
+    # Parse command line arguments
+    args = parse_args()
+    
+    # Set up credentials from CLI args
+    setup_credentials(args)
+    
     log("Starting VEP governance agent", node="main")
     
     # Create the graph

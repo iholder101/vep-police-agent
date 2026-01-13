@@ -5,9 +5,18 @@ from typing import Any
 from langgraph.graph.state import CompiledStateGraph
 
 def get_api_key() -> str:
-    """Read and return the API key from the API_KEY file."""
-    # Try current directory first, then parent (for symlink support)
-    import os
+    """Read and return the API key.
+    
+    Priority order:
+    1. API_KEY environment variable
+    2. API_KEY file (current directory or parent)
+    """
+    # First check environment variable
+    api_key = os.environ.get("API_KEY")
+    if api_key:
+        return api_key.strip()
+    
+    # Fall back to file reading (for backward compatibility)
     api_key_path = "API_KEY"
     if not os.path.exists(api_key_path):
         api_key_path = "../API_KEY"
@@ -16,12 +25,20 @@ def get_api_key() -> str:
 
 
 def get_google_token() -> str:
-    """Read and return the Google token from the GOOGLE_TOKEN file.
+    """Read and return the Google token.
     
     The token should be a JSON string containing Google service account credentials.
+    
+    Priority order:
+    1. GOOGLE_TOKEN environment variable
+    2. GOOGLE_TOKEN file (current directory or parent)
     """
-    import os
-    # Try current directory first, then parent (for symlink support)
+    # First check environment variable
+    token = os.environ.get("GOOGLE_TOKEN")
+    if token:
+        return token.strip()
+    
+    # Fall back to file reading (for backward compatibility)
     token_path = "GOOGLE_TOKEN"
     if not os.path.exists(token_path):
         token_path = "../GOOGLE_TOKEN"
@@ -31,7 +48,9 @@ def get_google_token() -> str:
             return f.read().strip()
     except FileNotFoundError:
         raise FileNotFoundError(
-            "GOOGLE_TOKEN file not found. Please create GOOGLE_TOKEN file with your Google service account credentials (JSON)."
+            "GOOGLE_TOKEN not found in environment variable or file. "
+            "Please set GOOGLE_TOKEN environment variable or create GOOGLE_TOKEN file "
+            "with your Google service account credentials (JSON)."
         )
 
 def invoke_agent(agent: CompiledStateGraph, prompt: str) -> str:
