@@ -34,7 +34,13 @@ def update_sheets_node(state: VEPState) -> Any:
     sheets_need_update = state.get("sheets_need_update", False)
     sheet_config = state.get("sheet_config", {})
     
-    log(f"Updating Google Sheets | VEPs: {len(veps)} | Need update: {sheets_need_update}", node="update_sheets")
+    # Log sheet URL if already configured
+    existing_sheet_id = sheet_config.get("sheet_id")
+    if existing_sheet_id:
+        sheet_url = f"https://docs.google.com/spreadsheets/d/{existing_sheet_id}/edit"
+        log(f"Updating Google Sheets | VEPs: {len(veps)} | Need update: {sheets_need_update} | Sheet URL: {sheet_url}", node="update_sheets")
+    else:
+        log(f"Updating Google Sheets | VEPs: {len(veps)} | Need update: {sheets_need_update}", node="update_sheets")
     
     last_check_times = state.get("last_check_times", {})
     last_check_times["update_sheets"] = datetime.now()
@@ -116,9 +122,21 @@ Sync this VEP data to Google Sheets. Decide on the schema, read the current shee
             # Update sheet_config with the sheet_id if it was created/used
             if result.sheet_id:
                 sheet_config = sheet_config.copy() if sheet_config else {}
+                previous_sheet_id = sheet_config.get("sheet_id")
                 sheet_config["sheet_id"] = result.sheet_id
                 if result.schema:
                     sheet_config["schema"] = result.schema
+                
+                # Log the sheet URL when sheet_id is set or changed
+                sheet_url = f"https://docs.google.com/spreadsheets/d/{result.sheet_id}/edit"
+                if previous_sheet_id != result.sheet_id:
+                    if previous_sheet_id:
+                        log(f"✓ Sheet URL updated: {sheet_url}", node="update_sheets")
+                    else:
+                        log(f"✓ Sheet created! URL: {sheet_url}", node="update_sheets")
+                elif not previous_sheet_id:
+                    # First time setting sheet_id
+                    log(f"✓ Sheet URL: {sheet_url}", node="update_sheets")
         else:
             log(f"Sheet update had errors: {result.errors}", node="update_sheets", level="WARNING")
             
