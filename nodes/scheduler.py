@@ -24,6 +24,7 @@ def scheduler_node(state: VEPState) -> Any:
     
     # Default intervals (in seconds) - can be made configurable
     intervals = {
+        "fetch_veps": 21600,  # 6 hours - discover/refresh VEPs from GitHub
         "run_monitoring": 3600,  # 1 hour - triggers all monitoring checks in parallel
         # Note: analyze_combined is NOT scheduled here - it's automatically triggered
         # by graph edges after all monitoring checks complete
@@ -31,6 +32,29 @@ def scheduler_node(state: VEPState) -> Any:
     }
     
     now = datetime.now()
+    
+    # Check if VEPs list is empty - prioritize fetch_veps immediately
+    veps = state.get("veps", [])
+    if not veps:
+        # VEPs list is empty, prioritize fetch_veps
+        if "fetch_veps" not in next_tasks:
+            next_tasks.insert(0, "fetch_veps")  # Add to front with highest priority
+            log("VEPs list is empty, prioritizing fetch_veps", node="scheduler")
+    
+    # Check if fetch_veps is due (periodic refresh)
+    last_check = last_check_times.get("fetch_veps")
+    interval = intervals["fetch_veps"]
+    
+    if last_check is None:
+        # Never run before - add to queue if not already there
+        if "fetch_veps" not in next_tasks:
+            next_tasks.append("fetch_veps")
+    else:
+        # Check if enough time has passed
+        time_since = (now - last_check).total_seconds()
+        if time_since >= interval:
+            if "fetch_veps" not in next_tasks:
+                next_tasks.append("fetch_veps")
     
     # Check if run_monitoring is due
     last_check = last_check_times.get("run_monitoring")
@@ -60,11 +84,11 @@ def scheduler_node(state: VEPState) -> Any:
         }
     
     # No existing queue, determine what needs to run
-    # Priority: update_sheets (if needed) first, then run_monitoring
+    # Priority: fetch_veps (if VEPs empty or due), update_sheets (if needed), then run_monitoring
     # Note: analyze_combined is automatically triggered by graph edges, not scheduled
     if next_tasks:
-        # Sort by priority: update_sheets first (if present), then run_monitoring
-        priority_order = ["update_sheets", "run_monitoring"]
+        # Sort by priority: fetch_veps first (if VEPs empty or due), then update_sheets, then run_monitoring
+        priority_order = ["fetch_veps", "update_sheets", "run_monitoring"]
         next_tasks = sorted(next_tasks, key=lambda x: priority_order.index(x) if x in priority_order else 999)
     
     # Log scheduling decision

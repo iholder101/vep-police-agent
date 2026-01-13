@@ -54,10 +54,13 @@ def update_sheets_node(state: VEPState) -> Any:
     
     if not veps:
         log("No VEPs to sync to sheets", node="update_sheets")
+        # Signal scheduler to fetch VEPs
+        if "fetch_veps" not in next_tasks:
+            next_tasks.append("fetch_veps")
         return {
             "last_check_times": last_check_times,
             "sheets_need_update": False,
-            "next_tasks": next_tasks,
+            "next_tasks": next_tasks,  # Signal to fetch VEPs
         }
     
     # Build system prompt

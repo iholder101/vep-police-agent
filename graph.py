@@ -6,6 +6,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from state import VEPState
 from nodes.scheduler import scheduler_node
+from nodes.fetch_veps import fetch_veps_node
 from nodes.run_monitoring import run_monitoring_node
 from nodes.check_deadlines import check_deadlines_node
 from nodes.check_activity import check_activity_node
@@ -39,6 +40,7 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     
     # Add nodes
     workflow.add_node("scheduler", scheduler_node)
+    workflow.add_node("fetch_veps", fetch_veps_node)
     workflow.add_node("run_monitoring", run_monitoring_node)
     workflow.add_node("check_deadlines", check_deadlines_node)
     workflow.add_node("check_activity", check_activity_node)
@@ -81,16 +83,20 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     # update_sheets goes back to scheduler
     workflow.add_edge("update_sheets", "scheduler")
     
+    # fetch_veps goes back to scheduler
+    workflow.add_edge("fetch_veps", "scheduler")
+    
     # wait node goes back to scheduler (creates continuous loop)
     workflow.add_edge("wait", "scheduler")
     
     return workflow.compile()
 
 
-def route_scheduler(state: VEPState) -> Literal["run_monitoring", "update_sheets", "wait"]:
+def route_scheduler(state: VEPState) -> Literal["fetch_veps", "run_monitoring", "update_sheets", "wait"]:
     """Route based on scheduler's next_tasks.
     
     Routes to the first task in the queue. The scheduler queues:
+    - "fetch_veps" (discovers VEPs from GitHub)
     - "run_monitoring" (triggers all checks in parallel)
     - "update_sheets" (when sheets need updating)
     """
@@ -103,5 +109,5 @@ def route_scheduler(state: VEPState) -> Literal["run_monitoring", "update_sheets
     task = next_tasks[0]
     
     # Validate it's a known task, otherwise wait
-    valid_tasks = {"run_monitoring", "update_sheets"}
+    valid_tasks = {"fetch_veps", "run_monitoring", "update_sheets"}
     return task if task in valid_tasks else "wait"
