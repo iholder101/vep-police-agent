@@ -439,26 +439,53 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
                                 title = issue.get("title", "")
                                 body = issue.get("body", "") or ""
                                 
-                                # Check if this is a VEP-related issue
-                                is_vep_related = False
+                                # In kubevirt/enhancements repo, assume ALL issues are VEP-related by default
+                                # Only exclude obvious non-VEP issues (bugs, typos, CI, etc.)
+                                is_vep_related = True  # Default to True - be inclusive
+                                
+                                # Exclude obvious non-VEP issues
+                                exclude_patterns = [
+                                    "bug", "bugfix", "typo", "documentation fix", "spelling",
+                                    "ci", "test", "chore", "maintenance", "infrastructure",
+                                    "dependabot", "renovate"
+                                ]
+                                title_lower = title.lower()
+                                body_preview = (body[:500] or "").lower()
+                                
+                                # If it's clearly a bug/typo/CI issue, exclude it
+                                if any(pattern in title_lower or pattern in body_preview for pattern in exclude_patterns):
+                                    # But still include if it has VEP-related labels or mentions VEP numbers
+                                    has_vep_label = any("vep" in str(l).lower() or "enhancement" in str(l).lower() for l in labels)
+                                    has_vep_number = re.search(r'vep-?\s*\d+|VEP\s*#?\s*\d+', title + " " + body_preview, re.IGNORECASE)
+                                    if not (has_vep_label or has_vep_number):
+                                        is_vep_related = False
+                                
+                                # Positive indicators (strengthen confidence, but don't require them)
                                 # Check labels - expanded patterns for VEP detection
-                                vep_label_patterns = ["kind/vep", "vep", "area/enhancement", "enhancement", "sig/", "kind/enhancement"]
+                                vep_label_patterns = ["kind/vep", "vep", "area/enhancement", "enhancement", "sig/", "kind/enhancement", "area/feature"]
                                 if any(pattern.lower() in str(label).lower() for label in labels for pattern in vep_label_patterns):
+                                    is_vep_related = True  # Definitely VEP-related
+                                
+                                # Check title/body for VEP references
+                                vep_patterns = [
+                                    r'vep-?\s*\d+',  # vep-123, vep 123, VEP-123
+                                    r'VEP\s*#?\s*\d+',  # VEP #123, VEP 123
+                                    r'enhancement\s*#?\s*\d+',  # Enhancement #123
+                                ]
+                                for pattern in vep_patterns:
+                                    if re.search(pattern, title, re.IGNORECASE) or re.search(pattern, body[:1000], re.IGNORECASE):
+                                        is_vep_related = True
+                                        break
+                                
+                                # SIG labels - issues with SIG labels in enhancements repo are likely VEPs
+                                sig_labels = [l for l in labels if "sig/" in str(l).lower()]
+                                if sig_labels:
                                     is_vep_related = True
-                                # Check title/body for VEP references (vep-123, VEP-123, vep123, etc.)
-                                if re.search(r'vep-?\d+', title, re.IGNORECASE) or re.search(r'vep-?\d+', body[:500], re.IGNORECASE):
+                                
+                                # Release/milestone labels - VEPs often have these
+                                release_labels = [l for l in labels if "release/" in str(l).lower() or "target/" in str(l).lower() or "milestone" in str(l).lower()]
+                                if release_labels:
                                     is_vep_related = True
-                                # Also check for enhancement-related keywords in open issues (they might be VEPs without files yet)
-                                state = issue.get("state", "").lower()
-                                if state == "open":
-                                    enhancement_keywords = ["enhancement", "proposal", "feature", "sig-"]
-                                    title_lower = title.lower()
-                                    body_lower = body[:500].lower()
-                                    if any(keyword in title_lower or keyword in body_lower for keyword in enhancement_keywords):
-                                        # If it's open and has enhancement keywords, it might be a VEP
-                                        # Check if it has any SIG-related labels
-                                        if any("sig" in str(label).lower() for label in labels):
-                                            is_vep_related = True
                                 
                                 issues.append({
                                     "number": issue.get("number"),
@@ -494,25 +521,52 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
                         body = issue.get("body", "") or ""
                         
                         # Check if this is a VEP-related issue
-                        is_vep_related = False
+                        # In kubevirt/enhancements repo, most issues are VEP-related by default
+                        # Be more inclusive - only exclude obvious non-VEP issues
+                        is_vep_related = True  # Default to True for enhancements repo
+                        
+                        # Exclude obvious non-VEP issues
+                        exclude_patterns = [
+                            "bug", "bugfix", "typo", "documentation fix", "spelling",
+                            "ci", "test", "chore", "maintenance", "infrastructure"
+                        ]
+                        title_lower = title.lower()
+                        body_preview = (body[:500] or "").lower()
+                        
+                        # If it's clearly a bug/typo/CI issue, exclude it
+                        if any(pattern in title_lower or pattern in body_preview for pattern in exclude_patterns):
+                            # But still include if it has VEP-related labels or mentions VEP numbers
+                            has_vep_label = any("vep" in str(l).lower() or "enhancement" in str(l).lower() for l in labels)
+                            has_vep_number = re.search(r'vep-?\s*\d+|VEP\s*#?\s*\d+', title + " " + body_preview, re.IGNORECASE)
+                            if not (has_vep_label or has_vep_number):
+                                is_vep_related = False
+                        
+                        # Additional positive indicators (strengthen confidence)
                         # Check labels - expanded patterns for VEP detection
-                        vep_label_patterns = ["kind/vep", "vep", "area/enhancement", "enhancement", "sig/", "kind/enhancement"]
+                        vep_label_patterns = ["kind/vep", "vep", "area/enhancement", "enhancement", "sig/", "kind/enhancement", "area/feature"]
                         if any(pattern.lower() in str(label).lower() for label in labels for pattern in vep_label_patterns):
-                            is_vep_related = True
+                            is_vep_related = True  # Definitely VEP-related
+                        
                         # Check title/body for VEP references (vep-123, VEP-123, vep123, etc.)
-                        if re.search(r'vep-?\d+', title, re.IGNORECASE) or re.search(r'vep-?\d+', body[:500], re.IGNORECASE):
+                        vep_patterns = [
+                            r'vep-?\s*\d+',  # vep-123, vep 123, VEP-123
+                            r'VEP\s*#?\s*\d+',  # VEP #123, VEP 123
+                            r'enhancement\s*#?\s*\d+',  # Enhancement #123
+                        ]
+                        for pattern in vep_patterns:
+                            if re.search(pattern, title, re.IGNORECASE) or re.search(pattern, body[:1000], re.IGNORECASE):
+                                is_vep_related = True
+                                break
+                        
+                        # Check for SIG labels - issues with SIG labels in enhancements repo are likely VEPs
+                        sig_labels = [l for l in labels if "sig/" in str(l).lower()]
+                        if sig_labels:
                             is_vep_related = True
-                        # Also check for enhancement-related keywords in open issues (they might be VEPs without files yet)
-                        state = issue.get("state", "").lower()
-                        if state == "open":
-                            enhancement_keywords = ["enhancement", "proposal", "feature", "sig-"]
-                            title_lower = title.lower()
-                            body_lower = body[:500].lower()
-                            if any(keyword in title_lower or keyword in body_lower for keyword in enhancement_keywords):
-                                # If it's open and has enhancement keywords, it might be a VEP
-                                # Check if it has any SIG-related labels
-                                if any("sig" in str(label).lower() for label in labels):
-                                    is_vep_related = True
+                        
+                        # Check for release/milestone labels - VEPs often have these
+                        release_labels = [l for l in labels if "release/" in str(l).lower() or "target/" in str(l).lower() or "milestone" in str(l).lower()]
+                        if release_labels:
+                            is_vep_related = True
                         
                         # Include all issues for now, but mark VEP-related ones
                         issues.append({
