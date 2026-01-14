@@ -133,15 +133,16 @@ Sync this VEP data to Google Sheets. Decide on the schema, read the current shee
             error_msg = f"Google Sheets update failed: {', '.join(result.errors) if hasattr(result, 'errors') and result.errors else 'Unknown error'}"
             log(error_msg, node="update_sheets", level="WARNING")
             
-            # Check if it's a permission/API error - don't retry indefinitely
+            # Check if it's a permission/API/quota error - don't retry indefinitely
             error_text = error_msg.lower()
             if ("insufficient permission" in error_text or "permission denied" in error_text or 
                 "api has not been used" in error_text or "api.*disabled" in error_text or
-                "enable it by visiting" in error_text):
-                log("API/permission error detected - clearing sheets_need_update flag to prevent infinite retries. Please enable Google Drive API and Google Sheets API in your Google Cloud project.", node="update_sheets", level="WARNING")
+                "enable it by visiting" in error_text or "quota has been exceeded" in error_text or
+                "storage quota" in error_text):
+                log("API/permission/quota error detected - clearing sheets_need_update flag to prevent infinite retries. Please check Google Cloud APIs, permissions, and Drive storage quota.", node="update_sheets", level="WARNING")
                 return {
                     "last_check_times": last_check_times,
-                    "sheets_need_update": False,  # Clear flag for API/permission errors
+                    "sheets_need_update": False,  # Clear flag for API/permission/quota errors
                     "next_tasks": next_tasks,
                 }
             
