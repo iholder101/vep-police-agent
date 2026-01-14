@@ -55,14 +55,20 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
         # and system environment variables
         custom_env = config.get("env", {}).copy()
         
-        # If we have custom env vars, merge with parent environment
-        # If no custom vars, use None to inherit parent environment automatically
+        # Always merge with parent environment to ensure GITHUB_TOKEN and other vars are available
+        # custom_env takes precedence over parent environment
         if custom_env:
             # Merge with parent environment - custom_env takes precedence
             env = {**os.environ, **custom_env}
+            # Debug: verify GITHUB_TOKEN is in merged env if it was in custom_env
+            if "GITHUB_TOKEN" in custom_env:
+                if "GITHUB_TOKEN" in env:
+                    token_preview = env["GITHUB_TOKEN"][:10] + "..." if len(env["GITHUB_TOKEN"]) > 10 else "***"
+                    log(f"GITHUB_TOKEN verified in merged environment (token: {token_preview})", node="mcp_factory", level="DEBUG")
         else:
-            # No custom env vars, let subprocess inherit parent environment
-            env = None
+            # No custom env vars, but still merge to ensure parent env vars (like GITHUB_TOKEN) are available
+            # Only use None if we explicitly want to inherit (but we want to ensure token is passed)
+            env = os.environ.copy()
         
         server_params = StdioServerParameters(
             command=config["command"],
@@ -87,14 +93,14 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
                             # Prepare environment - merge custom env with parent environment
                             custom_env = tool_config.get("env", {}).copy()
                             
-                            # If we have custom env vars, merge with parent environment
-                            # If no custom vars, use None to inherit parent environment automatically
+                            # Always merge with parent environment to ensure GITHUB_TOKEN and other vars are available
+                            # custom_env takes precedence over parent environment
                             if custom_env:
                                 # Merge with parent environment - custom_env takes precedence
                                 env = {**os.environ, **custom_env}
                             else:
-                                # No custom env vars, let subprocess inherit parent environment
-                                env = None
+                                # No custom env vars, but still merge to ensure parent env vars are available
+                                env = os.environ.copy()
                             
                             server_params = StdioServerParameters(
                                 command=tool_config["command"],
@@ -223,9 +229,13 @@ def get_mcp_tools_by_name(*mcp_names: str) -> List[Tool]:
             github_token = os.environ.get("GITHUB_TOKEN")
             if github_token:
                 config["env"]["GITHUB_TOKEN"] = github_token
+                # Also ensure it's in the merged environment that will be passed
                 # Log first 10 chars for verification (don't log full token for security)
                 token_preview = github_token[:10] + "..." if len(github_token) > 10 else "***"
                 log(f"GitHub token injected into MCP server environment (token: {token_preview})", node="mcp_factory", level="DEBUG")
+                # Verify token will be in final env
+                if config.get("env", {}).get("GITHUB_TOKEN"):
+                    log("GitHub token verified in config.env", node="mcp_factory", level="DEBUG")
             else:
                 log("GITHUB_TOKEN not found in environment - API rate limits may apply", node="mcp_factory", level="WARNING")
         
