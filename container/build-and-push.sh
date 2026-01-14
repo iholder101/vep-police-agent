@@ -21,7 +21,8 @@ tag_exists() {
     
     # Use skopeo if available (most reliable for remote registries)
     if command -v skopeo &>/dev/null; then
-        if skopeo inspect "docker://${image_name}" &>/dev/null 2>&1; then
+        # Add timeout to prevent hanging
+        if timeout 10 skopeo inspect "docker://${image_name}" &>/dev/null 2>&1; then
             return 0  # Tag exists
         else
             return 1  # Tag does not exist
@@ -29,7 +30,8 @@ tag_exists() {
     fi
     
     # Fallback: Use podman pull --quiet (reliable but slower)
-    if podman pull --quiet "${image_name}" &>/dev/null 2>&1; then
+    # Add timeout to prevent hanging
+    if timeout 10 podman pull --quiet "${image_name}" &>/dev/null 2>&1; then
         return 0  # Tag exists
     else
         return 1  # Tag does not exist
@@ -48,8 +50,11 @@ else
     FINAL_TAG="${BASE_TAG}"
     suffix=0
     
+    echo "Checking for existing tags starting from: ${BASE_TAG}"
+    
     # Check if base tag exists, increment suffix if needed
     while tag_exists "${FINAL_TAG}"; do
+        echo "  Tag ${FINAL_TAG} exists, trying next..."
         if [ $suffix -eq 0 ]; then
             FINAL_TAG="${BASE_TAG}-1"
             suffix=1
@@ -57,7 +62,14 @@ else
             suffix=$((suffix + 1))
             FINAL_TAG="${BASE_TAG}-${suffix}"
         fi
+        # Safety limit to prevent infinite loops
+        if [ $suffix -gt 100 ]; then
+            echo "WARNING: Reached maximum suffix limit (100), using tag: ${FINAL_TAG}"
+            break
+        fi
     done
+    
+    echo "✓ Using tag: ${FINAL_TAG}"
 fi
 
 IMAGE_TAG="${FINAL_TAG}"
