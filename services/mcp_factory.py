@@ -3,9 +3,11 @@
 from typing import List, Any, Dict, Optional
 import asyncio
 import os
+import json
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from langchain_core.tools import Tool
+from pydantic import BaseModel, create_model
 from services.utils import log
 
 # ExceptionGroup is available in Python 3.11+ as a built-in
@@ -101,10 +103,35 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
                 
                 # Convert MCP tools to LangChain tools
                 for mcp_tool in tools_result.tools:
+                    # Get the tool's input schema to extract parameter names
+                    input_schema = None
+                    if hasattr(mcp_tool, 'inputSchema') and mcp_tool.inputSchema:
+                        input_schema = mcp_tool.inputSchema
+                    
                     # Create a closure to capture the tool config and name
-                    def make_tool_func(tool_name: str, tool_config: Dict[str, Any]):
+                    def make_tool_func(tool_name: str, tool_config: Dict[str, Any], tool_schema: Optional[Dict] = None):
                         async def tool_func_async(**kwargs) -> str:
                             """Async function that creates a session and calls the tool."""
+                            # Handle __arg1, __arg2, etc. by mapping to schema parameter names
+                            # This is a workaround for LLMs that use positional args
+                            if tool_schema and 'properties' in tool_schema:
+                                properties = tool_schema['properties']
+                                required = tool_schema.get('required', [])
+                                param_names = list(properties.keys())
+                                
+                                # If kwargs has __arg1, __arg2, etc., map them to actual parameter names
+                                mapped_kwargs = {}
+                                for key, value in kwargs.items():
+                                    if key.startswith('__arg') and key[5:].isdigit():
+                                        arg_index = int(key[5:]) - 1
+                                        if arg_index < len(param_names):
+                                            mapped_kwargs[param_names[arg_index]] = value
+                                        else:
+                                            mapped_kwargs[key] = value  # Keep original if no mapping
+                                    else:
+                                        mapped_kwargs[key] = value
+                                kwargs = mapped_kwargs
+                            
                             # Prepare environment - merge custom env with parent environment
                             custom_env = tool_config.get("env", {}).copy()
                             
@@ -149,11 +176,25 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
                         
                         return sync_wrapper
                     
-                    tool_func = make_tool_func(mcp_tool.name, config)
+                    tool_func = make_tool_func(mcp_tool.name, config, input_schema)
+                    
+                    # Build enhanced description with parameter info
+                    description = mcp_tool.description or ""
+                    if input_schema and 'properties' in input_schema:
+                        param_info = []
+                        properties = input_schema['properties']
+                        required = input_schema.get('required', [])
+                        for param_name, param_schema in properties.items():
+                            param_type = param_schema.get('type', 'string')
+                            param_desc = param_schema.get('description', '')
+                            required_marker = ' (required)' if param_name in required else ' (optional)'
+                            param_info.append(f"- {param_name} ({param_type}){required_marker}: {param_desc}")
+                        if param_info:
+                            description += "\n\nParameters:\n" + "\n".join(param_info)
                     
                     langchain_tool = Tool(
                         name=mcp_tool.name,
-                        description=mcp_tool.description or "",
+                        description=description,
                         func=tool_func,
                     )
                     all_tools.append(langchain_tool)

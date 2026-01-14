@@ -1,5 +1,6 @@
 """Helper functions for creating LLM agents with MCP tools."""
 
+import json
 from typing import Dict, Any, Type, TypeVar
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
@@ -57,8 +58,8 @@ def invoke_llm_with_tools(
         import os
         debug_mode = os.environ.get("DEBUG_MODE")
         if debug_mode == "test-sheets":
-            # Limit to 1 iteration for testing Google Sheets
-            max_iterations = 1
+            # Increase iterations for test-sheets to allow LLM to complete write operations
+            max_iterations = 5
             log(f"Debug mode 'test-sheets' enabled - limiting to {max_iterations} iteration(s)", node=operation_type, level="INFO")
         else:
             # Increased for fetch_veps which may need to read many issue details
@@ -82,19 +83,30 @@ def invoke_llm_with_tools(
                 tool_name = tool_call.get("name", "")
                 tool_args = tool_call.get("args", {})
                 
+                # Log tool call details
+                log(f"Executing tool: {tool_name} with args: {json.dumps(tool_args, default=str)[:200]}...", node=operation_type, level="DEBUG")
+                
                 # Find and execute the tool
                 tool_result = None
                 for tool in tools:
                     if tool.name == tool_name:
                         try:
                             tool_result = tool.func(**tool_args)
+                            # Log tool result (truncate if too long)
+                            result_str = str(tool_result)
+                            if len(result_str) > 500:
+                                result_str = result_str[:500] + "... (truncated)"
+                            log(f"Tool {tool_name} result: {result_str}", node=operation_type, level="DEBUG")
                             break
                         except Exception as e:
                             tool_result = f"Error: {str(e)}"
                             log(f"Error executing tool {tool_name}: {e}", node=operation_type, level="ERROR")
+                            import traceback
+                            log(f"Tool error traceback: {traceback.format_exc()}", node=operation_type, level="DEBUG")
                 
                 if tool_result is None:
                     tool_result = f"Tool {tool_name} not found"
+                    log(f"Tool {tool_name} not found in available tools: {[t.name for t in tools]}", node=operation_type, level="WARNING")
                 
                 # Create tool message
                 tool_messages.append(ToolMessage(
