@@ -118,12 +118,24 @@ Sync this VEP data to Google Sheets. Decide on the schema, read the current shee
         )
         
         # Check if result is valid (not an error response)
-        if not result or (hasattr(result, 'success') and not result.success and not result.sheet_id):
-            # If MCP failed, log and skip update
-            log("Google Sheets MCP not available or failed - skipping sheet update. This is expected if @modelcontextprotocol/server-google-sheets package is not installed.", node="update_sheets", level="WARNING")
+        if not result:
+            # If result is None/empty, MCP likely failed to load
+            log("Google Sheets MCP not available - skipping sheet update. This is expected if mcp-google-sheets package is not installed or credentials are missing.", node="update_sheets", level="WARNING")
             return {
                 "last_check_times": last_check_times,
                 "sheets_need_update": False,  # Clear flag to prevent infinite retries
+                "next_tasks": next_tasks,
+            }
+        
+        # If result exists but success=False and no sheet_id, the operation failed
+        if hasattr(result, 'success') and not result.success and not result.sheet_id:
+            # MCP loaded but operation failed (likely auth/permissions issue)
+            error_msg = f"Google Sheets update failed: {', '.join(result.errors) if hasattr(result, 'errors') and result.errors else 'Unknown error'}"
+            log(error_msg, node="update_sheets", level="WARNING")
+            # Don't clear the flag - might be a transient error
+            return {
+                "last_check_times": last_check_times,
+                "sheets_need_update": True,  # Keep flag set for retry
                 "next_tasks": next_tasks,
             }
         

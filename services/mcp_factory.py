@@ -245,11 +245,38 @@ def get_mcp_tools_by_name(*mcp_names: str) -> List[Tool]:
         
         if name == "google-sheets":
             from services.utils import get_google_token
+            import tempfile
+            import json
+            # os is imported at module level, ensure it's available here
+            import os as os_module
             try:
                 token = get_google_token()
-                config["env"]["GOOGLE_CREDENTIALS"] = token
+                if not token or not token.strip():
+                    log("GOOGLE_TOKEN is empty - Google Sheets MCP will not be available", node="mcp_factory", level="WARNING")
+                else:
+                    # mcp-google-sheets uses Application Default Credentials (ADC)
+                    # It expects GOOGLE_APPLICATION_CREDENTIALS to point to a JSON file
+                    # Write token to a temporary file and set the env var
+                    try:
+                        # Try to parse as JSON to validate
+                        json.loads(token)
+                        # Create a temporary file with the credentials
+                        temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
+                        temp_file.write(token)
+                        temp_file.close()
+                        config["env"]["GOOGLE_APPLICATION_CREDENTIALS"] = temp_file.name
+                        log(f"Google credentials written to temporary file: {temp_file.name}", node="mcp_factory", level="DEBUG")
+                    except (json.JSONDecodeError, ValueError):
+                        # If token is not valid JSON, try treating it as a file path
+                        token_path = token.strip()
+                        if token_path and os_module.path.exists(token_path):
+                            config["env"]["GOOGLE_APPLICATION_CREDENTIALS"] = token_path
+                            log(f"Using Google credentials from file: {token_path}", node="mcp_factory", level="DEBUG")
+                        else:
+                            log(f"Google token is not valid JSON and not a valid file path", node="mcp_factory", level="WARNING")
             except FileNotFoundError:
                 # If token file doesn't exist, continue without it (will fail at runtime)
+                log("GOOGLE_TOKEN not found - Google Sheets MCP will not be available", node="mcp_factory", level="WARNING")
                 pass
         elif name == "github":
             # Inject GitHub token from environment if available
