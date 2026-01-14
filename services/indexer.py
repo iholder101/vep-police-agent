@@ -308,21 +308,33 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
     
     try:
         tools = get_mcp_tools_by_name("github")
+        log(f"Available GitHub tools: {[t.name for t in tools]}", node="indexer", level="DEBUG")
         
-        # Find list_issues tool
+        # Find list_issues tool - try exact matches first, then partial
         list_issues_tool = None
         tool_names_to_try = [
+            "mcp_GitHub_list_issues",  # Try full name first
             "list_issues",
             "search_issues",
             "get_issues",
-            "mcp_GitHub_list_issues",
             "mcp_GitHub_search_issues",
         ]
         
+        # First try exact match
         for tool in tools:
-            if any(name.lower() in tool.name.lower() for name in tool_names_to_try):
+            if tool.name in tool_names_to_try:
                 list_issues_tool = tool
+                log(f"Found issues tool (exact match): {tool.name}", node="indexer", level="DEBUG")
                 break
+        
+        # If no exact match, try partial
+        if not list_issues_tool:
+            for tool in tools:
+                tool_name_lower = tool.name.lower()
+                if any(name.lower() in tool_name_lower for name in tool_names_to_try):
+                    list_issues_tool = tool
+                    log(f"Found issues tool (partial match): {tool.name}", node="indexer", level="DEBUG")
+                    break
         
         if not list_issues_tool:
             log(f"Could not find issues listing tool. Available tools: {[t.name for t in tools]}", node="indexer", level="WARNING")
@@ -344,6 +356,11 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
             
             # Parse result
             if isinstance(issues_result, str):
+                # Check if it's an error message
+                if len(issues_result) < 500 or issues_result.lower().startswith(("error", "failed", "cannot", "unable")):
+                    log(f"Received error or suspiciously short response (length: {len(issues_result)}): {issues_result[:500]}", node="indexer", level="WARNING")
+                    log(f"Available tools: {[t.name for t in tools]}", node="indexer", level="DEBUG")
+                    return []
                 log(f"Retrieved issues data as string (length: {len(issues_result)})", node="indexer")
                 return [{"raw_data": issues_result[:15000]}]
             elif isinstance(issues_result, list):
@@ -396,19 +413,30 @@ def index_kubevirt_prs(days_back: Optional[int] = 365) -> List[Dict[str, Any]]:
     try:
         tools = get_mcp_tools_by_name("github")
         
-        # Find list_pull_requests tool
+        # Find list_pull_requests tool - try exact matches first
         list_prs_tool = None
         tool_names_to_try = [
+            "mcp_GitHub_list_pull_requests",  # Try full name first
             "list_pull_requests",
             "list_pulls",
             "search_pull_requests",
-            "mcp_GitHub_list_pull_requests",
         ]
         
+        # First try exact match
         for tool in tools:
-            if any(name.lower() in tool.name.lower() and ("pull" in tool.name.lower() or "pr" in tool.name.lower()) for name in tool_names_to_try):
+            if tool.name in tool_names_to_try:
                 list_prs_tool = tool
+                log(f"Found PR tool (exact match): {tool.name}", node="indexer", level="DEBUG")
                 break
+        
+        # If no exact match, try partial
+        if not list_prs_tool:
+            for tool in tools:
+                tool_name_lower = tool.name.lower()
+                if any(name.lower() in tool_name_lower and ("pull" in tool_name_lower or "pr" in tool_name_lower) for name in tool_names_to_try):
+                    list_prs_tool = tool
+                    log(f"Found PR tool (partial match): {tool.name}", node="indexer", level="DEBUG")
+                    break
         
         if not list_prs_tool:
             log(f"Could not find PR listing tool. Available tools: {[t.name for t in tools]}", node="indexer", level="WARNING")
@@ -437,6 +465,11 @@ def index_kubevirt_prs(days_back: Optional[int] = 365) -> List[Dict[str, Any]]:
             
             # Parse result
             if isinstance(prs_result, str):
+                # Check if it's an error message
+                if len(prs_result) < 500 or prs_result.lower().startswith(("error", "failed", "cannot", "unable")):
+                    log(f"Received error or suspiciously short response (length: {len(prs_result)}): {prs_result[:500]}", node="indexer", level="WARNING")
+                    log(f"Available tools: {[t.name for t in tools]}", node="indexer", level="DEBUG")
+                    return []
                 log(f"Retrieved PRs data as string (length: {len(prs_result)})", node="indexer")
                 return [{"raw_data": prs_result[:15000]}]
             elif isinstance(prs_result, list):
@@ -490,20 +523,30 @@ def index_enhancements_readme() -> Optional[Dict[str, Any]]:
     try:
         tools = get_mcp_tools_by_name("github")
         
-        # Find file reading tool
+        # Find file reading tool - try exact matches first
         get_file_tool = None
         tool_names_to_try = [
+            "mcp_GitHub_get_file_contents",  # Try full name first
             "get_file_contents",
             "read_file",
             "get_file",
             "read_file_contents",
-            "mcp_GitHub_get_file_contents",
         ]
         
+        # First try exact match
         for tool in tools:
-            if any(name.lower() in tool.name.lower() for name in tool_names_to_try):
+            if tool.name in tool_names_to_try:
                 get_file_tool = tool
+                log(f"Found file tool (exact match): {tool.name}", node="indexer", level="DEBUG")
                 break
+        
+        # If no exact match, try partial
+        if not get_file_tool:
+            for tool in tools:
+                if any(name.lower() in tool.name.lower() for name in tool_names_to_try):
+                    get_file_tool = tool
+                    log(f"Found file tool (partial match): {tool.name}", node="indexer", level="DEBUG")
+                    break
         
         if not get_file_tool:
             log(f"Could not find file reading tool. Available tools: {[t.name for t in tools]}", node="indexer", level="WARNING")
@@ -530,14 +573,20 @@ def index_enhancements_readme() -> Optional[Dict[str, Any]]:
                         branch="main"
                     )
             
-            if readme_content and len(str(readme_content)) > 100:
-                content_str = str(readme_content)
-                log(f"Retrieved README.md (length: {len(content_str)})", node="indexer")
+            readme_str = str(readme_content)
+            # Check if it's an error message
+            if len(readme_str) < 500 or readme_str.lower().startswith(("error", "failed", "cannot", "unable")):
+                log(f"Received error or suspiciously short README (length: {len(readme_str)}): {readme_str[:500]}", node="indexer", level="WARNING")
+                log(f"Available tools: {[t.name for t in tools]}", node="indexer", level="DEBUG")
+                return None
+            
+            if readme_content and len(readme_str) > 100:
+                log(f"Retrieved README.md (length: {len(readme_str)})", node="indexer")
                 
                 # Truncate if too long, but keep more than other files since it's critical
                 return {
-                    "content": content_str[:20000] if len(content_str) > 20000 else content_str,
-                    "full_length": len(content_str),
+                    "content": readme_str[:20000] if len(readme_str) > 20000 else readme_str,
+                    "full_length": len(readme_str),
                     "note": "This contains VEP process documentation, labels, structure, and requirements. Use this to understand how VEPs are organized and what to look for."
                 }
             else:
@@ -566,20 +615,28 @@ def index_vep_files() -> List[Dict[str, Any]]:
     try:
         tools = get_mcp_tools_by_name("github")
         
-        # Find file reading tool
+        # Find file reading tool - try exact matches first
         get_file_tool = None
         tool_names_to_try = [
+            "mcp_GitHub_get_file_contents",  # Try full name first
             "get_file_contents",
             "read_file",
             "get_file",
             "read_file_contents",
-            "mcp_GitHub_get_file_contents",
         ]
         
+        # First try exact match
         for tool in tools:
-            if any(name.lower() in tool.name.lower() for name in tool_names_to_try):
+            if tool.name in tool_names_to_try:
                 get_file_tool = tool
                 break
+        
+        # If no exact match, try partial
+        if not get_file_tool:
+            for tool in tools:
+                if any(name.lower() in tool.name.lower() for name in tool_names_to_try):
+                    get_file_tool = tool
+                    break
         
         if not get_file_tool:
             log(f"Could not find file reading tool. Available tools: {[t.name for t in tools]}", node="indexer", level="WARNING")
@@ -598,6 +655,12 @@ def index_vep_files() -> List[Dict[str, Any]]:
                 )
             
             content_str = str(veps_content)
+            # Check if it's an error message
+            if len(content_str) < 500 or content_str.lower().startswith(("error", "failed", "cannot", "unable")):
+                log(f"Received error or suspiciously short VEPs directory content (length: {len(content_str)}): {content_str[:500]}", node="indexer", level="WARNING")
+                log(f"Available tools: {[t.name for t in tools]}", node="indexer", level="DEBUG")
+                return []
+            
             log(f"Retrieved VEPs directory content (length: {len(content_str)})", node="indexer")
             
             return [{
