@@ -72,6 +72,8 @@ def update_sheets_node(state: VEPState) -> Any:
     # Build system prompt
        system_prompt = """You are a VEP governance agent syncing VEP data to Google Sheets.
        
+       CRITICAL REQUIREMENT: You MUST write ALL VEPs provided in the context to the sheet. Do not skip, filter, or exclude any VEPs. Every VEP in the "veps" array must appear as a row in the sheet.
+       
        Your task:
        1. Decide on the table schema/columns based on the VEP data structure:
           - Include key fields: VEP number, title, owner, status, compliance flags, activity metrics, deadlines, alerts
@@ -81,8 +83,9 @@ def update_sheets_node(state: VEPState) -> Any:
           - Read the current sheet (if sheet_id is provided in config)
           - Create a new sheet if needed (if create_new is True or sheet doesn't exist)
           - Compare current sheet data with the VEP state
-          - Update the sheet with new/changed VEP data
+          - Update the sheet with ALL VEP data from the context (write every VEP, don't skip any)
           - Maintain data integrity (don't lose existing data)
+          - IMPORTANT: The number of data rows (excluding header) must equal the number of VEPs provided
        3. CRITICAL: After writing data, you MUST create a proper Google Sheets table with these steps (in order):
           Step A: Write all data to the sheet (use write_range with all rows including header)
           Step B: Format the header row (row 1):
@@ -114,11 +117,14 @@ def update_sheets_node(state: VEPState) -> Any:
         "current_release": state.get("current_release"),
     }
     
+    vep_count = len(veps)
     user_prompt = f"""Here is the current VEP state and sheet configuration:
 
 {json.dumps(context, indent=2, default=str)}
 
-Sync this VEP data to Google Sheets. Decide on the schema, read the current sheet if it exists, and update it with the latest VEP information. If the sheet doesn't exist and create_new is True, create it."""
+CRITICAL: You have been provided with {vep_count} VEP(s). You MUST write ALL {vep_count} VEP(s) to the Google Sheet. Every VEP in the "veps" array must appear as a row in the sheet. Do not skip any VEPs.
+
+Sync this VEP data to Google Sheets. Decide on the schema, read the current sheet if it exists, and update it with ALL VEP information. If the sheet doesn't exist and create_new is True, create it. After writing, verify that the sheet contains exactly {vep_count} data rows (plus 1 header row)."""
     
     # Invoke LLM with Google Sheets MCP tools
     # Note: If Google Sheets MCP is not available, this will fail gracefully
