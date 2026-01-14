@@ -55,8 +55,16 @@ def invoke_llm_with_tools(
         messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
         
         # First, handle tool calls (if any) - do this without structured output
-        # Increased for fetch_veps which may need to read many issue details
-        max_iterations = 30 if operation_type == "fetch_veps" else 10
+        # Check for debug mode that limits iterations
+        import os
+        debug_mode = os.environ.get("DEBUG_MODE")
+        if debug_mode == "test-sheets":
+            # Limit to 1 iteration for testing Google Sheets
+            max_iterations = 1
+            log(f"Debug mode 'test-sheets' enabled - limiting to {max_iterations} iteration(s)", node=operation_type, level="INFO")
+        else:
+            # Increased for fetch_veps which may need to read many issue details
+            max_iterations = 30 if operation_type == "fetch_veps" else 10
         iteration = 0
         while iteration < max_iterations:
             iteration += 1

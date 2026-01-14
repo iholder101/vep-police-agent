@@ -54,8 +54,8 @@ def parse_args():
     parser.add_argument(
         "--debug",
         type=str,
-        choices=["discover-veps"],
-        help="Enable debug mode. Options: 'discover-veps' - print indexed VEP data and exit"
+        choices=["discover-veps", "test-sheets"],
+        help="Enable debug mode. Options: 'discover-veps' - print indexed VEP data and exit; 'test-sheets' - test Google Sheets with limited LLM iterations"
     )
     return parser.parse_args()
 
