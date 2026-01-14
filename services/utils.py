@@ -68,13 +68,19 @@ def invoke_agent(agent: CompiledStateGraph, prompt: str) -> str:
     # Handle string content directly
     return str(content) if content is not None else ""
 
-def get_model():
+def get_model(timeout: int = 60):
+    """Get the LLM model instance.
+    
+    Args:
+        timeout: Request timeout in seconds (default: 60)
+                 Use longer timeout (e.g., 300) for operations with large prompts like fetch_veps
+    """
     from langchain_google_genai import ChatGoogleGenerativeAI
 
     return ChatGoogleGenerativeAI(
         model="gemini-3-flash-preview",
         api_key=get_api_key(),
-        timeout=60,
+        timeout=timeout,
     )
 
 

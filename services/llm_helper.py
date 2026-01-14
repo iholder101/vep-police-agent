@@ -45,8 +45,10 @@ def invoke_llm_with_tools(
                 # If model requires fields, try with empty defaults
                 return response_model(**{})
         
-        # Create LLM with tools boundיגעכ
-        llm = get_model()
+        # Create LLM with tools bound
+        # Use longer timeout for fetch_veps due to large prompt size
+        timeout = 300 if operation_type == "fetch_veps" else 60
+        llm = get_model(timeout=timeout)
         llm_with_tools = llm.bind_tools(tools)
         
         # Build messages
