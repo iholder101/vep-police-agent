@@ -2,3 +2,4 @@ API_KEY
 GOOGLE_TOKEN
 GITHUB_TOKEN
 **/__pycache__/
+.vep_index_cache.json
