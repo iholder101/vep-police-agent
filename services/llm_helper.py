@@ -114,18 +114,57 @@ def invoke_llm_with_tools(
         import traceback
         log(f"Traceback: {traceback.format_exc()}", node=operation_type, level="ERROR")
         # Return empty response with proper structure
-        # Try to create response with default values for required fields
+        # Use Pydantic model introspection to provide defaults for required fields
         try:
-            # Check if response_model has default values or can be instantiated empty
+            # Try to create with empty dict first (works if all fields have defaults)
             return response_model()
-        except Exception as init_error:
-            # If model requires fields, try with minimal defaults
-            # For UpdateSheetsResponse, success defaults to False
+        except Exception:
+            # Build defaults from model fields
+            defaults = {}
             try:
-                return response_model(**{"success": False})
-            except Exception:
-                # Last resort: try empty dict (may fail validation but won't crash)
-                return response_model(**{})
+                # Use Pydantic v2 model_fields if available
+                if hasattr(response_model, 'model_fields'):
+                    for field_name, field_info in response_model.model_fields.items():
+                        if field_info.is_required():
+                            # Provide sensible defaults based on field type
+                            field_type = str(field_info.annotation) if hasattr(field_info, 'annotation') else ''
+                            if 'List' in field_type or field_name in ['updated_veps', 'alerts']:
+                                defaults[field_name] = []
+                            elif field_name == 'success':
+                                defaults[field_name] = False
+                            elif 'Dict' in field_type:
+                                defaults[field_name] = {}
+                            elif 'Optional' in field_type or field_name.endswith('_id'):
+                                defaults[field_name] = None
+                            else:
+                                defaults[field_name] = None
+                else:
+                    # Fallback for Pydantic v1 or models without model_fields
+                    # Check common field names
+                    if hasattr(response_model, '__annotations__'):
+                        annotations = response_model.__annotations__
+                        for field_name in annotations:
+                            if field_name in ['updated_veps', 'alerts']:
+                                defaults[field_name] = []
+                            elif field_name == 'success':
+                                defaults[field_name] = False
+                            else:
+                                defaults[field_name] = None
+                
+                return response_model(**defaults)
+            except Exception as final_error:
+                log(f"Could not create {response_model.__name__} with defaults: {final_error}", node=operation_type, level="ERROR")
+                # Last resort: try with minimal known defaults
+                minimal_defaults = {
+                    'updated_veps': [],
+                    'alerts': [],
+                    'success': False,
+                }
+                try:
+                    return response_model(**{k: v for k, v in minimal_defaults.items() if hasattr(response_model, k)})
+                except Exception:
+                    # This will fail but at least we tried everything
+                    raise ValueError(f"Could not create {response_model.__name__} with defaults. Error: {final_error}")
 
 
 def invoke_llm_check(

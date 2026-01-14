@@ -19,9 +19,10 @@ MCP_CONFIGS = {
     {
         "name": "github",
         "command": "sh",
-        # Use @ama-mcp/github instead of deprecated @modelcontextprotocol/server-github
+        # Note: @modelcontextprotocol/server-github is deprecated but still functional
+        # @ama-mcp/github doesn't work (Connection closed errors)
         # Redirect stderr to suppress startup messages; errors come through MCP protocol
-        "args": ["-c", "exec npx --yes @ama-mcp/github 2>/dev/null"],
+        "args": ["-c", "exec npx --yes @modelcontextprotocol/server-github 2>/dev/null"],
         "env": {}  # Add GITHUB_TOKEN to env if needed
     },
 
