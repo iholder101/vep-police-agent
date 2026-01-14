@@ -234,17 +234,19 @@ def get_mcp_tools_by_name(*mcp_names: str) -> List[Tool]:
                 pass
         elif name == "github":
             # Inject GitHub token from environment if available
+            # The MCP server expects GITHUB_PERSONAL_ACCESS_TOKEN, not GITHUB_TOKEN
             import os
             github_token = os.environ.get("GITHUB_TOKEN")
             if github_token:
-                config["env"]["GITHUB_TOKEN"] = github_token
-                # Also ensure it's in the merged environment that will be passed
+                # Set both for compatibility (GITHUB_PERSONAL_ACCESS_TOKEN is what the MCP server uses)
+                config["env"]["GITHUB_PERSONAL_ACCESS_TOKEN"] = github_token
+                config["env"]["GITHUB_TOKEN"] = github_token  # Also set for backward compatibility
                 # Log first 10 chars for verification (don't log full token for security)
                 token_preview = github_token[:10] + "..." if len(github_token) > 10 else "***"
-                log(f"GitHub token injected into MCP server environment (token: {token_preview})", node="mcp_factory", level="DEBUG")
+                log(f"GitHub token injected as GITHUB_PERSONAL_ACCESS_TOKEN (token: {token_preview})", node="mcp_factory", level="DEBUG")
                 # Verify token will be in final env
-                if config.get("env", {}).get("GITHUB_TOKEN"):
-                    log("GitHub token verified in config.env", node="mcp_factory", level="DEBUG")
+                if config.get("env", {}).get("GITHUB_PERSONAL_ACCESS_TOKEN"):
+                    log("GitHub token verified in config.env as GITHUB_PERSONAL_ACCESS_TOKEN", node="mcp_factory", level="DEBUG")
             else:
                 log("GITHUB_TOKEN not found in environment - API rate limits may apply", node="mcp_factory", level="WARNING")
         
