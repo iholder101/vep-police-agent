@@ -77,8 +77,14 @@ def parse_args():
 def setup_credentials(args):
     """Set up credentials from CLI arguments as environment variables."""
     if args.api_key:
-        os.environ["API_KEY"] = args.api_key
-        log("API key set from CLI argument", node="main")
+        # If it looks like a file path, read it; otherwise treat as API key string
+        if os.path.exists(args.api_key):
+            with open(args.api_key, "r") as f:
+                os.environ["API_KEY"] = f.read().strip()
+            log(f"API key loaded from file: {args.api_key}", node="main")
+        else:
+            os.environ["API_KEY"] = args.api_key
+            log("API key set from CLI argument", node="main")
     
     if args.google_token:
         # If it looks like a file path, read it; otherwise treat as JSON string
@@ -91,8 +97,14 @@ def setup_credentials(args):
             log("Google token set from CLI argument", node="main")
     
     if args.github_token:
-        os.environ["GITHUB_TOKEN"] = args.github_token
-        log("GitHub token set from CLI argument", node="main")
+        # If it looks like a file path, read it; otherwise treat as token string
+        if os.path.exists(args.github_token):
+            with open(args.github_token, "r") as f:
+                os.environ["GITHUB_TOKEN"] = f.read().strip()
+            log(f"GitHub token loaded from file: {args.github_token}", node="main")
+        else:
+            os.environ["GITHUB_TOKEN"] = args.github_token
+            log("GitHub token set from CLI argument", node="main")
     
     if args.debug:
         os.environ["DEBUG_MODE"] = args.debug
