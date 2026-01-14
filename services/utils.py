@@ -89,4 +89,4 @@ def log(message: str, node: str = "SYSTEM", level: str = "INFO") -> None:
         level: Log level (INFO, WARNING, ERROR, DEBUG)
     """
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{timestamp}] [{level:5s}] [{node:15s}] {message}")
+    print(f"[{timestamp}] [{level:5s}] [{node:15s}] {message}", flush=True)
