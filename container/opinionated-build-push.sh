@@ -54,6 +54,7 @@ else
     echo "Checking for existing tags starting from: ${BASE_TAG}"
     
     while tag_exists "${FINAL_TAG}"; do
+        echo "  Tag ${FINAL_TAG} exists, trying next..."
         if [ $suffix -eq 0 ]; then
             # First increment: add -1
             FINAL_TAG="${BASE_TAG}-1"
@@ -63,7 +64,6 @@ else
             suffix=$((suffix + 1))
             FINAL_TAG="${BASE_TAG}-${suffix}"
         fi
-        echo "  Tag ${FINAL_TAG} exists, trying next..."
     done
     
     echo "✓ Using tag: ${FINAL_TAG}"
