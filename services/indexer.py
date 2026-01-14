@@ -1001,8 +1001,12 @@ def index_vep_files() -> List[Dict[str, Any]]:
             
             def vep_sort_key(path: str) -> int:
                 # Extract VEP number from path (e.g., "veps/sig-compute/vep-0176.md" -> 176)
-                match = re.search(r'vep-(\d+)', path)
-                return int(match.group(1)) if match else 0
+                # Also try to extract from filename patterns
+                match = re.search(r'vep-(\d+)', path, re.IGNORECASE)
+                if match:
+                    return int(match.group(1))
+                # If no number in path, return 0 (will sort to end)
+                return 0
             
             vep_files = sorted(vep_files, key=vep_sort_key, reverse=True)
             
@@ -1040,8 +1044,13 @@ def index_vep_files() -> List[Dict[str, Any]]:
                         log(f"Failed to read VEP file {vep_file_path} after retries", node="indexer", level="DEBUG")
                         # Still include the filename even if we can't read it
                         filename = vep_file_path.split("/")[-1]
-                        vep_number_match = re.search(r'vep-(\d+)', vep_file_path)
-                        vep_number = vep_number_match.group(0) if vep_number_match else filename
+                        # Try to extract VEP number from path
+                        vep_number_match = re.search(r'vep-(\d+)', vep_file_path, re.IGNORECASE)
+                        if vep_number_match:
+                            vep_num = vep_number_match.group(1)
+                            vep_number = f"vep-{int(vep_num):04d}" if vep_num.isdigit() else f"vep-{vep_num}"
+                        else:
+                            vep_number = filename.replace('.md', '')
                         vep_data.append({
                             "filename": filename,
                             "path": vep_file_path,
@@ -1055,8 +1064,35 @@ def index_vep_files() -> List[Dict[str, Any]]:
                     if len(content_str) > 100 and not content_str.lower().startswith(("error", "failed", "cannot", "unable")):
                         # Extract just the filename for display
                         filename = vep_file_path.split("/")[-1]
-                        vep_number_match = re.search(r'vep-(\d+)', vep_file_path)
-                        vep_number = vep_number_match.group(0) if vep_number_match else filename
+                        
+                        # Extract VEP number from multiple sources:
+                        # 1. Try filename first (vep-0176.md)
+                        vep_number_match = re.search(r'vep-(\d+)', vep_file_path, re.IGNORECASE)
+                        vep_number = None
+                        
+                        if vep_number_match:
+                            vep_number = vep_number_match.group(0)  # e.g., "vep-0176"
+                        else:
+                            # 2. Try to extract from file content (look for "VEP 176", "VEP-176", "VEP #176", etc.)
+                            # Check first 2000 chars for VEP number references
+                            content_preview = content_str[:2000]
+                            vep_patterns = [
+                                r'VEP\s*#?\s*(\d+)',  # "VEP #176", "VEP 176"
+                                r'VEP-(\d+)',  # "VEP-176"
+                                r'vep\s*#?\s*(\d+)',  # "vep #176", "vep 176"
+                                r'vep-(\d+)',  # "vep-176"
+                            ]
+                            for pattern in vep_patterns:
+                                match = re.search(pattern, content_preview, re.IGNORECASE)
+                                if match:
+                                    vep_num = match.group(1)
+                                    # Format as vep-0176 (with leading zeros if needed)
+                                    vep_number = f"vep-{int(vep_num):04d}" if vep_num.isdigit() else f"vep-{vep_num}"
+                                    break
+                        
+                        # If still no VEP number found, use filename as fallback
+                        if not vep_number:
+                            vep_number = filename.replace('.md', '')
                         
                         vep_data.append({
                             "filename": filename,
@@ -1071,8 +1107,13 @@ def index_vep_files() -> List[Dict[str, Any]]:
                     log(f"Error reading VEP file {vep_file_path}: {e}", node="indexer", level="DEBUG")
                     # Still include the filename even if we can't read it
                     filename = vep_file_path.split("/")[-1]
-                    vep_number_match = re.search(r'vep-(\d+)', vep_file_path)
-                    vep_number = vep_number_match.group(0) if vep_number_match else filename
+                    # Try to extract VEP number from path
+                    vep_number_match = re.search(r'vep-(\d+)', vep_file_path, re.IGNORECASE)
+                    if vep_number_match:
+                        vep_num = vep_number_match.group(1)
+                        vep_number = f"vep-{int(vep_num):04d}" if vep_num.isdigit() else f"vep-{vep_num}"
+                    else:
+                        vep_number = filename.replace('.md', '')
                     
                     vep_data.append({
                         "filename": filename,
@@ -1134,6 +1175,50 @@ def create_indexed_context(days_back: Optional[int] = 365) -> Dict[str, Any]:
     vep_files_count = len(indexed_context["vep_files_index"])
     
     log(f"Indexed context created: release={release}, readme={readme_available}, issues={issues_count}, prs={prs_count}, vep_files={vep_files_count}", node="indexer")
+    
+    # Extract VEP numbers from issues and match them to files
+    # This helps identify VEPs that only exist as issues (no file yet)
+    vep_related_issues = [i for i in indexed_context.get("issues_index", []) if i.get("is_vep_related", False)]
+    vep_files_index = indexed_context.get("vep_files_index", [])
+    
+    # Extract VEP numbers from issues
+    vep_numbers_from_issues = set()
+    for issue in vep_related_issues:
+        title = issue.get("title", "")
+        body = issue.get("body_preview", "")
+        # Try to extract VEP number from title/body
+        vep_patterns = [
+            r'VEP\s*#?\s*(\d+)',
+            r'VEP-(\d+)',
+            r'vep\s*#?\s*(\d+)',
+            r'vep-(\d+)',
+        ]
+        for pattern in vep_patterns:
+            match = re.search(pattern, title + " " + body, re.IGNORECASE)
+            if match:
+                vep_num = match.group(1)
+                vep_numbers_from_issues.add(int(vep_num))
+                break
+    
+    # Extract VEP numbers from files
+    vep_numbers_from_files = set()
+    for vep_file in vep_files_index:
+        vep_number = vep_file.get("vep_number", "")
+        # Extract numeric part from vep_number (e.g., "vep-0176" -> 176)
+        match = re.search(r'vep-(\d+)', vep_number, re.IGNORECASE)
+        if match:
+            vep_numbers_from_files.add(int(match.group(1)))
+    
+    # Find VEPs that exist only as issues (no file)
+    vep_numbers_only_in_issues = vep_numbers_from_issues - vep_numbers_from_files
+    
+    log(f"  - VEP-related issues: {len(vep_related_issues)}", node="indexer")
+    log(f"  - VEP files with content: {sum(1 for f in vep_files_index if f.get('content'))}", node="indexer")
+    log(f"  - VEP files without content (errors): {sum(1 for f in vep_files_index if not f.get('content'))}", node="indexer")
+    log(f"  - Unique VEP numbers from issues: {len(vep_numbers_from_issues)}", node="indexer")
+    log(f"  - Unique VEP numbers from files: {len(vep_numbers_from_files)}", node="indexer")
+    if vep_numbers_only_in_issues:
+        log(f"  - VEPs only in issues (no file): {sorted(vep_numbers_only_in_issues)}", node="indexer")
     
     # DEBUG: Print all indexed VEP files and issues, then exit (only if debug mode is enabled)
     import os
