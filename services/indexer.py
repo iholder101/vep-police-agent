@@ -5,6 +5,7 @@ ensuring the LLM has a complete picture of what exists rather than having to dis
 """
 
 import re
+import json
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 from services.utils import log
@@ -42,8 +43,18 @@ def index_release_schedule() -> Optional[Dict[str, Any]]:
     try:
         tools = get_mcp_tools_by_name("github")
         
-        # Find file reading tool
+        # Find tools for directory listing and file reading
+        list_dir_tool = None
         get_file_tool = None
+        
+        # Look for directory listing tool first
+        for tool in tools:
+            tool_name_lower = tool.name.lower()
+            if "list" in tool_name_lower and ("directory" in tool_name_lower or "contents" in tool_name_lower or "dir" in tool_name_lower):
+                list_dir_tool = tool
+                break
+        
+        # Also find file reading tool for later
         tool_names_to_try = [
             "get_file_contents",
             "read_file",
@@ -61,71 +72,153 @@ def index_release_schedule() -> Optional[Dict[str, Any]]:
             log(f"Could not find file reading tool. Available tools: {[t.name for t in tools]}", node="indexer", level="WARNING")
             return None
         
-        # First, try to get the releases directory listing
-        # GitHub API might return directory contents as JSON or we might need to parse HTML
-        try:
-            releases_dir_content = get_file_tool.func(
-                owner="kubevirt",
-                repo="sig-release",
-                path="releases"
-            )
-            
-            # Try to extract version directories from the content
-            # This could be JSON, HTML, or markdown listing
-            content_str = str(releases_dir_content)
-            
-            # Extract version patterns (v1.8, v1.9, v1.10, v1.11, etc.)
-            version_pattern = r'v\d+\.\d+'
-            found_versions = list(set(re.findall(version_pattern, content_str)))
-            
-            if found_versions:
-                # Sort numerically (v1.11 > v1.8)
-                sorted_versions = _sort_versions_numerically(found_versions)
-                log(f"Found {len(sorted_versions)} release versions: {sorted_versions[:5]}...", node="indexer")
-                
-                # Try the newest versions first
-                for version in sorted_versions:
+        # First, try to list the releases directory
+        found_versions = []
+        
+        if list_dir_tool:
+            try:
+                log("Using directory listing tool to get releases", node="indexer")
+                # Try different parameter formats for directory listing
+                try:
+                    dir_listing = list_dir_tool.func(
+                        owner="kubevirt",
+                        repo="sig-release",
+                        path="releases"
+                    )
+                except TypeError:
                     try:
-                        schedule_path = f"releases/{version}/schedule.md"
-                        log(f"Trying to fetch schedule for {version}", node="indexer")
-                        
-                        # Try different parameter formats
+                        dir_listing = list_dir_tool.func(
+                            path="kubevirt/sig-release/releases"
+                        )
+                    except TypeError:
+                        dir_listing = list_dir_tool.func(
+                            owner="kubevirt",
+                            repo="sig-release",
+                            path="releases",
+                            branch="main"
+                        )
+                
+                # Parse directory listing - could be JSON, string, etc.
+                listing_str = str(dir_listing)
+                log(f"Directory listing received (type: {type(dir_listing)}, length: {len(listing_str)})", node="indexer")
+                log(f"Directory listing content (first 2000 chars): {listing_str[:2000]}", node="indexer", level="DEBUG")
+                
+                # Try to parse as JSON first (GitHub API often returns JSON)
+                listing_data = None
+                try:
+                    if isinstance(dir_listing, str):
+                        listing_data = json.loads(dir_listing)
+                    elif isinstance(dir_listing, (list, dict)):
+                        listing_data = dir_listing
+                    
+                    # If it's a list of file/dir objects, extract names
+                    if isinstance(listing_data, list):
+                        log(f"Parsed as JSON list with {len(listing_data)} items", node="indexer")
+                        for item in listing_data:
+                            if isinstance(item, dict):
+                                # Try various field names that might contain the directory name
+                                name = (item.get("name") or item.get("path") or 
+                                       item.get("filename") or item.get("file_name") or "")
+                                if name:
+                                    # Extract version from name (e.g., "v1.8" from "v1.8" or "releases/v1.8")
+                                    version_match = re.search(r'v\d+\.\d+', name)
+                                    if version_match:
+                                        found_versions.append(version_match.group())
+                            elif isinstance(item, str):
+                                version_match = re.search(r'v\d+\.\d+', item)
+                                if version_match:
+                                    found_versions.append(version_match.group())
+                    elif isinstance(listing_data, dict):
+                        # Might be a dict with a "tree" or "items" key
+                        for key in ["tree", "items", "contents", "files"]:
+                            if key in listing_data and isinstance(listing_data[key], list):
+                                for item in listing_data[key]:
+                                    if isinstance(item, dict):
+                                        name = (item.get("name") or item.get("path") or 
+                                               item.get("filename") or "")
+                                        if name:
+                                            version_match = re.search(r'v\d+\.\d+', name)
+                                            if version_match:
+                                                found_versions.append(version_match.group())
+                except (json.JSONDecodeError, TypeError, AttributeError) as e:
+                    log(f"Could not parse as JSON: {e}", node="indexer", level="DEBUG")
+                
+                # Extract version patterns from string (fallback for non-JSON responses)
+                version_pattern = r'v\d+\.\d+'
+                string_versions = re.findall(version_pattern, listing_str)
+                found_versions.extend(string_versions)
+                found_versions = list(set(found_versions))  # Remove duplicates
+                
+                log(f"Extracted {len(found_versions)} unique versions: {found_versions}", node="indexer")
+                
+            except Exception as e:
+                log(f"Error listing releases directory: {e}", node="indexer", level="DEBUG")
+        
+        # Fallback: try to get directory as file (some APIs return directory contents)
+        if not found_versions:
+            try:
+                log("Trying to get releases directory as file content", node="indexer")
+                releases_dir_content = get_file_tool.func(
+                    owner="kubevirt",
+                    repo="sig-release",
+                    path="releases"
+                )
+                
+                content_str = str(releases_dir_content)
+                log(f"Directory content (first 500 chars): {content_str[:500]}", node="indexer", level="DEBUG")
+                
+                # Extract version patterns
+                version_pattern = r'v\d+\.\d+'
+                found_versions = list(set(re.findall(version_pattern, content_str)))
+                
+            except Exception as e:
+                log(f"Error reading releases directory as file: {e}", node="indexer", level="DEBUG")
+        
+        if found_versions:
+            # Sort numerically (v1.11 > v1.8)
+            sorted_versions = _sort_versions_numerically(found_versions)
+            log(f"Found {len(sorted_versions)} release versions: {sorted_versions[:5]}...", node="indexer")
+            
+            # Try the newest versions first
+            for version in sorted_versions:
+                try:
+                    schedule_path = f"releases/{version}/schedule.md"
+                    log(f"Trying to fetch schedule for {version}", node="indexer")
+                    
+                    # Try different parameter formats
+                    try:
+                        schedule_content = get_file_tool.func(
+                            owner="kubevirt",
+                            repo="sig-release",
+                            path=schedule_path
+                        )
+                    except TypeError:
                         try:
+                            schedule_content = get_file_tool.func(
+                                path=f"kubevirt/sig-release/{schedule_path}"
+                            )
+                        except TypeError:
                             schedule_content = get_file_tool.func(
                                 owner="kubevirt",
                                 repo="sig-release",
-                                path=schedule_path
+                                path=schedule_path,
+                                branch="main"
                             )
-                        except TypeError:
-                            try:
-                                schedule_content = get_file_tool.func(
-                                    path=f"kubevirt/sig-release/{schedule_path}"
-                                )
-                            except TypeError:
-                                schedule_content = get_file_tool.func(
-                                    owner="kubevirt",
-                                    repo="sig-release",
-                                    path=schedule_path,
-                                    branch="main"
-                                )
-                        
-                        if schedule_content and len(str(schedule_content)) > 100:
-                            log(f"Found release schedule for {version} (newest available)", node="indexer")
-                            content_str = str(schedule_content)
-                            return {
-                                "current_release": version,
-                                "schedule_path": schedule_path,
-                                "schedule_content": content_str[:10000] if len(content_str) > 10000 else content_str,
-                                "all_versions_found": sorted_versions,
-                            }
-                    except Exception as e:
-                        log(f"Error fetching schedule for {version}: {e}", node="indexer", level="DEBUG")
-                        continue
-            else:
-                log("Could not extract version numbers from releases directory", node="indexer", level="WARNING")
-                
-        except Exception as e:
-            log(f"Error reading releases directory: {e}", node="indexer", level="WARNING")
+                    
+                    if schedule_content and len(str(schedule_content)) > 100:
+                        log(f"Found release schedule for {version} (newest available)", node="indexer")
+                        content_str = str(schedule_content)
+                        return {
+                            "current_release": version,
+                            "schedule_path": schedule_path,
+                            "schedule_content": content_str[:10000] if len(content_str) > 10000 else content_str,
+                            "all_versions_found": sorted_versions,
+                        }
+                except Exception as e:
+                    log(f"Error fetching schedule for {version}: {e}", node="indexer", level="DEBUG")
+                    continue
+        else:
+            log("Could not extract version numbers from releases directory", node="indexer", level="WARNING")
         
         # Fallback: try common recent versions if directory listing failed
         log("Falling back to trying common recent versions", node="indexer")
