@@ -241,6 +241,54 @@ If you need both issues and PRs, make two separate queries.""",
         "get_pull_request": """Get details of a specific pull request by number.
 - Requires: owner, repo, pull_number
 - Returns full PR details including diff, reviews, comments, etc.""",
+        
+        # Google Sheets MCP tools
+        "create_spreadsheet": """Create a new Google Spreadsheet.
+- Requires: title (string) - the name of the spreadsheet
+- Returns: spreadsheetId and other metadata
+- Note: Service accounts have limited Drive storage quota. If you get a quota error, use an existing shared spreadsheet instead.""",
+        
+        "read_range": """Read data from a specific range in a Google Sheet.
+- Requires: spreadsheetId (string), range (string, e.g., "Sheet1!A1:C10")
+- Returns: 2D array of cell values
+- Use this to check existing data before updating""",
+        
+        "write_range": """Write data to a specific range in a Google Sheet.
+- Requires: spreadsheetId (string), range (string, e.g., "Sheet1!A1:C10"), values (2D array)
+- Overwrites existing data in the range
+- Use this to write table data. After writing, format the sheet using other tools.""",
+        
+        "update_cells": """Update specific cells with values and/or formatting.
+- Requires: spreadsheetId (string), updates (array of cell update objects)
+- More flexible than write_range - can update individual cells with formatting
+- Use this for precise cell updates or when you need to set formatting along with values""",
+        
+        "format_cells": """Apply formatting to a range of cells.
+- Requires: spreadsheetId (string), range (string), format (object with formatting properties)
+- Format properties can include: backgroundColor, textFormat (bold, italic, etc.), borders, etc.
+- Use this to format the header row (bold text, background color) and data rows
+- Example format: {"backgroundColor": {"red": 0.9, "green": 0.9, "blue": 0.9}, "textFormat": {"bold": true}}""",
+        
+        "freeze_rows": """Freeze rows so they stay visible when scrolling.
+- Requires: spreadsheetId (string), sheetId (integer, optional), frozenRowCount (integer)
+- Use this to freeze the header row (row 1) so it stays visible
+- Typical usage: freeze_rows with frozenRowCount=1 to freeze the header""",
+        
+        "create_filter": """Create a filter on a range (typically the header row).
+- Requires: spreadsheetId (string), range (string, e.g., "Sheet1!A1:Z1" for header row)
+- Enables filter dropdown arrows in the header row
+- Use this after writing data to make the table filterable
+- This creates a proper "table" experience in Google Sheets""",
+        
+        "list_spreadsheets": """List spreadsheets accessible to the service account.
+- Requires: query (string, optional) - search query
+- Returns: array of spreadsheet metadata
+- Use this to find existing spreadsheets or verify access""",
+        
+        "get_spreadsheet": """Get metadata about a specific spreadsheet.
+- Requires: spreadsheetId (string)
+- Returns: spreadsheet metadata including sheet names, properties, etc.
+- Use this to check if a spreadsheet exists and get its structure""",
     }
     
     return docs.get(tool_name, "")
