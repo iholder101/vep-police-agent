@@ -43,28 +43,115 @@ def fetch_veps_node(state: VEPState) -> Any:
     debug_mode = os.environ.get("DEBUG_MODE")
     if debug_mode == "test-sheets":
         log("Debug mode 'test-sheets' enabled - creating minimal mock VEPs for sheets testing", node="fetch_veps", level="DEBUG")
-        # Create a few minimal VEPs for testing sheets
+        
+        # Import required models for mock VEPs
+        from state import VEPMilestone, VEPCompliance, VEPActivity
+        
+        # Create a few minimal VEPs for testing sheets with all required fields
+        now = datetime.now()
         mock_veps = [
             VEPInfo(
+                tracking_issue_id=1001,
                 name="vep-001",
                 title="Test VEP 1",
-                owning_sig="sig-compute",
-                target_release="v1.8",
-                status="open"
+                owner="testuser1",
+                owning_sig="compute",
+                status="open",
+                last_updated=now,
+                created_at=now,
+                current_milestone=VEPMilestone(
+                    version="v1.8",
+                    status="Tracked",
+                    promotion_phase="Net New",
+                    exception_phase="None",
+                    target_stage="Alpha",
+                    all_code_prs_merged=False
+                ),
+                compliance=VEPCompliance(
+                    template_complete=True,
+                    all_sigs_signed_off=False,
+                    vep_merged=True,
+                    prs_linked=True,
+                    docs_pr_created=False,
+                    labels_valid=True
+                ),
+                activity=VEPActivity(
+                    last_activity=now,
+                    days_since_update=5,
+                    review_lag_days=None
+                ),
+                tracking_issue=None,
+                target_release="v1.8"
             ),
             VEPInfo(
+                tracking_issue_id=1002,
                 name="vep-002",
                 title="Test VEP 2",
-                owning_sig="sig-network",
-                target_release="v1.8",
-                status="in-progress"
+                owner="testuser2",
+                owning_sig="network",
+                status="in-progress",
+                last_updated=now,
+                created_at=now,
+                current_milestone=VEPMilestone(
+                    version="v1.8",
+                    status="Tracked",
+                    promotion_phase="Remaining",
+                    exception_phase="None",
+                    target_stage="Beta",
+                    all_code_prs_merged=False
+                ),
+                compliance=VEPCompliance(
+                    has_tracking_issue=True,
+                    has_vep_document=True,
+                    has_target_release=True,
+                    has_owner=True,
+                    has_sig_label=True,
+                    compliance_score=1.0,
+                    missing_items=[]
+                ),
+                activity=VEPActivity(
+                    days_since_last_update=2,
+                    days_since_creation=45,
+                    recent_activity=True,
+                    activity_score=0.9
+                ),
+                tracking_issue=None,
+                target_release="v1.8"
             ),
             VEPInfo(
+                tracking_issue_id=1003,
                 name="vep-003",
                 title="Test VEP 3",
-                owning_sig="sig-storage",
-                target_release="v1.9",
-                status="closed"
+                owner="testuser3",
+                owning_sig="storage",
+                status="closed",
+                last_updated=now,
+                created_at=now,
+                current_milestone=VEPMilestone(
+                    version="v1.9",
+                    status="Complete",
+                    promotion_phase="Graduating",
+                    exception_phase="None",
+                    target_stage="Stable",
+                    all_code_prs_merged=True
+                ),
+                compliance=VEPCompliance(
+                    has_tracking_issue=True,
+                    has_vep_document=True,
+                    has_target_release=True,
+                    has_owner=True,
+                    has_sig_label=True,
+                    compliance_score=1.0,
+                    missing_items=[]
+                ),
+                activity=VEPActivity(
+                    days_since_last_update=0,
+                    days_since_creation=60,
+                    recent_activity=False,
+                    activity_score=1.0
+                ),
+                tracking_issue=None,
+                target_release="v1.9"
             ),
         ]
         log(f"Created {len(mock_veps)} mock VEPs for sheets testing", node="fetch_veps", level="DEBUG")
