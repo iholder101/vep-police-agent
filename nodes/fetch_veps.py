@@ -193,9 +193,17 @@ Step 2: Query All Issues in kubevirt/enhancements
   * Are tracking issues for enhancements
 - VEP tracking issues typically link to VEP documents in the veps/ directory
 
-Step 3: Read VEP Documents from veps/ Directory
-- List all files in kubevirt/enhancements/veps/ directory
-- Read each VEP markdown file (vep-*.md format)
+Step 3: Process ALL VEP Documents from Index (CRITICAL - DO NOT SKIP ANY)
+- The indexed_context["vep_files_index"] contains ALL VEP files - you MUST process EVERY ONE
+- Count how many VEP files are in the index - this is your target count
+- For EACH VEP file in the index:
+  * Read the file content (it may already be in the index, but read it if needed)
+  * Extract the VEP number (e.g., vep-0176, vep-0168, vep-0109, etc.)
+  * Extract title, owner, SIG, target release, and all metadata
+  * Find the corresponding tracking issue (match by VEP number)
+  * Create a VEPInfo object for this VEP
+- DO NOT skip any files - if the index has 30 files, create 30 VEPInfo objects
+- VEP files are in subdirectories like veps/NNNN-vep-name/vep-NNNN.md
 - Each VEP document contains:
   * VEP number (e.g., vep-1234)
   * Title and description
@@ -213,8 +221,11 @@ Step 4: Find Related PRs
   * Linking implementation PRs to VEP tracking issues
 - Link PRs to their corresponding VEPs
 
-Step 5: Create VEPInfo Objects
-For each discovered VEP, create a VEPInfo object with:
+Step 5: Create VEPInfo Objects for ALL Discovered VEPs
+- You MUST create a VEPInfo object for EVERY VEP you found
+- Count your VEPInfo objects - you should have ~25-30 VEPs
+- If you have fewer than 20, you are missing VEPs - go back and check the index again
+- For each discovered VEP, create a VEPInfo object with:
 - tracking_issue_id: The GitHub issue number that tracks this VEP
 - name: VEP identifier (e.g., "vep-1234")
 - title: VEP title from the document or issue
@@ -228,14 +239,32 @@ For each discovered VEP, create a VEPInfo object with:
 - activity: Initial activity data (can be minimal, monitoring checks will fill in)
 - target_release: Target release version (should match current development cycle if active)
 
+CRITICAL REQUIREMENTS - YOU MUST FIND ALL VEPs:
+- The indexed context provides a COMPLETE list of VEP files and issues - you MUST process EVERY SINGLE ONE
+- Count the VEP files in indexed_context["vep_files_index"] - there should be ~30 VEP files
+- Count the VEP-related issues in indexed_context["issues_index"] - process ALL of them
+- For EACH VEP file in the index, you MUST:
+  1. Read the file content (it's in the index, but verify by reading if needed)
+  2. Extract the VEP number (e.g., vep-0176, vep-0168, etc.)
+  3. Find the corresponding tracking issue
+  4. Create a VEPInfo object
+- For EACH VEP-related issue in the index, you MUST:
+  1. Check if it corresponds to a VEP file
+  2. If no file exists, it might be a new VEP - still create a VEPInfo from the issue
+  3. Extract VEP number from issue title/body if present
+- DO NOT SKIP ANY ITEMS - if the index shows 30 VEP files, you must create 30 VEPInfo objects
+- If you find fewer than 25 VEPs, you are MISSING some - go back and check the index again
+- The indexed context is your source of truth - it lists everything that exists
+
 IMPORTANT GUIDANCE:
 - You will receive INDEXED CONTEXT that pre-lists all issues and VEP files - USE THIS COMPREHENSIVE LIST
 - The indexed context shows you exactly what exists - check EVERY item in the index systematically
 - Do not rely on search/filtering - use the complete index provided to ensure nothing is missed
 - The current development cycle version is critical - VEPs targeting this version are most relevant
 - If you find existing VEPs in the state, merge/update them with new information rather than creating duplicates
-- A typical release cycle has 20-30+ VEPs - if you find fewer, you're likely missing some
+- A typical release cycle has 25-30+ VEPs - if you find fewer, you're likely missing some
 - The indexed context eliminates guesswork - you know exactly what issues and files exist
+- Process the index systematically: for each VEP file, create a VEPInfo; for each VEP issue without a file, create a VEPInfo
 
 Use GitHub MCP tools to:
 - Search/list ALL issues in kubevirt/enhancements repository
