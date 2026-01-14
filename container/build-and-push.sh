@@ -14,7 +14,52 @@ fi
 QUAY_USERNAME="${QUAY_USERNAME:-$DEFAULT_QUAY_USERNAME}"
 IMAGE_NAME="${IMAGE_NAME:-vep-police-agent}"
 
-# Function to check if a tag exists in quay.io
+# Function to fetch all tags for the image from quay.io
+fetch_all_tags() {
+    local image_name="quay.io/${QUAY_USERNAME}/${IMAGE_NAME}"
+    
+    # Use skopeo if available (fastest for listing tags)
+    if command -v skopeo &>/dev/null; then
+        # List all tags using skopeo (returns JSON)
+        local json_output=$(timeout 30 skopeo list-tags "docker://${image_name}" 2>/dev/null || echo "")
+        
+        if [ -n "$json_output" ]; then
+            # Parse JSON - extract tags array
+            # skopeo list-tags returns: {"Repository":"...","Tags":["tag1","tag2",...]}
+            if command -v jq &>/dev/null; then
+                # Use jq to parse JSON properly (best method)
+                jq -r '.Tags[]? // empty' <<< "$json_output" 2>/dev/null
+                return
+            else
+                # Fallback: parse JSON with grep/sed (works for simple cases)
+                # Extract content between "Tags":[" and "]"
+                echo "$json_output" | sed -n 's/.*"Tags":\[\([^]]*\)\].*/\1/p' | \
+                    sed 's/"//g' | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | \
+                    grep -v '^$'
+                return
+            fi
+        fi
+    fi
+    
+    # Return empty if we couldn't fetch tags
+    return 1
+}
+
+# Function to check if a tag exists in a list of tags
+tag_exists_in_list() {
+    local tag=$1
+    shift
+    local tags=("$@")
+    
+    for existing_tag in "${tags[@]}"; do
+        if [ "$existing_tag" = "$tag" ]; then
+            return 0  # Tag exists
+        fi
+    done
+    return 1  # Tag does not exist
+}
+
+# Function to check if a tag exists in quay.io (used as fallback)
 tag_exists() {
     local tag=$1
     local image_name="quay.io/${QUAY_USERNAME}/${IMAGE_NAME}:${tag}"
@@ -50,24 +95,58 @@ else
     FINAL_TAG="${BASE_TAG}"
     suffix=0
     
-    echo "Checking for existing tags starting from: ${BASE_TAG}"
+    # Fetch all existing tags once (much faster than checking one by one)
+    echo "Fetching existing tags from quay.io..."
+    mapfile -t existing_tags < <(fetch_all_tags)
     
-    # Check if base tag exists, increment suffix if needed
-    while tag_exists "${FINAL_TAG}"; do
-        echo "  Tag ${FINAL_TAG} exists, trying next..."
-        if [ $suffix -eq 0 ]; then
-            FINAL_TAG="${BASE_TAG}-1"
-            suffix=1
-        else
-            suffix=$((suffix + 1))
-            FINAL_TAG="${BASE_TAG}-${suffix}"
-        fi
-        # Safety limit to prevent infinite loops
-        if [ $suffix -gt 100 ]; then
-            echo "WARNING: Reached maximum suffix limit (100), using tag: ${FINAL_TAG}"
-            break
-        fi
-    done
+    if [ ${#existing_tags[@]} -eq 0 ]; then
+        # If we couldn't fetch tags (e.g., no skopeo), fall back to checking one by one
+        echo "Could not fetch tag list, checking tags individually..."
+        FINAL_TAG="${BASE_TAG}"
+        suffix=0
+        
+        echo "Checking for existing tags starting from: ${BASE_TAG}"
+        
+        # Fallback: check tags one by one (old method)
+        while tag_exists "${FINAL_TAG}"; do
+            echo "  Tag ${FINAL_TAG} exists, trying next..."
+            if [ $suffix -eq 0 ]; then
+                FINAL_TAG="${BASE_TAG}-1"
+                suffix=1
+            else
+                suffix=$((suffix + 1))
+                FINAL_TAG="${BASE_TAG}-${suffix}"
+            fi
+            # Safety limit to prevent infinite loops
+            if [ $suffix -gt 100 ]; then
+                echo "WARNING: Reached maximum suffix limit (100), using tag: ${FINAL_TAG}"
+                break
+            fi
+        done
+    else
+        # Use the fetched tag list (much faster)
+        echo "Found ${#existing_tags[@]} existing tag(s)"
+        FINAL_TAG="${BASE_TAG}"
+        suffix=0
+        
+        echo "Checking for existing tags starting from: ${BASE_TAG}"
+        
+        while tag_exists_in_list "${FINAL_TAG}" "${existing_tags[@]}"; do
+            echo "  Tag ${FINAL_TAG} exists, trying next..."
+            if [ $suffix -eq 0 ]; then
+                FINAL_TAG="${BASE_TAG}-1"
+                suffix=1
+            else
+                suffix=$((suffix + 1))
+                FINAL_TAG="${BASE_TAG}-${suffix}"
+            fi
+            # Safety limit to prevent infinite loops
+            if [ $suffix -gt 100 ]; then
+                echo "WARNING: Reached maximum suffix limit (100), using tag: ${FINAL_TAG}"
+                break
+            fi
+        done
+    fi
     
     echo "✓ Using tag: ${FINAL_TAG}"
 fi
