@@ -739,8 +739,9 @@ def index_vep_files() -> List[Dict[str, Any]]:
             log(f"Retrieved VEPs directory content (length: {len(content_str)})", node="indexer")
             log(f"Directory content preview (first 1000 chars): {content_str[:1000]}", node="indexer", level="DEBUG")
             
-            # Parse directory listing to extract VEP file names
-            vep_files = []
+            # Parse directory listing to find subdirectories and VEP files
+            vep_files = []  # List of (subdirectory, filename) tuples or just filenames
+            subdirectories = []  # List of subdirectory paths to search
             
             # Try to parse as JSON first
             try:
@@ -756,17 +757,23 @@ def index_vep_files() -> List[Dict[str, Any]]:
                         if isinstance(item, dict):
                             name = item.get("name") or item.get("path") or item.get("filename") or ""
                             file_type = item.get("type", "")
-                            # Handle both "vep-0176.md" and "veps/vep-0176.md" formats
-                            if name:
-                                # Extract just the filename if it's a path
+                            path = item.get("path", name)
+                            
+                            if file_type == "dir":
+                                # It's a subdirectory - we'll search it for VEP files
+                                if name and name not in ["NNNN-vep-template"]:  # Skip template directory
+                                    subdirectories.append(path if "/" in path else f"veps/{name}")
+                            elif file_type == "file":
+                                # It's a file - check if it's a VEP file
                                 basename = name.split("/")[-1] if "/" in name else name
-                                # Only include .md files that match vep-*.md pattern
-                                if file_type == "file" and re.match(r'vep-\d+\.md$', basename):
-                                    vep_files.append(basename)
+                                if re.match(r'vep-\d+\.md$', basename):
+                                    # Store full path for reading later
+                                    full_path = path if "/" in path else f"veps/{name}"
+                                    vep_files.append(full_path)
                         elif isinstance(item, str):
                             basename = item.split("/")[-1] if "/" in item else item
                             if re.match(r'vep-\d+\.md$', basename):
-                                vep_files.append(basename)
+                                vep_files.append(item if "/" in item else f"veps/{item}")
                 elif isinstance(listing_data, dict):
                     # Try common keys that might contain file list
                     for key in ["tree", "items", "contents", "files"]:
@@ -775,16 +782,76 @@ def index_vep_files() -> List[Dict[str, Any]]:
                                 if isinstance(item, dict):
                                     name = item.get("name") or item.get("path") or item.get("filename") or ""
                                     file_type = item.get("type", "")
-                                    if name:
+                                    path = item.get("path", name)
+                                    
+                                    if file_type == "dir":
+                                        # It's a subdirectory
+                                        if name and name not in ["NNNN-vep-template"]:
+                                            subdirectories.append(path if "/" in path else f"veps/{name}")
+                                    elif file_type == "file":
                                         basename = name.split("/")[-1] if "/" in name else name
-                                        if file_type == "file" and re.match(r'vep-\d+\.md$', basename):
-                                            vep_files.append(basename)
+                                        if re.match(r'vep-\d+\.md$', basename):
+                                            full_path = path if "/" in path else f"veps/{name}"
+                                            vep_files.append(full_path)
                                 elif isinstance(item, str):
                                     basename = item.split("/")[-1] if "/" in item else item
                                     if re.match(r'vep-\d+\.md$', basename):
-                                        vep_files.append(basename)
+                                        vep_files.append(item if "/" in item else f"veps/{item}")
             except (json.JSONDecodeError, TypeError, AttributeError) as e:
                 log(f"Could not parse directory listing as JSON, trying regex extraction: {e}", node="indexer", level="DEBUG")
+            
+            # Now search each subdirectory for VEP files
+            log(f"Found {len(subdirectories)} subdirectories to search: {subdirectories[:5]}{'...' if len(subdirectories) > 5 else ''}", node="indexer", level="DEBUG")
+            
+            for subdir in subdirectories:
+                try:
+                    try:
+                        subdir_content = get_file_tool.func(
+                            owner="kubevirt",
+                            repo="enhancements",
+                            path=subdir
+                        )
+                    except TypeError:
+                        subdir_content = get_file_tool.func(
+                            path=f"kubevirt/enhancements/{subdir}"
+                        )
+                    
+                    subdir_str = str(subdir_content)
+                    if len(subdir_str) < 100:
+                        continue
+                    
+                    # Parse subdirectory listing
+                    try:
+                        if isinstance(subdir_content, str):
+                            subdir_data = json.loads(subdir_content)
+                        elif isinstance(subdir_content, (list, dict)):
+                            subdir_data = subdir_content
+                        else:
+                            subdir_data = None
+                        
+                        if isinstance(subdir_data, list):
+                            for item in subdir_data:
+                                if isinstance(item, dict):
+                                    name = item.get("name") or item.get("path") or ""
+                                    file_type = item.get("type", "")
+                                    path = item.get("path", name)
+                                    
+                                    if file_type == "file":
+                                        basename = name.split("/")[-1] if "/" in name else name
+                                        if re.match(r'vep-\d+\.md$', basename):
+                                            full_path = path if "/" in path else f"{subdir}/{name}"
+                                            vep_files.append(full_path)
+                    except (json.JSONDecodeError, TypeError, AttributeError):
+                        # Fallback: extract using regex
+                        vep_pattern = r'vep-\d+\.md'
+                        matches = re.findall(vep_pattern, subdir_str)
+                        for match in matches:
+                            full_path = f"{subdir}/{match}"
+                            if full_path not in vep_files:
+                                vep_files.append(full_path)
+                except Exception as e:
+                    log(f"Error reading subdirectory {subdir}: {e}", node="indexer", level="DEBUG")
+                    continue
             
             # Fallback: extract VEP file names using regex from string (handles paths too)
             if not vep_files:
@@ -793,46 +860,61 @@ def index_vep_files() -> List[Dict[str, Any]]:
                 vep_files = list(set(matches))  # Remove duplicates
                 log(f"Extracted {len(vep_files)} VEP files using regex fallback", node="indexer", level="DEBUG")
             
-            # Sort VEP files numerically (vep-0176 > vep-0174)
-            def vep_sort_key(name: str) -> int:
-                match = re.search(r'vep-(\d+)', name)
+            # Remove duplicates and sort VEP files numerically (vep-0176 > vep-0174)
+            vep_files = list(set(vep_files))  # Remove duplicates first
+            
+            def vep_sort_key(path: str) -> int:
+                # Extract VEP number from path (e.g., "veps/sig-compute/vep-0176.md" -> 176)
+                match = re.search(r'vep-(\d+)', path)
                 return int(match.group(1)) if match else 0
             
-            vep_files = sorted(set(vep_files), key=vep_sort_key, reverse=True)
+            vep_files = sorted(vep_files, key=vep_sort_key, reverse=True)
             
-            log(f"Found {len(vep_files)} VEP files: {vep_files[:10]}{'...' if len(vep_files) > 10 else ''}", node="indexer")
+            log(f"Found {len(vep_files)} VEP files: {[f.split('/')[-1] for f in vep_files[:10]]}{'...' if len(vep_files) > 10 else ''}", node="indexer")
             
             # Read each VEP file and include its content
             vep_data = []
-            for vep_file in vep_files:
+            for vep_file_path in vep_files:
                 try:
+                    # vep_file_path is already a full path like "veps/sig-compute/vep-0176.md"
                     try:
                         vep_content = get_file_tool.func(
                             owner="kubevirt",
                             repo="enhancements",
-                            path=f"veps/{vep_file}"
+                            path=vep_file_path
                         )
                     except TypeError:
                         vep_content = get_file_tool.func(
-                            path=f"kubevirt/enhancements/veps/{vep_file}"
+                            path=f"kubevirt/enhancements/{vep_file_path}"
                         )
                     
                     content_str = str(vep_content)
                     if len(content_str) > 100 and not content_str.lower().startswith(("error", "failed", "cannot", "unable")):
+                        # Extract just the filename for display
+                        filename = vep_file_path.split("/")[-1]
+                        vep_number_match = re.search(r'vep-(\d+)', vep_file_path)
+                        vep_number = vep_number_match.group(0) if vep_number_match else filename
+                        
                         vep_data.append({
-                            "filename": vep_file,
-                            "vep_number": re.search(r'vep-(\d+)', vep_file).group(0) if re.search(r'vep-(\d+)', vep_file) else vep_file,
+                            "filename": filename,
+                            "path": vep_file_path,  # Full path for reference
+                            "vep_number": vep_number,
                             "content": content_str[:50000] if len(content_str) > 50000 else content_str,  # Limit to 50k chars per file
                             "content_length": len(content_str),
                         })
                     else:
-                        log(f"Skipping {vep_file} - suspicious content (length: {len(content_str)})", node="indexer", level="DEBUG")
+                        log(f"Skipping {vep_file_path} - suspicious content (length: {len(content_str)})", node="indexer", level="DEBUG")
                 except Exception as e:
-                    log(f"Error reading VEP file {vep_file}: {e}", node="indexer", level="DEBUG")
+                    log(f"Error reading VEP file {vep_file_path}: {e}", node="indexer", level="DEBUG")
                     # Still include the filename even if we can't read it
+                    filename = vep_file_path.split("/")[-1]
+                    vep_number_match = re.search(r'vep-(\d+)', vep_file_path)
+                    vep_number = vep_number_match.group(0) if vep_number_match else filename
+                    
                     vep_data.append({
-                        "filename": vep_file,
-                        "vep_number": re.search(r'vep-(\d+)', vep_file).group(0) if re.search(r'vep-(\d+)', vep_file) else vep_file,
+                        "filename": filename,
+                        "path": vep_file_path,
+                        "vep_number": vep_number,
                         "content": None,
                         "error": str(e),
                     })
