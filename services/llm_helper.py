@@ -53,7 +53,8 @@ def invoke_llm_with_tools(
         messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
         
         # First, handle tool calls (if any) - do this without structured output
-        max_iterations = 10
+        # Increased for fetch_veps which may need to read many issue details
+        max_iterations = 30 if operation_type == "fetch_veps" else 10
         iteration = 0
         while iteration < max_iterations:
             iteration += 1

@@ -362,19 +362,82 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
                     log(f"Available tools: {[t.name for t in tools]}", node="indexer", level="DEBUG")
                     return []
                 log(f"Retrieved issues data as string (length: {len(issues_result)})", node="indexer")
+                # Try to parse as JSON
+                try:
+                    parsed_issues = json.loads(issues_result)
+                    if isinstance(parsed_issues, list):
+                        # Process as list
+                        issues = []
+                        for issue in parsed_issues:
+                            if isinstance(issue, dict):
+                                labels = [l.get("name") if isinstance(l, dict) else l for l in issue.get("labels", [])]
+                                title = issue.get("title", "")
+                                body = issue.get("body", "") or ""
+                                
+                                # Check if this is a VEP-related issue
+                                is_vep_related = False
+                                # Check labels
+                                vep_label_patterns = ["kind/vep", "vep", "area/enhancement", "enhancement"]
+                                if any(pattern.lower() in str(label).lower() for label in labels for pattern in vep_label_patterns):
+                                    is_vep_related = True
+                                # Check title/body for VEP references
+                                if re.search(r'vep-?\d+', title, re.IGNORECASE) or re.search(r'vep-?\d+', body[:500], re.IGNORECASE):
+                                    is_vep_related = True
+                                
+                                issues.append({
+                                    "number": issue.get("number"),
+                                    "title": issue.get("title"),
+                                    "labels": labels,
+                                    "state": issue.get("state"),
+                                    "url": issue.get("url") or issue.get("html_url"),
+                                    "created_at": issue.get("created_at"),
+                                    "updated_at": issue.get("updated_at"),
+                                    "is_vep_related": is_vep_related,
+                                    "body_preview": body[:500] if body else "",
+                                })
+                        
+                        # Filter by date if requested
+                        if days_back is not None:
+                            original_count = len(issues)
+                            issues = _filter_by_date(issues, days_back)
+                            log(f"Filtered issues: {original_count} -> {len(issues)} (last {days_back} days)", node="indexer")
+                        
+                        # Count VEP-related issues
+                        vep_related_count = sum(1 for issue in issues if issue.get("is_vep_related", False))
+                        log(f"Parsed {len(issues)} issues from JSON string ({vep_related_count} VEP-related)", node="indexer")
+                        return issues
+                except json.JSONDecodeError:
+                    log(f"Could not parse issues string as JSON, returning raw data", node="indexer", level="DEBUG")
                 return [{"raw_data": issues_result[:15000]}]
             elif isinstance(issues_result, list):
                 issues = []
                 for issue in issues_result:
                     if isinstance(issue, dict):
+                        labels = [l.get("name") if isinstance(l, dict) else l for l in issue.get("labels", [])]
+                        title = issue.get("title", "")
+                        body = issue.get("body", "") or ""
+                        
+                        # Check if this is a VEP-related issue
+                        is_vep_related = False
+                        # Check labels
+                        vep_label_patterns = ["kind/vep", "vep", "area/enhancement", "enhancement"]
+                        if any(pattern.lower() in str(label).lower() for label in labels for pattern in vep_label_patterns):
+                            is_vep_related = True
+                        # Check title/body for VEP references
+                        if re.search(r'vep-?\d+', title, re.IGNORECASE) or re.search(r'vep-?\d+', body[:500], re.IGNORECASE):
+                            is_vep_related = True
+                        
+                        # Include all issues for now, but mark VEP-related ones
                         issues.append({
                             "number": issue.get("number"),
                             "title": issue.get("title"),
-                            "labels": [l.get("name") if isinstance(l, dict) else l for l in issue.get("labels", [])],
+                            "labels": labels,
                             "state": issue.get("state"),
                             "url": issue.get("url") or issue.get("html_url"),
                             "created_at": issue.get("created_at"),
                             "updated_at": issue.get("updated_at"),
+                            "is_vep_related": is_vep_related,
+                            "body_preview": body[:500] if body else "",  # First 500 chars for VEP number detection
                         })
                 
                 # Filter by date if requested
@@ -383,7 +446,9 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
                     issues = _filter_by_date(issues, days_back)
                     log(f"Filtered issues: {original_count} -> {len(issues)} (last {days_back} days)", node="indexer")
                 
-                log(f"Indexed {len(issues)} issues", node="indexer")
+                # Count VEP-related issues
+                vep_related_count = sum(1 for issue in issues if issue.get("is_vep_related", False))
+                log(f"Indexed {len(issues)} issues ({vep_related_count} VEP-related)", node="indexer")
                 return issues
             else:
                 return [{"raw_data": str(issues_result)[:15000]}]
@@ -607,8 +672,12 @@ def index_enhancements_readme() -> Optional[Dict[str, Any]]:
 def index_vep_files() -> List[Dict[str, Any]]:
     """Index all VEP files in kubevirt/enhancements/veps/ directory.
     
+    Parses the directory listing to extract VEP file names, then reads each VEP file
+    to include its content in the indexed context. This prevents the LLM from needing
+    to make many tool calls to read individual files.
+    
     Returns:
-        List of VEP file names and basic info
+        List of VEP file info with names and content
     """
     log("Indexing VEP files from kubevirt/enhancements/veps/", node="indexer")
     
@@ -643,6 +712,7 @@ def index_vep_files() -> List[Dict[str, Any]]:
             return []
         
         try:
+            # Get directory listing
             try:
                 veps_content = get_file_tool.func(
                     owner="kubevirt",
@@ -662,11 +732,108 @@ def index_vep_files() -> List[Dict[str, Any]]:
                 return []
             
             log(f"Retrieved VEPs directory content (length: {len(content_str)})", node="indexer")
+            log(f"Directory content preview (first 1000 chars): {content_str[:1000]}", node="indexer", level="DEBUG")
             
-            return [{
-                "directory_content": content_str[:10000] if len(content_str) > 10000 else content_str,
-                "note": "This contains the directory listing. Extract all vep-*.md file names from it."
-            }]
+            # Parse directory listing to extract VEP file names
+            vep_files = []
+            
+            # Try to parse as JSON first
+            try:
+                if isinstance(veps_content, str):
+                    listing_data = json.loads(veps_content)
+                elif isinstance(veps_content, (list, dict)):
+                    listing_data = veps_content
+                else:
+                    listing_data = None
+                
+                if isinstance(listing_data, list):
+                    for item in listing_data:
+                        if isinstance(item, dict):
+                            name = item.get("name") or item.get("path") or item.get("filename") or ""
+                            file_type = item.get("type", "")
+                            # Handle both "vep-0176.md" and "veps/vep-0176.md" formats
+                            if name:
+                                # Extract just the filename if it's a path
+                                basename = name.split("/")[-1] if "/" in name else name
+                                # Only include .md files that match vep-*.md pattern
+                                if file_type == "file" and re.match(r'vep-\d+\.md$', basename):
+                                    vep_files.append(basename)
+                        elif isinstance(item, str):
+                            basename = item.split("/")[-1] if "/" in item else item
+                            if re.match(r'vep-\d+\.md$', basename):
+                                vep_files.append(basename)
+                elif isinstance(listing_data, dict):
+                    # Try common keys that might contain file list
+                    for key in ["tree", "items", "contents", "files"]:
+                        if key in listing_data and isinstance(listing_data[key], list):
+                            for item in listing_data[key]:
+                                if isinstance(item, dict):
+                                    name = item.get("name") or item.get("path") or item.get("filename") or ""
+                                    file_type = item.get("type", "")
+                                    if name:
+                                        basename = name.split("/")[-1] if "/" in name else name
+                                        if file_type == "file" and re.match(r'vep-\d+\.md$', basename):
+                                            vep_files.append(basename)
+                                elif isinstance(item, str):
+                                    basename = item.split("/")[-1] if "/" in item else item
+                                    if re.match(r'vep-\d+\.md$', basename):
+                                        vep_files.append(basename)
+            except (json.JSONDecodeError, TypeError, AttributeError) as e:
+                log(f"Could not parse directory listing as JSON, trying regex extraction: {e}", node="indexer", level="DEBUG")
+            
+            # Fallback: extract VEP file names using regex from string (handles paths too)
+            if not vep_files:
+                vep_pattern = r'vep-\d+\.md'
+                matches = re.findall(vep_pattern, content_str)
+                vep_files = list(set(matches))  # Remove duplicates
+                log(f"Extracted {len(vep_files)} VEP files using regex fallback", node="indexer", level="DEBUG")
+            
+            # Sort VEP files numerically (vep-0176 > vep-0174)
+            def vep_sort_key(name: str) -> int:
+                match = re.search(r'vep-(\d+)', name)
+                return int(match.group(1)) if match else 0
+            
+            vep_files = sorted(set(vep_files), key=vep_sort_key, reverse=True)
+            
+            log(f"Found {len(vep_files)} VEP files: {vep_files[:10]}{'...' if len(vep_files) > 10 else ''}", node="indexer")
+            
+            # Read each VEP file and include its content
+            vep_data = []
+            for vep_file in vep_files:
+                try:
+                    try:
+                        vep_content = get_file_tool.func(
+                            owner="kubevirt",
+                            repo="enhancements",
+                            path=f"veps/{vep_file}"
+                        )
+                    except TypeError:
+                        vep_content = get_file_tool.func(
+                            path=f"kubevirt/enhancements/veps/{vep_file}"
+                        )
+                    
+                    content_str = str(vep_content)
+                    if len(content_str) > 100 and not content_str.lower().startswith(("error", "failed", "cannot", "unable")):
+                        vep_data.append({
+                            "filename": vep_file,
+                            "vep_number": re.search(r'vep-(\d+)', vep_file).group(0) if re.search(r'vep-(\d+)', vep_file) else vep_file,
+                            "content": content_str[:50000] if len(content_str) > 50000 else content_str,  # Limit to 50k chars per file
+                            "content_length": len(content_str),
+                        })
+                    else:
+                        log(f"Skipping {vep_file} - suspicious content (length: {len(content_str)})", node="indexer", level="DEBUG")
+                except Exception as e:
+                    log(f"Error reading VEP file {vep_file}: {e}", node="indexer", level="DEBUG")
+                    # Still include the filename even if we can't read it
+                    vep_data.append({
+                        "filename": vep_file,
+                        "vep_number": re.search(r'vep-(\d+)', vep_file).group(0) if re.search(r'vep-(\d+)', vep_file) else vep_file,
+                        "content": None,
+                        "error": str(e),
+                    })
+            
+            log(f"Indexed {len(vep_data)} VEP files with content", node="indexer")
+            return vep_data
             
         except Exception as e:
             log(f"Error reading veps directory: {e}", node="indexer", level="WARNING")

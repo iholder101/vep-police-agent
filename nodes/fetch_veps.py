@@ -139,37 +139,72 @@ Return ALL discovered VEPs as a list of VEPInfo objects."""
         "indexed_context": indexed_context,  # Add indexed information
     }
     
+    # Count VEP-related issues
+    issues_index = indexed_context.get("issues_index", [])
+    vep_related_issues = [issue for issue in issues_index if issue.get("is_vep_related", False)]
+    vep_files_index = indexed_context.get("vep_files_index", [])
+    
+    # Prepare indexed context summary for the prompt
+    # Include full VEP files data (but truncate very long content to avoid token limits)
+    vep_files_summary = []
+    for vep_file in vep_files_index[:50]:  # Limit to first 50 VEP files to avoid token overflow
+        vep_summary = {
+            "filename": vep_file.get("filename"),
+            "vep_number": vep_file.get("vep_number"),
+            "has_content": vep_file.get("content") is not None,
+            "content_length": vep_file.get("content_length", 0),
+        }
+        # Include first 2000 chars of content (enough to extract metadata)
+        if vep_file.get("content"):
+            content_preview = vep_file["content"][:2000]
+            if len(vep_file["content"]) > 2000:
+                truncated_msg = f"\n... (truncated, total length: {len(vep_file['content'])} chars)"
+                content_preview = content_preview + truncated_msg
+            vep_summary["content_preview"] = content_preview
+        vep_files_summary.append(vep_summary)
+    
+    # Prepare issue summary text (avoid backslash in f-string)
+    vep_issues_json = json.dumps(vep_related_issues[:20], indent=2, default=str)
+    if len(vep_related_issues) > 20:
+        vep_issues_text = vep_issues_json + f"\n... and {len(vep_related_issues) - 20} more VEP-related issues"
+    else:
+        vep_issues_text = vep_issues_json
+    
     user_prompt = f"""Discover all VEPs from the kubevirt/enhancements repository.
 
 CURRENT STATE:
 {json.dumps({k: v for k, v in context.items() if k != "indexed_context"}, indent=2, default=str)}
 
-INDEXED INFORMATION (pre-fetched for your reference):
+INDEXED INFORMATION (pre-fetched - USE THIS DATA DIRECTLY, DO NOT RE-READ FILES):
 - Release Info: {json.dumps(indexed_context.get("release_info"), indent=2, default=str) if indexed_context.get("release_info") else "Not available"}
-- Enhancements README: {"Available - contains VEP process documentation, labels, and structure" if indexed_context.get("enhancements_readme") else "Not available"}
-- Issues Index: Found {len(indexed_context.get("issues_index", []))} issues in kubevirt/enhancements (last {indexed_context.get("days_back", "all")} days)
-- PRs Index: Found {len(indexed_context.get("prs_index", []))} PRs in kubevirt/kubevirt (last {indexed_context.get("days_back", "all")} days)
-- VEP Files Index: Found {len(indexed_context.get("vep_files_index", []))} items in veps/ directory
+- Enhancements README: {json.dumps(indexed_context.get("enhancements_readme"), indent=2, default=str) if indexed_context.get("enhancements_readme") else "Not available"}
+- Issues Index: Found {len(issues_index)} total issues, {len(vep_related_issues)} VEP-related issues
+  VEP-related issues: {vep_issues_text}
+- PRs Index: Found {len(indexed_context.get("prs_index", []))} PRs (first 10): {json.dumps(indexed_context.get("prs_index", [])[:10], indent=2, default=str)}
+- VEP Files: Found {len(vep_files_index)} VEP files with FULL CONTENT already indexed:
+{json.dumps(vep_files_summary, indent=2, default=str)}
 
-The indexed information above gives you a complete picture of what exists. Use this to:
-1. Understand the VEP process (from enhancements_readme - READ THIS FIRST to understand labels, structure, requirements)
-2. Know the current release version (from release_info)
-3. Have a list of all issues to check (from issues_index)
-4. Have a list of all PRs that might reference VEPs (from prs_index)
-5. Have a list of all VEP files to read (from vep_files_index)
+CRITICAL: The VEP files are ALREADY PARSED and their CONTENT is above. You do NOT need to read them again with tool calls!
+- Each VEP file above contains: filename, vep_number, and content_preview (full content is available)
+- Use the content_preview directly to extract VEP metadata (title, owner, target_release, SIG, etc.)
+- Only use tool calls to read full issue details if the indexed data is insufficient
 
-CRITICAL: Read the enhancements_readme content first to understand:
-- What labels identify VEP tracking issues
-- How VEPs are structured and organized
-- What the process requirements are
-- How to identify VEP-related issues and PRs
+WORKFLOW:
+1. Read enhancements_readme above to understand VEP process and labels
+2. For each VEP file listed above ({len(vep_files_index)} files):
+   - Extract VEP number, title, owner, target_release, SIG from the content_preview
+   - Find the corresponding tracking issue from the issues list (match by VEP number in title/labels)
+   - Create VEPInfo object with all available information
+3. For VEP-related issues that don't have a VEP file yet:
+   - Use tool calls to read full issue details if needed
+   - Create VEPInfo object from issue information
+4. Cross-reference with PRs to link implementation PRs
 
-Now use GitHub MCP tools to:
-- Read the full details of issues mentioned in the issues_index
-- Read the full content of VEP files mentioned in the vep_files_index
-- Cross-reference and create VEPInfo objects for ALL discovered VEPs
-
-IMPORTANT: The indexed information shows you what EXISTS. Your job is to read the full details and create complete VEPInfo objects. Do not skip any items from the index - check each one systematically."""
+IMPORTANT: 
+- You have {len(vep_files_index)} VEP files with content already - use them directly from the indexed data above!
+- A typical release cycle has 20-30+ VEPs - if you find fewer, you're missing some
+- Check ALL {len(vep_files_index)} VEP files systematically
+- The indexed context above eliminates the need for most tool calls - use the data directly"""
     
     # Invoke LLM with structured output
     try:
