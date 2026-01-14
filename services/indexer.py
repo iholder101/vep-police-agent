@@ -300,17 +300,26 @@ def index_release_schedule() -> Optional[Dict[str, Any]]:
 def _filter_by_date(items: List[Dict[str, Any]], days: int = 365) -> List[Dict[str, Any]]:
     """Filter items to only include those from the last N days.
     
+    IMPORTANT: Always includes open items regardless of date, as they may be active VEPs.
+    
     Args:
-        items: List of items with 'created_at' or 'updated_at' fields
+        items: List of items with 'created_at' or 'updated_at' fields, and optionally 'state'
         days: Number of days to look back (default 365)
     
     Returns:
-        Filtered list of items
+        Filtered list of items (all open items + closed items from last N days)
     """
     cutoff_date = datetime.now() - timedelta(days=days)
     filtered = []
     
     for item in items:
+        # Always include open items (they may be active VEPs without files yet)
+        state = item.get("state", "").lower()
+        if state == "open":
+            filtered.append(item)
+            continue
+        
+        # For closed items, apply date filter
         # Try created_at first, then updated_at
         date_str = item.get("created_at") or item.get("updated_at")
         if not date_str:
@@ -427,13 +436,24 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
                                 
                                 # Check if this is a VEP-related issue
                                 is_vep_related = False
-                                # Check labels
-                                vep_label_patterns = ["kind/vep", "vep", "area/enhancement", "enhancement"]
+                                # Check labels - expanded patterns for VEP detection
+                                vep_label_patterns = ["kind/vep", "vep", "area/enhancement", "enhancement", "sig/", "kind/enhancement"]
                                 if any(pattern.lower() in str(label).lower() for label in labels for pattern in vep_label_patterns):
                                     is_vep_related = True
-                                # Check title/body for VEP references
+                                # Check title/body for VEP references (vep-123, VEP-123, vep123, etc.)
                                 if re.search(r'vep-?\d+', title, re.IGNORECASE) or re.search(r'vep-?\d+', body[:500], re.IGNORECASE):
                                     is_vep_related = True
+                                # Also check for enhancement-related keywords in open issues (they might be VEPs without files yet)
+                                state = issue.get("state", "").lower()
+                                if state == "open":
+                                    enhancement_keywords = ["enhancement", "proposal", "feature", "sig-"]
+                                    title_lower = title.lower()
+                                    body_lower = body[:500].lower()
+                                    if any(keyword in title_lower or keyword in body_lower for keyword in enhancement_keywords):
+                                        # If it's open and has enhancement keywords, it might be a VEP
+                                        # Check if it has any SIG-related labels
+                                        if any("sig" in str(label).lower() for label in labels):
+                                            is_vep_related = True
                                 
                                 issues.append({
                                     "number": issue.get("number"),
@@ -470,13 +490,24 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
                         
                         # Check if this is a VEP-related issue
                         is_vep_related = False
-                        # Check labels
-                        vep_label_patterns = ["kind/vep", "vep", "area/enhancement", "enhancement"]
+                        # Check labels - expanded patterns for VEP detection
+                        vep_label_patterns = ["kind/vep", "vep", "area/enhancement", "enhancement", "sig/", "kind/enhancement"]
                         if any(pattern.lower() in str(label).lower() for label in labels for pattern in vep_label_patterns):
                             is_vep_related = True
-                        # Check title/body for VEP references
+                        # Check title/body for VEP references (vep-123, VEP-123, vep123, etc.)
                         if re.search(r'vep-?\d+', title, re.IGNORECASE) or re.search(r'vep-?\d+', body[:500], re.IGNORECASE):
                             is_vep_related = True
+                        # Also check for enhancement-related keywords in open issues (they might be VEPs without files yet)
+                        state = issue.get("state", "").lower()
+                        if state == "open":
+                            enhancement_keywords = ["enhancement", "proposal", "feature", "sig-"]
+                            title_lower = title.lower()
+                            body_lower = body[:500].lower()
+                            if any(keyword in title_lower or keyword in body_lower for keyword in enhancement_keywords):
+                                # If it's open and has enhancement keywords, it might be a VEP
+                                # Check if it has any SIG-related labels
+                                if any("sig" in str(label).lower() for label in labels):
+                                    is_vep_related = True
                         
                         # Include all issues for now, but mark VEP-related ones
                         issues.append({

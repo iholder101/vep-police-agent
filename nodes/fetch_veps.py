@@ -201,12 +201,15 @@ WORKFLOW (MUST FOLLOW ALL STEPS):
    - Find the corresponding tracking issue from the issues list (match by VEP number in title/labels)
    - Create VEPInfo object with all available information
 3. CRITICAL: For ALL {len(vep_related_issues)} VEP-related issues listed above:
+   - PRIORITIZE OPEN ISSUES: Open issues are especially important - they may be VEPs with PRs that haven't merged yet, so the .md files don't exist yet
    - Check if each issue already has a corresponding VEP file (from step 2)
    - If an issue does NOT have a corresponding VEP file, you MUST create a VEPInfo object from the issue
+   - For OPEN issues without files: These are likely active VEPs waiting for PR merge - extract all available info from the issue
    - Extract VEP number from issue title/body/labels (look for patterns like "vep-1234", "VEP-1234", "vep1234")
+   - If no VEP number found, use issue number as identifier (e.g., "issue-123" or derive from title)
    - Use issue title as VEP title if no file exists
    - Use issue creator/assignee as owner
-   - Create VEPInfo object for EVERY VEP-related issue, even if it doesn't have a file
+   - Create VEPInfo object for EVERY VEP-related issue, especially OPEN ones, even if they don't have a file yet
 4. Cross-reference with PRs to link implementation PRs
 
 CRITICAL REQUIREMENTS:
