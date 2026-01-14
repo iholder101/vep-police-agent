@@ -10,6 +10,13 @@ if [ -f "GITHUB_TOKEN" ]; then
     CMD="$CMD --github-token \"$(cat GITHUB_TOKEN)\""
 fi
 
+# Pass through any additional arguments/flags
+if [ $# -gt 0 ]; then
+    for arg in "$@"; do
+        CMD="$CMD \"$arg\""
+    done
+fi
+
 # Execute the command
 eval $CMD
 
