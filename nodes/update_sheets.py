@@ -215,12 +215,22 @@ Sync this VEP data to Google Sheets. Decide on the schema, read the current shee
                 "sheet_config": sheet_config,
             }
         
-        return {
+        result = {
             "last_check_times": last_check_times,
             "sheets_need_update": False,  # Clear flag after successful update
             "next_tasks": next_tasks,
             "sheet_config": sheet_config,
         }
+        
+        # Check if one-cycle mode is enabled - exit after sheet update
+        if state.get("one_cycle", False):
+            log("One-cycle mode: Sheet update completed, exiting", node="update_sheets")
+            # Clear next_tasks to prevent further execution
+            result["next_tasks"] = []
+            # Set a flag to signal main loop to exit
+            result["_exit_after_sheets"] = True
+        
+        return result
         
     except Exception as e:
         log(f"Error updating Google Sheets: {e}", node="update_sheets", level="ERROR")

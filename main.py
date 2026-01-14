@@ -15,7 +15,7 @@ from services.utils import log, invoke_agent
 _shutdown_requested = False
 
 
-def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60):
+def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False):
     """Create initial state for the agent."""
     sheet_config = {
         "sheet_name": "VEP Status",  # Optional: name for the sheet/tab
@@ -43,6 +43,7 @@ def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int =
         "vep_updates_by_check": {},
         "sheet_config": sheet_config,
         "index_cache_minutes": index_cache_minutes,  # Store cache timeout in state
+        "one_cycle": one_cycle,  # Flag to exit after one cycle
     }
 
 
@@ -87,6 +88,11 @@ def parse_args():
         "--no-index-cache",
         action="store_true",
         help="Disable index caching (equivalent to --index-cache-minutes=0)"
+    )
+    parser.add_argument(
+        "--one-cycle",
+        action="store_true",
+        help="Run one cycle and exit after sheet update completes"
     )
     return parser.parse_args()
 
@@ -168,14 +174,41 @@ def main():
     log("Graph created successfully", node="main")
     
     # Initialize state
-    initial_state = get_initial_state(sheet_id=args.sheet_id, index_cache_minutes=index_cache_minutes)
+    initial_state = get_initial_state(sheet_id=args.sheet_id, index_cache_minutes=index_cache_minutes, one_cycle=args.one_cycle)
     log("Initial state prepared", node="main")
     log(f"Sheet config: {initial_state['sheet_config']}", node="main")
+    if args.one_cycle:
+        log("One-cycle mode: will exit after sheet update completes", node="main")
     
     # Run the agent
     try:
-        log("Invoking agent...", node="main")
-        response = agent.invoke(initial_state)
+        if args.one_cycle:
+            # In one-cycle mode, run until update_sheets completes
+            log("Invoking agent (one-cycle mode)...", node="main")
+            current_state = initial_state
+            while True:
+                response = agent.invoke(current_state)
+                
+                if _shutdown_requested:
+                    log("Agent interrupted by user. Exiting...", node="main", level="INFO")
+                    return
+                
+                # Check if we should exit after sheet update
+                if response.get("_exit_after_sheets", False):
+                    log("One-cycle mode: Sheet update completed, exiting", node="main")
+                    break
+                
+                # Update state for next iteration
+                current_state = response
+                
+                # Safety check: if no tasks are scheduled, exit
+                if not response.get("next_tasks"):
+                    log("No more tasks scheduled, exiting", node="main")
+                    break
+        else:
+            # Normal mode - run continuously
+            log("Invoking agent...", node="main")
+            response = agent.invoke(initial_state)
         
         if _shutdown_requested:
             log("Agent interrupted by user. Exiting...", node="main", level="INFO")
