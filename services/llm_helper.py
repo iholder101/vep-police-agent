@@ -114,11 +114,18 @@ def invoke_llm_with_tools(
         import traceback
         log(f"Traceback: {traceback.format_exc()}", node=operation_type, level="ERROR")
         # Return empty response with proper structure
+        # Try to create response with default values for required fields
         try:
+            # Check if response_model has default values or can be instantiated empty
             return response_model()
-        except Exception:
-            # If model requires fields, try with empty defaults
-            return response_model(**{})
+        except Exception as init_error:
+            # If model requires fields, try with minimal defaults
+            # For UpdateSheetsResponse, success defaults to False
+            try:
+                return response_model(**{"success": False})
+            except Exception:
+                # Last resort: try empty dict (may fail validation but won't crash)
+                return response_model(**{})
 
 
 def invoke_llm_check(

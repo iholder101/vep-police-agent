@@ -113,8 +113,23 @@ def get_mcp_tools_by_config(*mcp_configs: Dict[str, Any]) -> List[Tool]:
         
     Returns:
         List of LangChain Tool objects from all MCP servers
+        
+    Raises:
+        Exception: If MCP server fails to start (e.g., package not found)
     """
-    return asyncio.run(_get_mcp_tools_async(*mcp_configs))
+    try:
+        return asyncio.run(_get_mcp_tools_async(*mcp_configs))
+    except Exception as e:
+        # Check if it's a known issue with missing packages
+        error_str = str(e).lower()
+        if "404" in error_str or "not found" in error_str or "connection closed" in error_str:
+            # This is likely a missing npm package - log and return empty list
+            from services.utils import log
+            mcp_names = [config.get("name", "unknown") for config in mcp_configs]
+            log(f"MCP server(s) {', '.join(mcp_names)} not available (package may not exist or not installed): {e}", node="mcp_factory", level="WARNING")
+            return []
+        # Re-raise other exceptions
+        raise
 
 
 def get_mcp_tools_by_name(*mcp_names: str) -> List[Tool]:

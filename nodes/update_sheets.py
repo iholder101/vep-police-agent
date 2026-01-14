@@ -11,9 +11,9 @@ from services.llm_helper import invoke_llm_with_tools
 
 class UpdateSheetsResponse(BaseModel):
     """Response model for sheet update operation."""
-    success: bool  # Whether the update was successful
+    success: bool = False  # Whether the update was successful
     sheet_id: Optional[str] = None  # The sheet ID that was updated/created
-    schema: Optional[List[Dict[str, str]]] = None  # The schema/columns decided by LLM
+    table_schema: Optional[List[Dict[str, str]]] = None  # The schema/columns decided by LLM (renamed from 'schema' to avoid shadowing BaseModel.schema)
     rows_updated: int = 0  # Number of rows updated
     rows_added: int = 0  # Number of rows added
     errors: List[str] = []  # Any errors encountered
@@ -87,7 +87,7 @@ Your task:
    - sheet_id: The Google Sheets document ID (from URL: https://docs.google.com/spreadsheets/d/{sheet_id}/edit)
    - create_new: If True, create a new sheet; if False, update existing
    - sheet_name: Name for the sheet/tab within the document
-4. Return the schema you decided on, the sheet_id used, and update statistics
+4. Return the table_schema you decided on (as table_schema field), the sheet_id used, and update statistics
 
 Use the Google Sheets MCP tools to interact with the sheet. Read the current state first, then update as needed."""
     
@@ -106,6 +106,7 @@ Use the Google Sheets MCP tools to interact with the sheet. Read the current sta
 Sync this VEP data to Google Sheets. Decide on the schema, read the current sheet if it exists, and update it with the latest VEP information. If the sheet doesn't exist and create_new is True, create it."""
     
     # Invoke LLM with Google Sheets MCP tools
+    # Note: If Google Sheets MCP is not available, this will fail gracefully
     try:
         result = invoke_llm_with_tools(
             "update_sheets",
@@ -116,6 +117,16 @@ Sync this VEP data to Google Sheets. Decide on the schema, read the current shee
             mcp_names=("google-sheets",)
         )
         
+        # Check if result is valid (not an error response)
+        if not result or (hasattr(result, 'success') and not result.success and not result.sheet_id):
+            # If MCP failed, log and skip update
+            log("Google Sheets MCP not available or failed - skipping sheet update. This is expected if @modelcontextprotocol/server-google-sheets package is not installed.", node="update_sheets", level="WARNING")
+            return {
+                "last_check_times": last_check_times,
+                "sheets_need_update": False,  # Clear flag to prevent infinite retries
+                "next_tasks": next_tasks,
+            }
+        
         if result.success:
             log(f"Successfully updated Google Sheets | Sheet ID: {result.sheet_id} | Rows updated: {result.rows_updated} | Rows added: {result.rows_added}", node="update_sheets")
             
@@ -124,8 +135,8 @@ Sync this VEP data to Google Sheets. Decide on the schema, read the current shee
                 sheet_config = sheet_config.copy() if sheet_config else {}
                 previous_sheet_id = sheet_config.get("sheet_id")
                 sheet_config["sheet_id"] = result.sheet_id
-                if result.schema:
-                    sheet_config["schema"] = result.schema
+                if result.table_schema:
+                    sheet_config["schema"] = result.table_schema
                 
                 # Log the sheet URL when sheet_id is set or changed
                 sheet_url = f"https://docs.google.com/spreadsheets/d/{result.sheet_id}/edit"
@@ -169,6 +180,15 @@ Sync this VEP data to Google Sheets. Decide on the schema, read the current shee
         import traceback
         log(f"Traceback: {traceback.format_exc()}", node="update_sheets", level="ERROR")
         
+        # Check if this is a known MCP package issue
+        error_str = str(e).lower()
+        is_mcp_unavailable = (
+            "404" in error_str or 
+            "not found" in error_str or 
+            "connection closed" in error_str or
+            "@modelcontextprotocol/server-google-sheets" in error_str
+        )
+        
         # Log error to state
         errors = state.get("errors", [])
         errors.append({
@@ -177,9 +197,11 @@ Sync this VEP data to Google Sheets. Decide on the schema, read the current shee
             "timestamp": datetime.now().isoformat(),
         })
         
+        # If MCP is unavailable, clear the flag to prevent infinite retries
+        # Otherwise, keep flag set for transient errors
         return {
             "last_check_times": last_check_times,
-            "sheets_need_update": True,  # Keep flag set if update failed
+            "sheets_need_update": False if is_mcp_unavailable else True,
             "next_tasks": next_tasks,
             "errors": errors,
         }
