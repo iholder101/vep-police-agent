@@ -3,18 +3,25 @@
 # Debug script to run the agent with --debug=discover-veps flag
 # This will index all VEP data and print it, then exit
 
-# Build podman command
-CMD="podman run --rm --pull=newer quay.io/mabekitzur/vep-police-agent:latest"
-CMD="$CMD --api-key \"$(cat API_KEY)\""
-CMD="$CMD --google-token \"$(cat GOOGLE_TOKEN)\""
+# Get absolute path to current directory for mounting
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# Build podman command - mount files and pass paths to avoid JSON parsing issues
+CMD_ARGS=(
+    --api-key /workspace/API_KEY
+    --google-token /workspace/GOOGLE_TOKEN
+)
 
 # Add GitHub token if file exists
-if [ -f "GITHUB_TOKEN" ]; then
-    CMD="$CMD --github-token \"$(cat GITHUB_TOKEN)\""
+if [ -f "$PROJECT_ROOT/GITHUB_TOKEN" ]; then
+    CMD_ARGS+=(--github-token /workspace/GITHUB_TOKEN)
 fi
 
-# Add debug flag
-CMD="$CMD --debug discover-veps"
+CMD_ARGS+=(--debug discover-veps)
 
-# Execute the command
-eval $CMD
+podman run --rm --pull=newer \
+    -v "$PROJECT_ROOT:/workspace:ro" \
+    -w /workspace \
+    quay.io/mabekitzur/vep-police-agent:latest \
+    "${CMD_ARGS[@]}"
