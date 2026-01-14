@@ -1141,35 +1141,35 @@ def create_indexed_context(days_back: Optional[int] = 365) -> Dict[str, Any]:
         import sys
         vep_related_issues = [issue for issue in indexed_context["issues_index"] if issue.get("is_vep_related", False)]
         
-        print("\n" + "="*80, file=sys.stderr, flush=True)
-        print(f"DEBUG: Indexed Context Summary", file=sys.stderr, flush=True)
-        print("="*80, file=sys.stderr, flush=True)
-        print(f"Release: {release}", file=sys.stderr, flush=True)
-        print(f"VEP Files: {vep_files_count}", file=sys.stderr, flush=True)
-        print(f"Total Issues: {issues_count} ({len(vep_related_issues)} VEP-related)", file=sys.stderr, flush=True)
-        print(f"PRs: {prs_count}", file=sys.stderr, flush=True)
-        print("\n" + "-"*80, file=sys.stderr, flush=True)
-        print(f"VEP Files ({vep_files_count}):", file=sys.stderr, flush=True)
-        print("-"*80, file=sys.stderr, flush=True)
+        log("\n" + "="*80, node="indexer", level="INFO")
+        log("DEBUG: Indexed Context Summary", node="indexer", level="INFO")
+        log("="*80, node="indexer", level="INFO")
+        log(f"Release: {release}", node="indexer", level="INFO")
+        log(f"VEP Files: {vep_files_count}", node="indexer", level="INFO")
+        log(f"Total Issues: {issues_count} ({len(vep_related_issues)} VEP-related)", node="indexer", level="INFO")
+        log(f"PRs: {prs_count}", node="indexer", level="INFO")
+        log("\n" + "-"*80, node="indexer", level="INFO")
+        log(f"VEP Files ({vep_files_count}):", node="indexer", level="INFO")
+        log("-"*80, node="indexer", level="INFO")
         for i, vep_file in enumerate(indexed_context["vep_files_index"], 1):
             filename = vep_file.get("filename", "N/A")
             vep_number = vep_file.get("vep_number", "N/A")
             has_content = "✓" if vep_file.get("content") else "✗"
-            print(f"{i:2d}. {has_content} {filename:40s} | VEP: {vep_number}", file=sys.stderr, flush=True)
+            log(f"{i:2d}. {has_content} {filename:40s} | VEP: {vep_number}", node="indexer", level="INFO")
         
-        print("\n" + "-"*80, file=sys.stderr, flush=True)
-        print(f"VEP-Related Issues ({len(vep_related_issues)}):", file=sys.stderr, flush=True)
-        print("-"*80, file=sys.stderr, flush=True)
+        log("\n" + "-"*80, node="indexer", level="INFO")
+        log(f"VEP-Related Issues ({len(vep_related_issues)}):", node="indexer", level="INFO")
+        log("-"*80, node="indexer", level="INFO")
         for i, issue in enumerate(vep_related_issues, 1):
             issue_num = issue.get("number", "N/A")
             issue_title = issue.get("title", "N/A")[:50]
             issue_state = issue.get("state", "N/A")
             # Convert issue_num to string if it's an integer
             issue_num_str = str(issue_num) if isinstance(issue_num, int) else issue_num
-            print(f"{i:2d}. [{issue_state:6s}] #{issue_num_str:6s} | {issue_title}", file=sys.stderr, flush=True)
+            log(f"{i:2d}. [{issue_state:6s}] #{issue_num_str:6s} | {issue_title}", node="indexer", level="INFO")
         
-        print("="*80, file=sys.stderr, flush=True)
-        print("\nExiting for debug purposes...", file=sys.stderr, flush=True)
+        log("="*80, node="indexer", level="INFO")
+        log("\nExiting for debug purposes...", node="indexer", level="INFO")
         sys.exit(0)
     
     return indexed_context
