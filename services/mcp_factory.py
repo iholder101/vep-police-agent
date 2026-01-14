@@ -50,11 +50,12 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
     all_tools = []
     
     for config in mcp_configs:
-        # Prepare environment - npm will show warnings but we've updated to latest version
-        env = config.get("env", {}).copy()
-        # Note: We keep npm warnings visible since user wants to fix them, not suppress
-        # The deprecated package warning is from @modelcontextprotocol/server-github itself
-        # which is marked as deprecated by npm but still functional
+        # Prepare environment - merge custom env with parent environment
+        # This ensures the subprocess has access to both custom vars (like GITHUB_TOKEN)
+        # and system environment variables
+        custom_env = config.get("env", {}).copy()
+        # Merge with parent environment - custom_env takes precedence
+        env = {**os.environ, **custom_env}
         
         server_params = StdioServerParameters(
             command=config["command"],
@@ -76,8 +77,10 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
                     def make_tool_func(tool_name: str, tool_config: Dict[str, Any]):
                         async def tool_func_async(**kwargs) -> str:
                             """Async function that creates a session and calls the tool."""
-                            # Prepare environment
-                            env = tool_config.get("env", {}).copy()
+                            # Prepare environment - merge custom env with parent environment
+                            custom_env = tool_config.get("env", {}).copy()
+                            # Merge with parent environment - custom_env takes precedence
+                            env = {**os.environ, **custom_env}
                             
                             server_params = StdioServerParameters(
                                 command=tool_config["command"],
@@ -194,7 +197,9 @@ def get_mcp_tools_by_name(*mcp_names: str) -> List[Tool]:
             github_token = os.environ.get("GITHUB_TOKEN")
             if github_token:
                 config["env"]["GITHUB_TOKEN"] = github_token
-                log(f"GitHub token injected into MCP server environment", node="mcp_factory", level="DEBUG")
+                # Log first 10 chars for verification (don't log full token for security)
+                token_preview = github_token[:10] + "..." if len(github_token) > 10 else "***"
+                log(f"GitHub token injected into MCP server environment (token: {token_preview})", node="mcp_factory", level="DEBUG")
             else:
                 log("GITHUB_TOKEN not found in environment - API rate limits may apply", node="mcp_factory", level="WARNING")
         
