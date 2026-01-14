@@ -229,12 +229,43 @@ CRITICAL REQUIREMENTS:
         discovered_veps = result.updated_veps
         discovered_count = len(discovered_veps)
         
-        log(f"Discovered {discovered_count} VEP(s) from GitHub", node="fetch_veps")
+        # Calculate statistics for better logging
+        vep_files_count = len(vep_files_index)
+        vep_issues_count = len(vep_related_issues)
+        expected_min = vep_files_count  # At minimum, should match number of files
+        
+        # Count VEPs by status and SIG
+        open_count = sum(1 for vep in discovered_veps if hasattr(vep, 'status') and vep.status and 'open' in str(vep.status).lower())
+        closed_count = discovered_count - open_count
+        
+        sig_counts = {}
+        for vep in discovered_veps:
+            sig = getattr(vep, 'owning_sig', None) or 'unknown'
+            sig_counts[sig] = sig_counts.get(sig, 0) + 1
+        
+        # Log comprehensive summary
+        log("="*80, node="fetch_veps")
+        log(f"VEP DISCOVERY SUMMARY", node="fetch_veps")
+        log("="*80, node="fetch_veps")
+        log(f"Total VEPs discovered: {discovered_count}", node="fetch_veps")
+        log(f"  - Expected minimum: {expected_min} (based on {vep_files_count} VEP files + {vep_issues_count} VEP-related issues)", node="fetch_veps")
         
         if discovered_count > 0:
-            # Log some details about discovered VEPs
-            vep_names = [vep.name for vep in discovered_veps[:5]]  # First 5
-            log(f"Sample VEPs: {', '.join(vep_names)}{'...' if discovered_count > 5 else ''}", node="fetch_veps")
+            log(f"  - Status breakdown: {open_count} open, {closed_count} closed/merged", node="fetch_veps")
+            if sig_counts:
+                sig_breakdown = ", ".join([f"{sig}: {count}" for sig, count in sorted(sig_counts.items())])
+                log(f"  - SIG breakdown: {sig_breakdown}", node="fetch_veps")
+            
+            # Log sample VEP names
+            vep_names = [vep.name for vep in discovered_veps[:10]]  # First 10
+            log(f"  - Sample VEPs: {', '.join(vep_names)}{'...' if discovered_count > 10 else ''}", node="fetch_veps")
+        else:
+            log(f"  - WARNING: No VEPs discovered! Expected at least {expected_min} VEPs.", node="fetch_veps", level="WARNING")
+        
+        if discovered_count < expected_min:
+            log(f"  - WARNING: Discovered {discovered_count} VEPs but expected at least {expected_min} (missing {expected_min - discovered_count})", node="fetch_veps", level="WARNING")
+        
+        log("="*80, node="fetch_veps")
         
         # Update alerts if any
         alerts = state.get("alerts", [])

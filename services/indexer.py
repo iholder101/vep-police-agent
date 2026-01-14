@@ -1007,6 +1007,7 @@ def index_vep_files() -> List[Dict[str, Any]]:
             vep_files = sorted(vep_files, key=vep_sort_key, reverse=True)
             
             log(f"Found {len(vep_files)} VEP files: {[f.split('/')[-1] for f in vep_files[:10]]}{'...' if len(vep_files) > 10 else ''}", node="indexer")
+            log(f"Reading content of {len(vep_files)} VEP files (this may take a moment due to rate limiting delays)...", node="indexer")
             
             # Read each VEP file and include its content
             vep_data = []
