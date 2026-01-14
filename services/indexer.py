@@ -6,11 +6,16 @@ ensuring the LLM has a complete picture of what exists rather than having to dis
 
 import re
 import json
+import os
 import time
+from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 from services.utils import log
 from services.mcp_factory import get_mcp_tools_by_name
+
+# Cache file path (relative to project root)
+CACHE_FILE = Path(__file__).parent.parent / ".vep_index_cache.json"
 
 
 def _call_with_retry(tool_func, max_retries=3, delay=5, **kwargs):
