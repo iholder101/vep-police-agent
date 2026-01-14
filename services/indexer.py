@@ -356,6 +356,11 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
             
             # Parse result
             if isinstance(issues_result, str):
+                # Check if it's a rate limit error
+                if "rate limit" in issues_result.lower() or "rate_limit" in issues_result.lower():
+                    log(f"GitHub API rate limit exceeded. Error: {issues_result[:300]}", node="indexer", level="ERROR")
+                    log("Rate limit typically resets on the hour. Please wait and try again, or ensure GITHUB_TOKEN is being used correctly.", node="indexer", level="WARNING")
+                    return []
                 # Check if it's an error message
                 if len(issues_result) < 500 or issues_result.lower().startswith(("error", "failed", "cannot", "unable")):
                     log(f"Received error or suspiciously short response (length: {len(issues_result)}): {issues_result[:500]}", node="indexer", level="WARNING")
