@@ -222,7 +222,9 @@ CRITICAL REQUIREMENTS:
     
     # Invoke LLM with structured output
     try:
+        log("About to invoke LLM for VEP discovery...", node="fetch_veps", level="DEBUG")
         result = invoke_llm_check("fetch_veps", context, system_prompt, user_prompt, FetchVEPsResponse)
+        log("LLM invocation completed", node="fetch_veps", level="DEBUG")
         
         discovered_veps = result.updated_veps
         discovered_count = len(discovered_veps)

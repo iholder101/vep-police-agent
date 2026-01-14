@@ -51,6 +51,12 @@ def parse_args():
         type=str,
         help="GitHub token for API access (or set GITHUB_TOKEN environment variable)"
     )
+    parser.add_argument(
+        "--debug",
+        type=str,
+        choices=["discover-veps"],
+        help="Enable debug mode. Options: 'discover-veps' - print indexed VEP data and exit"
+    )
     return parser.parse_args()
 
 
@@ -73,6 +79,10 @@ def setup_credentials(args):
     if args.github_token:
         os.environ["GITHUB_TOKEN"] = args.github_token
         log("GitHub token set from CLI argument", node="main")
+    
+    if args.debug:
+        os.environ["DEBUG_MODE"] = args.debug
+        log(f"Debug mode enabled: {args.debug}", node="main")
 
 
 def main():
