@@ -222,9 +222,8 @@ Step 4: Find Related PRs
 - Link PRs to their corresponding VEPs
 
 Step 5: Create VEPInfo Objects for ALL Discovered VEPs
-- You MUST create a VEPInfo object for EVERY VEP you found
-- Count your VEPInfo objects - you should have ~25-30 VEPs
-- If you have fewer than 20, you are missing VEPs - go back and check the index again
+- You MUST create a VEPInfo object for EVERY VEP you found in the indexed context
+- Ensure you've processed every VEP file and every VEP-related issue
 - For each discovered VEP, create a VEPInfo object with:
 - tracking_issue_id: The GitHub issue number that tracks this VEP
 - name: VEP identifier (e.g., "vep-1234")
@@ -241,20 +240,18 @@ Step 5: Create VEPInfo Objects for ALL Discovered VEPs
 
 CRITICAL REQUIREMENTS - YOU MUST FIND ALL VEPs:
 - The indexed context provides a COMPLETE list of VEP files and issues - you MUST process EVERY SINGLE ONE
-- Count the VEP files in indexed_context["vep_files_index"] - there should be ~30 VEP files
-- Count the VEP-related issues in indexed_context["issues_index"] - process ALL of them
-- For EACH VEP file in the index, you MUST:
+- For EACH VEP file in indexed_context["vep_files_index"], you MUST:
   1. Read the file content (it's in the index, but verify by reading if needed)
   2. Extract the VEP number (e.g., vep-0176, vep-0168, etc.)
   3. Find the corresponding tracking issue
   4. Create a VEPInfo object
-- For EACH VEP-related issue in the index, you MUST:
+- For EACH VEP-related issue in indexed_context["issues_index"], you MUST:
   1. Check if it corresponds to a VEP file
   2. If no file exists, it might be a new VEP - still create a VEPInfo from the issue
   3. Extract VEP number from issue title/body if present
-- DO NOT SKIP ANY ITEMS - if the index shows 30 VEP files, you must create 30 VEPInfo objects
-- If you find fewer than 25 VEPs, you are MISSING some - go back and check the index again
+- DO NOT SKIP ANY ITEMS - process the entire index systematically
 - The indexed context is your source of truth - it lists everything that exists
+- Work through the index methodically: for each item, determine if it's a VEP, extract its information, and create a VEPInfo object
 
 IMPORTANT GUIDANCE:
 - You will receive INDEXED CONTEXT that pre-lists all issues and VEP files - USE THIS COMPREHENSIVE LIST
@@ -262,7 +259,7 @@ IMPORTANT GUIDANCE:
 - Do not rely on search/filtering - use the complete index provided to ensure nothing is missed
 - The current development cycle version is critical - VEPs targeting this version are most relevant
 - If you find existing VEPs in the state, merge/update them with new information rather than creating duplicates
-- A typical release cycle has 25-30+ VEPs - if you find fewer, you're likely missing some
+- Process every item in the indexed context - completeness is more important than speed
 - The indexed context eliminates guesswork - you know exactly what issues and files exist
 - Process the index systematically: for each VEP file, create a VEPInfo; for each VEP issue without a file, create a VEPInfo
 
@@ -325,21 +322,11 @@ Return ALL discovered VEPs as a list of VEPInfo objects."""
     
     vep_issues_text = json.dumps(vep_issues_for_prompt, indent=2, default=str)
     
-    # Count items in indexed context for validation
-    vep_files_count = len(vep_files_index)
-    vep_issues_count = len(vep_related_issues)
-    
     user_prompt = f"""Discover ALL VEPs from the kubevirt/enhancements repository.
 
-CRITICAL: The indexed context contains:
-- {vep_files_count} VEP file(s) in vep_files_index
-- {vep_issues_count} VEP-related issue(s) in issues_index
-
-You MUST process EVERY SINGLE VEP file and VEP-related issue from the indexed context.
-Your goal is to create VEPInfo objects for ALL {vep_files_count} VEP files (plus any VEPs found only in issues).
-If you return fewer than {max(20, vep_files_count - 5)} VEPs, you are missing some - check the index again.
-
-Process the index item by item - do not skip any VEP files or VEP-related issues.
+The indexed context contains a complete list of VEP files and VEP-related issues.
+You MUST process EVERY item in the indexed context systematically.
+Do not skip any VEP files or VEP-related issues - work through the entire index methodically.
 
 CURRENT STATE:
 {json.dumps({k: v for k, v in context.items() if k != "indexed_context"}, indent=2, default=str)}
