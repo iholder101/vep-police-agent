@@ -4,13 +4,26 @@
 import argparse
 import os
 from datetime import datetime
+from typing import Optional
 from langchain_core.messages import HumanMessage
 from graph import create_graph
 from services.utils import log, invoke_agent
 
 
-def get_initial_state():
+def get_initial_state(sheet_id: Optional[str] = None):
     """Create initial state for the agent."""
+    sheet_config = {
+        "sheet_name": "VEP Status",  # Optional: name for the sheet/tab
+    }
+    
+    if sheet_id:
+        sheet_config["sheet_id"] = sheet_id
+        sheet_config["create_new"] = False  # Use existing sheet
+        log(f"Using existing Google Sheet: {sheet_id}", node="main")
+    else:
+        sheet_config["create_new"] = True  # Will create a new sheet on first run
+        # sheet_id will be set by update_sheets node after creation
+    
     return {
         "messages": [HumanMessage(content="Initialize VEP governance agent")],
         "current_release": None,
@@ -23,11 +36,7 @@ def get_initial_state():
         "errors": [],
         "config_cache": {},
         "vep_updates_by_check": {},
-        "sheet_config": {
-            "create_new": True,  # Will create a new sheet on first run
-            "sheet_name": "VEP Status",  # Optional: name for the sheet/tab
-            # sheet_id will be set by update_sheets node after creation
-        },
+        "sheet_config": sheet_config,
     }
 
 
@@ -56,6 +65,11 @@ def parse_args():
         type=str,
         choices=["discover-veps", "test-sheets"],
         help="Enable debug mode. Options: 'discover-veps' - print indexed VEP data and exit; 'test-sheets' - test Google Sheets with limited LLM iterations"
+    )
+    parser.add_argument(
+        "--sheet-id",
+        type=str,
+        help="Google Sheets document ID to use (from URL: https://docs.google.com/spreadsheets/d/SHEET_ID/edit). If not provided, will try to create a new sheet."
     )
     return parser.parse_args()
 
@@ -100,7 +114,7 @@ def main():
     log("Graph created successfully", node="main")
     
     # Initialize state
-    initial_state = get_initial_state()
+    initial_state = get_initial_state(sheet_id=args.sheet_id)
     log("Initial state prepared", node="main")
     log(f"Sheet config: {initial_state['sheet_config']}", node="main")
     
