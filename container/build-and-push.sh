@@ -49,9 +49,8 @@ if ! command -v podman &> /dev/null; then
     exit 1
 fi
 
-# Check if already logged in to quay.io and verify username matches
-LOGGED_IN_USER=$(podman login --get-login quay.io 2>/dev/null || echo "")
-if [ -z "$LOGGED_IN_USER" ]; then
+# Check if already logged in to quay.io
+if ! podman login --get-login quay.io &> /dev/null; then
     echo "Not logged in to quay.io. Please provide credentials:"
     echo ""
     
@@ -85,37 +84,8 @@ if [ -z "$LOGGED_IN_USER" ]; then
     
     echo "✓ Successfully logged in to quay.io"
     echo ""
-elif [ "$LOGGED_IN_USER" != "$QUAY_USERNAME" ]; then
-    echo "⚠ Warning: Logged in as '${LOGGED_IN_USER}' but pushing to '${QUAY_USERNAME}' namespace"
-    echo "This will likely fail due to permission issues."
-    echo ""
-    read -p "Do you want to login as '${QUAY_USERNAME}' instead? [y/N]: " relogin
-    if [ "$relogin" = "y" ] || [ "$relogin" = "Y" ]; then
-        echo ""
-        read -sp "Quay.io Password/Token for '${QUAY_USERNAME}': " quay_password
-        echo ""
-        
-        if [ -z "$quay_password" ]; then
-            echo "ERROR: Password/Token is required"
-            exit 1
-        fi
-        
-        echo "Logging in to quay.io as '${QUAY_USERNAME}'..."
-        echo "$quay_password" | podman login quay.io --username "$QUAY_USERNAME" --password-stdin
-        
-        if [ $? -ne 0 ]; then
-            echo "ERROR: Failed to login to quay.io"
-            exit 1
-        fi
-        
-        echo "✓ Successfully logged in to quay.io as '${QUAY_USERNAME}'"
-        echo ""
-    else
-        echo "Continuing with current login (may fail)..."
-        echo ""
-    fi
 else
-    echo "✓ Already logged in to quay.io as '${QUAY_USERNAME}'"
+    echo "✓ Already logged in to quay.io"
     echo ""
 fi
 
