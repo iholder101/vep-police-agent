@@ -195,24 +195,38 @@ Step 2: Query All Issues in kubevirt/enhancements
 
 Step 3: Process ALL VEP Documents from Index (CRITICAL - DO NOT SKIP ANY)
 - The indexed_context["vep_files_index"] contains ALL VEP files - you MUST process EVERY ONE
-- Count how many VEP files are in the index - this is your target count
 - For EACH VEP file in the index:
-  * Read the file content (it may already be in the index, but read it if needed)
-  * Extract the VEP number (e.g., vep-0176, vep-0168, vep-0109, etc.)
-  * Extract title, owner, SIG, target release, and all metadata
-  * Find the corresponding tracking issue (match by VEP number)
+  * The file content is already in the index - use it directly
+  * Extract the VEP number from the file content (look for "VEP 176", "VEP-176", "VEP #176", etc.)
+  * VEP numbers may also be in the filename (vep-0176.md) or path
+  * Extract title, owner, SIG, target release, and all metadata from the file content
+  * Find the corresponding tracking issue by matching VEP number
   * Create a VEPInfo object for this VEP
-- DO NOT skip any files - if the index has 30 files, create 30 VEPInfo objects
-- VEP files are in subdirectories like veps/NNNN-vep-name/vep-NNNN.md
+- VEP files may have descriptive names (e.g., "attestation-proposal.md") - the VEP number is in the content
 - Each VEP document contains:
-  * VEP number (e.g., vep-1234)
+  * VEP number (e.g., vep-1234) - extract from content if not in filename
   * Title and description
   * Owner information
   * Target release version
   * SIG information
   * Status and metadata
 
-Step 4: Find Related PRs
+Step 4: Process VEPs that ONLY exist as Issues (CRITICAL - MANY VEPs HAVE NO FILE YET)
+- Many VEPs only exist as tracking issues - they don't have files yet
+- For EACH VEP-related issue in indexed_context["issues_index"]:
+  * Extract VEP number from issue title/body (e.g., "VEP 176", "VEP-176", "VEP #176")
+  * Check if this VEP number already has a file (from Step 3)
+  * If NO file exists for this VEP number, create a VEPInfo object from the issue:
+    - Use issue number as tracking_issue_id
+    - Extract VEP number from issue title/body
+    - Extract title from issue title
+    - Extract owner from issue assignee or body
+    - Extract SIG from issue labels (sig/compute, sig/network, sig/storage)
+    - Use issue state as status
+    - Use issue timestamps for created_at and last_updated
+  * This is critical - many VEPs are tracked only via issues until they're formalized
+
+Step 5: Find Related PRs
 - Use the indexed PRs list from kubevirt/kubevirt (provided in indexed_context)
 - Search for PRs in kubevirt/enhancements that reference VEP numbers
 - Match PRs from the index to their corresponding VEPs by:
@@ -221,7 +235,7 @@ Step 4: Find Related PRs
   * Linking implementation PRs to VEP tracking issues
 - Link PRs to their corresponding VEPs
 
-Step 5: Create VEPInfo Objects for ALL Discovered VEPs
+Step 6: Create VEPInfo Objects for ALL Discovered VEPs
 - You MUST create a VEPInfo object for EVERY VEP you found in the indexed context
 - Ensure you've processed every VEP file and every VEP-related issue
 - For each discovered VEP, create a VEPInfo object with:
