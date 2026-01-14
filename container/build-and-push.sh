@@ -4,7 +4,14 @@
 set -e
 
 # Default values
-QUAY_USERNAME="${QUAY_USERNAME:-$(whoami)}"
+# Try to get quay.io username from login, fallback to whoami
+LOGGED_IN_QUAY_USER=$(podman login --get-login quay.io 2>/dev/null || echo "")
+if [ -n "$LOGGED_IN_QUAY_USER" ]; then
+    DEFAULT_QUAY_USERNAME="$LOGGED_IN_QUAY_USER"
+else
+    DEFAULT_QUAY_USERNAME="$(whoami)"
+fi
+QUAY_USERNAME="${QUAY_USERNAME:-$DEFAULT_QUAY_USERNAME}"
 IMAGE_NAME="${IMAGE_NAME:-vep-police-agent}"
 
 # Try to get git commit hash for tag, fallback to "latest"
