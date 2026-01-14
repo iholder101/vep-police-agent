@@ -6,10 +6,44 @@ ensuring the LLM has a complete picture of what exists rather than having to dis
 
 import re
 import json
+import time
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 from services.utils import log
 from services.mcp_factory import get_mcp_tools_by_name
+
+
+def _call_with_retry(tool_func, max_retries=3, delay=2, **kwargs):
+    """Call a tool function with retry logic for rate limit errors.
+    
+    Args:
+        tool_func: The tool function to call
+        max_retries: Maximum number of retries
+        delay: Initial delay in seconds (doubles on each retry)
+        **kwargs: Arguments to pass to tool_func
+    
+    Returns:
+        Result from tool_func, or None if all retries fail
+    """
+    for attempt in range(max_retries):
+        try:
+            return tool_func(**kwargs)
+        except Exception as e:
+            error_str = str(e).lower()
+            # Check if it's a rate limit error
+            if "rate limit" in error_str or "rate_limit" in error_str:
+                if attempt < max_retries - 1:
+                    wait_time = delay * (2 ** attempt)  # Exponential backoff
+                    log(f"Rate limit hit, waiting {wait_time}s before retry {attempt + 1}/{max_retries}", node="indexer", level="WARNING")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    log(f"Rate limit error after {max_retries} retries: {e}", node="indexer", level="ERROR")
+                    return None
+            else:
+                # Not a rate limit error, re-raise
+                raise
+    return None
 
 
 def _parse_version(version_str: str) -> tuple:
@@ -717,17 +751,28 @@ def index_vep_files() -> List[Dict[str, Any]]:
             return []
         
         try:
-            # Get directory listing
-            try:
-                veps_content = get_file_tool.func(
-                    owner="kubevirt",
-                    repo="enhancements",
-                    path="veps"
-                )
-            except TypeError:
-                veps_content = get_file_tool.func(
-                    path="kubevirt/enhancements/veps"
-                )
+            # Get directory listing with retry logic
+            veps_content = _call_with_retry(
+                get_file_tool.func,
+                owner="kubevirt",
+                repo="enhancements",
+                path="veps"
+            )
+            
+            # If that fails, try with path format
+            if veps_content is None:
+                try:
+                    veps_content = _call_with_retry(
+                        get_file_tool.func,
+                        path="kubevirt/enhancements/veps"
+                    )
+                except TypeError:
+                    # Function doesn't accept path parameter
+                    pass
+            
+            if veps_content is None:
+                log("Failed to read VEPs directory after retries", node="indexer", level="WARNING")
+                return []
             
             content_str = str(veps_content)
             # Check if it's an error message
@@ -803,18 +848,34 @@ def index_vep_files() -> List[Dict[str, Any]]:
             # Now search each subdirectory for VEP files
             log(f"Found {len(subdirectories)} subdirectories to search: {subdirectories[:5]}{'...' if len(subdirectories) > 5 else ''}", node="indexer", level="DEBUG")
             
-            for subdir in subdirectories:
+            for i, subdir in enumerate(subdirectories):
+                # Add small delay between requests to avoid rate limits
+                if i > 0:
+                    time.sleep(0.5)  # 500ms delay between subdirectory requests
+                
                 try:
-                    try:
-                        subdir_content = get_file_tool.func(
-                            owner="kubevirt",
-                            repo="enhancements",
-                            path=subdir
-                        )
-                    except TypeError:
-                        subdir_content = get_file_tool.func(
-                            path=f"kubevirt/enhancements/{subdir}"
-                        )
+                    # Try with owner/repo/path format first
+                    subdir_content = _call_with_retry(
+                        get_file_tool.func,
+                        owner="kubevirt",
+                        repo="enhancements",
+                        path=subdir
+                    )
+                    
+                    # If that fails, try with path format
+                    if subdir_content is None:
+                        try:
+                            subdir_content = _call_with_retry(
+                                get_file_tool.func,
+                                path=f"kubevirt/enhancements/{subdir}"
+                            )
+                        except TypeError:
+                            # Function doesn't accept path parameter, skip
+                            continue
+                    
+                    if subdir_content is None:
+                        log(f"Failed to read subdirectory {subdir} after retries", node="indexer", level="DEBUG")
+                        continue
                     
                     subdir_str = str(subdir_content)
                     if len(subdir_str) < 100:
@@ -874,19 +935,45 @@ def index_vep_files() -> List[Dict[str, Any]]:
             
             # Read each VEP file and include its content
             vep_data = []
-            for vep_file_path in vep_files:
+            for i, vep_file_path in enumerate(vep_files):
+                # Add small delay between requests to avoid rate limits
+                if i > 0:
+                    time.sleep(0.3)  # 300ms delay between file reads
+                
                 try:
                     # vep_file_path is already a full path like "veps/sig-compute/vep-0176.md"
-                    try:
-                        vep_content = get_file_tool.func(
-                            owner="kubevirt",
-                            repo="enhancements",
-                            path=vep_file_path
-                        )
-                    except TypeError:
-                        vep_content = get_file_tool.func(
-                            path=f"kubevirt/enhancements/{vep_file_path}"
-                        )
+                    vep_content = _call_with_retry(
+                        get_file_tool.func,
+                        owner="kubevirt",
+                        repo="enhancements",
+                        path=vep_file_path
+                    )
+                    
+                    # If that fails, try with path format
+                    if vep_content is None:
+                        try:
+                            vep_content = _call_with_retry(
+                                get_file_tool.func,
+                                path=f"kubevirt/enhancements/{vep_file_path}"
+                            )
+                        except TypeError:
+                            # Function doesn't accept path parameter, skip
+                            continue
+                    
+                    if vep_content is None:
+                        log(f"Failed to read VEP file {vep_file_path} after retries", node="indexer", level="DEBUG")
+                        # Still include the filename even if we can't read it
+                        filename = vep_file_path.split("/")[-1]
+                        vep_number_match = re.search(r'vep-(\d+)', vep_file_path)
+                        vep_number = vep_number_match.group(0) if vep_number_match else filename
+                        vep_data.append({
+                            "filename": filename,
+                            "path": vep_file_path,
+                            "vep_number": vep_number,
+                            "content": None,
+                            "error": "Rate limit or read failure",
+                        })
+                        continue
                     
                     content_str = str(vep_content)
                     if len(content_str) > 100 and not content_str.lower().startswith(("error", "failed", "cannot", "unable")):
