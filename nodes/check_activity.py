@@ -49,14 +49,7 @@ Your task:
 4. Flag inactive VEPs (>2 weeks without updates)
 5. Flag review lag (>1 week without review)
 
-CRITICAL - GitHub Search Query Requirements:
-- When using search_issues tool, ALL queries MUST include either "is:issue" or "is:pull-request"
-- Correct examples:
-  * "org:kubevirt \"VEP 160\" is:issue" (to search for issues)
-  * "org:kubevirt \"VEP 160\" is:pull-request" (to search for PRs)
-  * "repo:kubevirt/enhancements \"VEP 160\" is:issue"
-- Incorrect (will fail): "org:kubevirt \"VEP 160\"" (missing is:issue or is:pull-request)
-- If you need both issues and PRs, make two separate queries
+Use the GitHub MCP tools to fetch the necessary data. Refer to each tool's description for usage requirements and examples.
 
 Return the updated VEP objects with activity fields filled in."""
     
