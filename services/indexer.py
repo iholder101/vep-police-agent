@@ -1143,15 +1143,85 @@ def index_vep_files() -> List[Dict[str, Any]]:
     return []
 
 
-def create_indexed_context(days_back: Optional[int] = 365) -> Dict[str, Any]:
+def _load_cached_index(cache_file: Path, max_age_minutes: int = 60) -> Optional[Dict[str, Any]]:
+    """Load cached indexed context if it exists and is fresh.
+    
+    Args:
+        cache_file: Path to the cache file
+        max_age_minutes: Maximum age of cache in minutes (default: 60)
+    
+    Returns:
+        Cached indexed context if fresh, None otherwise
+    """
+    if not cache_file.exists():
+        log(f"Cache file not found: {cache_file}", node="indexer", level="DEBUG")
+        return None
+    
+    try:
+        with open(cache_file, 'r', encoding='utf-8') as f:
+            cache_data = json.load(f)
+        
+        # Check if cache has timestamp
+        cached_at_str = cache_data.get("cached_at")
+        if not cached_at_str:
+            log("Cache file missing timestamp, will regenerate", node="indexer", level="DEBUG")
+            return None
+        
+        # Parse timestamp
+        cached_at = datetime.fromisoformat(cached_at_str)
+        age = datetime.now() - cached_at
+        age_minutes = age.total_seconds() / 60
+        
+        if age_minutes < max_age_minutes:
+            log(f"Using cached index (age: {age_minutes:.1f} minutes, max: {max_age_minutes} minutes)", node="indexer")
+            # Remove cached_at from returned data (it's metadata, not part of indexed context)
+            cached_context = cache_data.copy()
+            cached_context.pop("cached_at", None)
+            cached_context.pop("cache_age_minutes", None)
+            return cached_context
+        else:
+            log(f"Cache expired (age: {age_minutes:.1f} minutes, max: {max_age_minutes} minutes), will regenerate", node="indexer")
+            return None
+    
+    except (json.JSONDecodeError, ValueError, KeyError) as e:
+        log(f"Error reading cache file: {e}, will regenerate", node="indexer", level="WARNING")
+        return None
+
+
+def _save_cached_index(cache_file: Path, indexed_context: Dict[str, Any]) -> None:
+    """Save indexed context to cache file.
+    
+    Args:
+        cache_file: Path to the cache file
+        indexed_context: The indexed context to cache
+    """
+    try:
+        # Add timestamp to cache
+        cache_data = indexed_context.copy()
+        cache_data["cached_at"] = datetime.now().isoformat()
+        
+        # Write to cache file
+        with open(cache_file, 'w', encoding='utf-8') as f:
+            json.dump(cache_data, f, indent=2, default=str)
+        
+        log(f"Saved indexed context to cache: {cache_file}", node="indexer", level="DEBUG")
+    
+    except Exception as e:
+        log(f"Error saving cache file: {e}", node="indexer", level="WARNING")
+        # Don't fail if cache save fails - indexing still succeeded
+
+
+def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes: int = 60) -> Dict[str, Any]:
     """Create a comprehensive indexed context for VEP discovery.
     
     This pre-fetches key information so the LLM has a complete picture
-    of what exists before starting discovery.
+    of what exists before starting discovery. Results are cached to avoid
+    re-indexing on every run.
     
     Args:
         days_back: Only include issues/PRs from last N days (None = all items)
                    Default 365 days to avoid overwhelming context
+        cache_max_age_minutes: Maximum age of cache in minutes before regenerating (default: 60)
     
     Returns:
         Dict with indexed information:
@@ -1161,7 +1231,19 @@ def create_indexed_context(days_back: Optional[int] = 365) -> Dict[str, Any]:
         - prs_index: List of PRs in kubevirt repo
         - vep_files_index: List of VEP files in veps/ directory
     """
-    log(f"Creating indexed context for VEP discovery (days_back={days_back})", node="indexer")
+    # Try to load from cache first
+    cached_context = _load_cached_index(CACHE_FILE, cache_max_age_minutes)
+    if cached_context is not None:
+        # Verify cache has expected structure
+        if all(key in cached_context for key in ["release_info", "enhancements_readme", "issues_index", "prs_index", "vep_files_index"]):
+            # Cache is valid and fresh
+            log(f"Using cached indexed context (days_back={cached_context.get('days_back', 'unknown')})", node="indexer")
+            return cached_context
+        else:
+            log("Cache file missing required keys, will regenerate", node="indexer", level="WARNING")
+    
+    # Cache miss or expired - create new index
+    log(f"Creating indexed context for VEP discovery (days_back={days_back}, cache_max_age_minutes={cache_max_age_minutes})", node="indexer")
     
     indexed_context = {
         "release_info": index_release_schedule(),
@@ -1181,6 +1263,9 @@ def create_indexed_context(days_back: Optional[int] = 365) -> Dict[str, Any]:
     vep_files_count = len(indexed_context["vep_files_index"])
     
     log(f"Indexed context created: release={release}, readme={readme_available}, issues={issues_count}, prs={prs_count}, vep_files={vep_files_count}", node="indexer")
+    
+    # Save to cache
+    _save_cached_index(CACHE_FILE, indexed_context)
     
     # Extract VEP numbers from issues and match them to files
     # This helps identify VEPs that only exist as issues (no file yet)
