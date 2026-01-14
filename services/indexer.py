@@ -384,6 +384,84 @@ def index_kubevirt_prs(days_back: Optional[int] = 365) -> List[Dict[str, Any]]:
     return []
 
 
+def index_enhancements_readme() -> Optional[Dict[str, Any]]:
+    """Index the README.md from kubevirt/enhancements repository.
+    
+    This contains crucial VEP process documentation, labels, structure, and requirements.
+    
+    Returns:
+        Dict with README content, or None if not found
+    """
+    log("Indexing README.md from kubevirt/enhancements", node="indexer")
+    
+    try:
+        tools = get_mcp_tools_by_name("github")
+        
+        # Find file reading tool
+        get_file_tool = None
+        tool_names_to_try = [
+            "get_file_contents",
+            "read_file",
+            "get_file",
+            "read_file_contents",
+            "mcp_GitHub_get_file_contents",
+        ]
+        
+        for tool in tools:
+            if any(name.lower() in tool.name.lower() for name in tool_names_to_try):
+                get_file_tool = tool
+                break
+        
+        if not get_file_tool:
+            log(f"Could not find file reading tool. Available tools: {[t.name for t in tools]}", node="indexer", level="WARNING")
+            return None
+        
+        try:
+            # Try different parameter formats
+            try:
+                readme_content = get_file_tool.func(
+                    owner="kubevirt",
+                    repo="enhancements",
+                    path="README.md"
+                )
+            except TypeError:
+                try:
+                    readme_content = get_file_tool.func(
+                        path="kubevirt/enhancements/README.md"
+                    )
+                except TypeError:
+                    readme_content = get_file_tool.func(
+                        owner="kubevirt",
+                        repo="enhancements",
+                        path="README.md",
+                        branch="main"
+                    )
+            
+            if readme_content and len(str(readme_content)) > 100:
+                content_str = str(readme_content)
+                log(f"Retrieved README.md (length: {len(content_str)})", node="indexer")
+                
+                # Truncate if too long, but keep more than other files since it's critical
+                return {
+                    "content": content_str[:20000] if len(content_str) > 20000 else content_str,
+                    "full_length": len(content_str),
+                    "note": "This contains VEP process documentation, labels, structure, and requirements. Use this to understand how VEPs are organized and what to look for."
+                }
+            else:
+                log("README.md content is too short or empty", node="indexer", level="WARNING")
+                return None
+                
+        except Exception as e:
+            log(f"Error reading README.md: {e}", node="indexer", level="WARNING")
+            return None
+            
+    except Exception as e:
+        log(f"Error in index_enhancements_readme: {e}", node="indexer", level="WARNING")
+        return None
+    
+    return None
+
+
 def index_vep_files() -> List[Dict[str, Any]]:
     """Index all VEP files in kubevirt/enhancements/veps/ directory.
     
@@ -458,6 +536,7 @@ def create_indexed_context(days_back: Optional[int] = 365) -> Dict[str, Any]:
     Returns:
         Dict with indexed information:
         - release_info: Current release and schedule
+        - enhancements_readme: README.md content with VEP process documentation
         - issues_index: List of issues in enhancements repo
         - prs_index: List of PRs in kubevirt repo
         - vep_files_index: List of VEP files in veps/ directory
@@ -466,6 +545,7 @@ def create_indexed_context(days_back: Optional[int] = 365) -> Dict[str, Any]:
     
     indexed_context = {
         "release_info": index_release_schedule(),
+        "enhancements_readme": index_enhancements_readme(),
         "issues_index": index_enhancements_issues(days_back=days_back),
         "prs_index": index_kubevirt_prs(days_back=days_back),
         "vep_files_index": index_vep_files(),
@@ -475,10 +555,11 @@ def create_indexed_context(days_back: Optional[int] = 365) -> Dict[str, Any]:
     
     # Log summary
     release = indexed_context["release_info"]["current_release"] if indexed_context["release_info"] else "unknown"
+    readme_available = "yes" if indexed_context["enhancements_readme"] else "no"
     issues_count = len(indexed_context["issues_index"])
     prs_count = len(indexed_context["prs_index"])
     vep_files_count = len(indexed_context["vep_files_index"])
     
-    log(f"Indexed context created: release={release}, issues={issues_count}, prs={prs_count}, vep_files={vep_files_count}", node="indexer")
+    log(f"Indexed context created: release={release}, readme={readme_available}, issues={issues_count}, prs={prs_count}, vep_files={vep_files_count}", node="indexer")
     
     return indexed_context

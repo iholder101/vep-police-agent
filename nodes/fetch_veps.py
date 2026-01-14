@@ -45,6 +45,16 @@ CRITICAL: You must follow this systematic workflow to discover ALL VEPs. Do not 
 
 WORKFLOW (follow in order):
 
+Step 0: Read VEP Process Documentation (CRITICAL FIRST STEP)
+- Read the enhancements README.md content provided in indexed_context
+- This contains:
+  * VEP process documentation and requirements
+  * Labels used to identify VEP tracking issues (e.g., "kind/vep", "area/enhancement")
+  * How VEPs are structured and organized
+  * What makes an issue a VEP tracker
+  * Process requirements and compliance criteria
+- Understanding this documentation is ESSENTIAL for correctly identifying VEPs
+
 Step 1: Determine Current Development Cycle
 - First, check the release schedule from kubevirt/sig-release repository
 - Navigate to: kubevirt/sig-release/releases/ directory
@@ -136,15 +146,23 @@ CURRENT STATE:
 
 INDEXED INFORMATION (pre-fetched for your reference):
 - Release Info: {json.dumps(indexed_context.get("release_info"), indent=2, default=str) if indexed_context.get("release_info") else "Not available"}
+- Enhancements README: {"Available - contains VEP process documentation, labels, and structure" if indexed_context.get("enhancements_readme") else "Not available"}
 - Issues Index: Found {len(indexed_context.get("issues_index", []))} issues in kubevirt/enhancements (last {indexed_context.get("days_back", "all")} days)
 - PRs Index: Found {len(indexed_context.get("prs_index", []))} PRs in kubevirt/kubevirt (last {indexed_context.get("days_back", "all")} days)
 - VEP Files Index: Found {len(indexed_context.get("vep_files_index", []))} items in veps/ directory
 
 The indexed information above gives you a complete picture of what exists. Use this to:
-1. Know the current release version (from release_info)
-2. Have a list of all issues to check (from issues_index)
-3. Have a list of all PRs that might reference VEPs (from prs_index)
-4. Have a list of all VEP files to read (from vep_files_index)
+1. Understand the VEP process (from enhancements_readme - READ THIS FIRST to understand labels, structure, requirements)
+2. Know the current release version (from release_info)
+3. Have a list of all issues to check (from issues_index)
+4. Have a list of all PRs that might reference VEPs (from prs_index)
+5. Have a list of all VEP files to read (from vep_files_index)
+
+CRITICAL: Read the enhancements_readme content first to understand:
+- What labels identify VEP tracking issues
+- How VEPs are structured and organized
+- What the process requirements are
+- How to identify VEP-related issues and PRs
 
 Now use GitHub MCP tools to:
 - Read the full details of issues mentioned in the issues_index
