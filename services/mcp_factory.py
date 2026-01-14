@@ -70,6 +70,15 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
             # Only use None if we explicitly want to inherit (but we want to ensure token is passed)
             env = os.environ.copy()
         
+        # Debug: Log environment info for GitHub MCP
+        if config.get("name") == "github" and env:
+            github_token_in_env = env.get("GITHUB_TOKEN")
+            if github_token_in_env:
+                token_preview = github_token_in_env[:10] + "..." if len(github_token_in_env) > 10 else "***"
+                log(f"GITHUB_TOKEN will be passed to MCP subprocess (token: {token_preview}, env keys: {len(env)})", node="mcp_factory", level="DEBUG")
+            else:
+                log("WARNING: GITHUB_TOKEN not found in environment that will be passed to MCP subprocess", node="mcp_factory", level="WARNING")
+        
         server_params = StdioServerParameters(
             command=config["command"],
             args=config.get("args", []),
