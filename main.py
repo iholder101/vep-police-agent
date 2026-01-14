@@ -15,7 +15,7 @@ from services.utils import log, invoke_agent
 _shutdown_requested = False
 
 
-def get_initial_state(sheet_id: Optional[str] = None):
+def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60):
     """Create initial state for the agent."""
     sheet_config = {
         "sheet_name": "VEP Status",  # Optional: name for the sheet/tab
@@ -42,6 +42,7 @@ def get_initial_state(sheet_id: Optional[str] = None):
         "config_cache": {},
         "vep_updates_by_check": {},
         "sheet_config": sheet_config,
+        "index_cache_minutes": index_cache_minutes,  # Store cache timeout in state
     }
 
 
@@ -75,6 +76,17 @@ def parse_args():
         "--sheet-id",
         type=str,
         help="Google Sheets document ID to use (from URL: https://docs.google.com/spreadsheets/d/SHEET_ID/edit). If not provided, will try to create a new sheet."
+    )
+    parser.add_argument(
+        "--index-cache-minutes",
+        type=int,
+        default=60,
+        help="Maximum age of index cache in minutes before regenerating (default: 60). Set to 0 to disable caching."
+    )
+    parser.add_argument(
+        "--no-index-cache",
+        action="store_true",
+        help="Disable index caching (equivalent to --index-cache-minutes=0)"
     )
     return parser.parse_args()
 
@@ -141,6 +153,13 @@ def main():
     # Set up credentials from CLI args
     setup_credentials(args)
     
+    # Handle index cache flags
+    index_cache_minutes = 0 if args.no_index_cache else args.index_cache_minutes
+    if args.no_index_cache:
+        log("Index caching disabled (--no-index-cache)", node="main")
+    elif index_cache_minutes != 60:  # Only log if different from default
+        log(f"Index cache timeout set to {index_cache_minutes} minutes", node="main")
+    
     log("Starting VEP governance agent", node="main")
     log("Press Ctrl+C to exit gracefully", node="main")
     
@@ -149,7 +168,7 @@ def main():
     log("Graph created successfully", node="main")
     
     # Initialize state
-    initial_state = get_initial_state(sheet_id=args.sheet_id)
+    initial_state = get_initial_state(sheet_id=args.sheet_id, index_cache_minutes=index_cache_minutes)
     log("Initial state prepared", node="main")
     log(f"Sheet config: {initial_state['sheet_config']}", node="main")
     

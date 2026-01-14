@@ -289,7 +289,9 @@ Return ALL discovered VEPs as a list of VEPInfo objects."""
     
     # Create indexed context - pre-fetch key information for precision
     log("Creating indexed context for VEP discovery", node="fetch_veps")
-    indexed_context = create_indexed_context()
+    # Get cache timeout from state (default: 60 minutes)
+    index_cache_minutes = state.get("index_cache_minutes", 60)
+    indexed_context = create_indexed_context(cache_max_age_minutes=index_cache_minutes)
     
     # Prepare context for LLM
     release_schedule = state.get("release_schedule")
