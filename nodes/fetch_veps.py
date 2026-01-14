@@ -101,19 +101,17 @@ def fetch_veps_node(state: VEPState) -> Any:
                     all_code_prs_merged=False
                 ),
                 compliance=VEPCompliance(
-                    has_tracking_issue=True,
-                    has_vep_document=True,
-                    has_target_release=True,
-                    has_owner=True,
-                    has_sig_label=True,
-                    compliance_score=1.0,
-                    missing_items=[]
+                    template_complete=True,
+                    all_sigs_signed_off=False,
+                    vep_merged=True,
+                    prs_linked=True,
+                    docs_pr_created=False,
+                    labels_valid=True
                 ),
                 activity=VEPActivity(
-                    days_since_last_update=2,
-                    days_since_creation=45,
-                    recent_activity=True,
-                    activity_score=0.9
+                    last_activity=now,
+                    days_since_update=2,
+                    review_lag_days=1
                 ),
                 tracking_issue=None,
                 target_release="v1.8"
@@ -136,19 +134,17 @@ def fetch_veps_node(state: VEPState) -> Any:
                     all_code_prs_merged=True
                 ),
                 compliance=VEPCompliance(
-                    has_tracking_issue=True,
-                    has_vep_document=True,
-                    has_target_release=True,
-                    has_owner=True,
-                    has_sig_label=True,
-                    compliance_score=1.0,
-                    missing_items=[]
+                    template_complete=True,
+                    all_sigs_signed_off=True,
+                    vep_merged=True,
+                    prs_linked=True,
+                    docs_pr_created=True,
+                    labels_valid=True
                 ),
                 activity=VEPActivity(
-                    days_since_last_update=0,
-                    days_since_creation=60,
-                    recent_activity=False,
-                    activity_score=1.0
+                    last_activity=now,
+                    days_since_update=0,
+                    review_lag_days=None
                 ),
                 tracking_issue=None,
                 target_release="v1.9"
