@@ -325,7 +325,21 @@ Return ALL discovered VEPs as a list of VEPInfo objects."""
     
     vep_issues_text = json.dumps(vep_issues_for_prompt, indent=2, default=str)
     
-    user_prompt = f"""Discover all VEPs from the kubevirt/enhancements repository.
+    # Count items in indexed context for validation
+    vep_files_count = len(vep_files_index)
+    vep_issues_count = len(vep_related_issues)
+    
+    user_prompt = f"""Discover ALL VEPs from the kubevirt/enhancements repository.
+
+CRITICAL: The indexed context contains:
+- {vep_files_count} VEP file(s) in vep_files_index
+- {vep_issues_count} VEP-related issue(s) in issues_index
+
+You MUST process EVERY SINGLE VEP file and VEP-related issue from the indexed context.
+Your goal is to create VEPInfo objects for ALL {vep_files_count} VEP files (plus any VEPs found only in issues).
+If you return fewer than {max(20, vep_files_count - 5)} VEPs, you are missing some - check the index again.
+
+Process the index item by item - do not skip any VEP files or VEP-related issues.
 
 CURRENT STATE:
 {json.dumps({k: v for k, v in context.items() if k != "indexed_context"}, indent=2, default=str)}
