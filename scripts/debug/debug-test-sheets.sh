@@ -35,9 +35,14 @@ if [ "$SHEET_ID_IN_ARGS" = false ]; then
     CMD_ARGS+=(--sheet-id "$DEFAULT_SHEET_ID")
 fi
 
-# Pass through any additional arguments/flags
+# Pass through any additional arguments/flags (including --no-index-cache, --index-cache-minutes, etc.)
+# Note: --debug test-sheets is added last, so it will override any --debug flag passed by user
 if [ $# -gt 0 ]; then
     for arg in "$@"; do
+        # Skip --debug if user passed it, since we'll add our own
+        if [[ "$arg" == --debug* ]]; then
+            continue
+        fi
         CMD_ARGS+=("$arg")
     done
 fi
