@@ -10,19 +10,18 @@ from langchain_core.tools import Tool
 # 
 # Notes on fixing warnings:
 # 1. npm version warning: ✅ FIXED - Updated npm to latest in Containerfile
-# 2. Deprecated package warnings: ⚠️ CANNOT FIX - @modelcontextprotocol/server-github is 
-#    marked deprecated by npm but is still the official/only package available. The package
-#    maintainers marked it deprecated, not us. We'd need an alternative package to fix this.
-# 3. "GitHub MCP Server running on stdio" messages: These are informational startup messages
-#    from the MCP server. Since we create a new process per tool call, they appear repeatedly.
-#    Real errors come through the MCP protocol (stdin/stdout), so redirecting stderr is safe.
+# 2. Deprecated package warnings: ✅ FIXED - Switched from deprecated @modelcontextprotocol/server-github
+#    to @ama-mcp/github (actively maintained, published Dec 2025)
+# 3. "GitHub MCP Server running on stdio" messages: Redirected stderr to suppress startup messages;
+#    real errors come through MCP protocol (stdin/stdout)
 MCP_CONFIGS = {
     "github":
     {
         "name": "github",
         "command": "sh",
+        # Use @ama-mcp/github instead of deprecated @modelcontextprotocol/server-github
         # Redirect stderr to suppress startup messages; errors come through MCP protocol
-        "args": ["-c", "exec npx --yes @modelcontextprotocol/server-github 2>/dev/null"],
+        "args": ["-c", "exec npx --yes @ama-mcp/github 2>/dev/null"],
         "env": {}  # Add GITHUB_TOKEN to env if needed
     },
 
