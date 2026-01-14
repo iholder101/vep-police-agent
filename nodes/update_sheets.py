@@ -132,7 +132,18 @@ Sync this VEP data to Google Sheets. Decide on the schema, read the current shee
             # MCP loaded but operation failed (likely auth/permissions issue)
             error_msg = f"Google Sheets update failed: {', '.join(result.errors) if hasattr(result, 'errors') and result.errors else 'Unknown error'}"
             log(error_msg, node="update_sheets", level="WARNING")
-            # Don't clear the flag - might be a transient error
+            
+            # Check if it's a permission error - don't retry indefinitely
+            error_text = error_msg.lower()
+            if "insufficient permission" in error_text or "permission denied" in error_text:
+                log("Permission error detected - clearing sheets_need_update flag to prevent infinite retries. Please fix Google Cloud credentials/scopes.", node="update_sheets", level="WARNING")
+                return {
+                    "last_check_times": last_check_times,
+                    "sheets_need_update": False,  # Clear flag for permission errors
+                    "next_tasks": next_tasks,
+                }
+            
+            # For other errors, keep retrying (might be transient)
             return {
                 "last_check_times": last_check_times,
                 "sheets_need_update": True,  # Keep flag set for retry
