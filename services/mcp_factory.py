@@ -8,6 +8,9 @@ from mcp.client.stdio import stdio_client
 from langchain_core.tools import Tool
 from services.utils import log
 
+# ExceptionGroup is available in Python 3.11+ as a built-in
+# For Python < 3.11, we'll use hasattr checks instead
+
 # Dictionary mapping MCP names to their configurations
 # 
 # Notes on fixing warnings:
@@ -155,6 +158,27 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
     return all_tools
 
 
+def _extract_error_messages(exc: Exception) -> list:
+    """Recursively extract error messages from exceptions, including ExceptionGroup."""
+    error_messages = []
+    
+    # Check if it's an ExceptionGroup (Python 3.11+) or has exceptions attribute
+    # ExceptionGroup is a built-in in Python 3.11+, but we check hasattr for compatibility
+    if hasattr(exc, 'exceptions'):
+        # It's an ExceptionGroup or exception group-like object - recursively extract from all nested exceptions
+        try:
+            for nested_exc in exc.exceptions:
+                error_messages.extend(_extract_error_messages(nested_exc))
+        except (TypeError, AttributeError):
+            # If exceptions is not iterable, just use the exception itself
+            error_messages.append(str(exc).lower())
+    else:
+        # Regular exception - add its message
+        error_messages.append(str(exc).lower())
+    
+    return error_messages
+
+
 def get_mcp_tools_by_config(*mcp_configs: Dict[str, Any]) -> List[Tool]:
     """
     Retrieve tools from one or more MCP servers using configuration dictionaries.
@@ -174,24 +198,17 @@ def get_mcp_tools_by_config(*mcp_configs: Dict[str, Any]) -> List[Tool]:
         return asyncio.run(_get_mcp_tools_async(*mcp_configs))
     except Exception as e:
         # Handle both regular exceptions and ExceptionGroup (Python 3.11+)
-        error_messages = []
-        
-        # Check if it's an ExceptionGroup
-        if hasattr(e, 'exceptions'):
-            # It's an ExceptionGroup - check all exceptions
-            for exc in e.exceptions:
-                error_messages.append(str(exc).lower())
-        else:
-            # Regular exception
-            error_messages.append(str(e).lower())
+        error_messages = _extract_error_messages(e)
         
         # Check if any exception indicates a connection/MCP issue
         all_errors = " ".join(error_messages)
-        if any(keyword in all_errors for keyword in ["404", "not found", "connection closed", "mcp"]):
+        if any(keyword in all_errors for keyword in ["404", "not found", "connection closed", "mcp", "mcperror"]):
             # This is likely a missing npm package or MCP server failure - log and return empty list
             from services.utils import log
             mcp_names = [config.get("name", "unknown") for config in mcp_configs]
-            log(f"MCP server(s) {', '.join(mcp_names)} not available (package may not exist, not installed, or connection failed): {e}", node="mcp_factory", level="WARNING")
+            # Get a simplified error message (first meaningful error)
+            first_error = error_messages[0] if error_messages else str(e)
+            log(f"MCP server(s) {', '.join(mcp_names)} not available (package may not exist, not installed, or connection failed): {first_error}", node="mcp_factory", level="WARNING")
             return []
         # Re-raise other exceptions
         raise
