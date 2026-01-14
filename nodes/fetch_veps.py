@@ -7,6 +7,7 @@ from state import VEPState, VEPInfo
 from services.utils import log
 from services.llm_helper import invoke_llm_check
 from services.response_models import CheckResponse
+from services.indexer import create_indexed_context
 
 
 class FetchVEPsResponse(CheckResponse):
@@ -73,8 +74,12 @@ Step 3: Read VEP Documents from veps/ Directory
   * Status and metadata
 
 Step 4: Find Related PRs
+- Use the indexed PRs list from kubevirt/kubevirt (provided in indexed_context)
 - Search for PRs in kubevirt/enhancements that reference VEP numbers
-- Search for PRs in kubevirt/kubevirt that implement VEP features
+- Match PRs from the index to their corresponding VEPs by:
+  * Checking PR titles/bodies for VEP number references (e.g., "vep-1234", "VEP-1234")
+  * Checking PR labels for VEP-related labels
+  * Linking implementation PRs to VEP tracking issues
 - Link PRs to their corresponding VEPs
 
 Step 5: Create VEPInfo Objects
@@ -93,11 +98,13 @@ For each discovered VEP, create a VEPInfo object with:
 - target_release: Target release version (should match current development cycle if active)
 
 IMPORTANT GUIDANCE:
-- You must be THOROUGH - query ALL issues, read ALL VEP documents, find ALL related PRs
-- Do not assume you found all VEPs after finding a few - continue searching systematically
+- You will receive INDEXED CONTEXT that pre-lists all issues and VEP files - USE THIS COMPREHENSIVE LIST
+- The indexed context shows you exactly what exists - check EVERY item in the index systematically
+- Do not rely on search/filtering - use the complete index provided to ensure nothing is missed
 - The current development cycle version is critical - VEPs targeting this version are most relevant
 - If you find existing VEPs in the state, merge/update them with new information rather than creating duplicates
 - A typical release cycle has 20-30+ VEPs - if you find fewer, you're likely missing some
+- The indexed context eliminates guesswork - you know exactly what issues and files exist
 
 Use GitHub MCP tools to:
 - Search/list ALL issues in kubevirt/enhancements repository
@@ -109,20 +116,42 @@ Use GitHub MCP tools to:
 
 Return ALL discovered VEPs as a list of VEPInfo objects."""
     
+    # Create indexed context - pre-fetch key information for precision
+    log("Creating indexed context for VEP discovery", node="fetch_veps")
+    indexed_context = create_indexed_context()
+    
     # Prepare context for LLM
     release_schedule = state.get("release_schedule")
     context = {
         "existing_veps": [vep.model_dump(mode='json') for vep in existing_veps],
         "release_schedule": release_schedule.model_dump(mode='json') if release_schedule else None,
         "current_release": state.get("current_release"),
+        "indexed_context": indexed_context,  # Add indexed information
     }
     
     user_prompt = f"""Discover all VEPs from the kubevirt/enhancements repository.
 
-Current state:
-{json.dumps(context, indent=2, default=str)}
+CURRENT STATE:
+{json.dumps({k: v for k, v in context.items() if k != "indexed_context"}, indent=2, default=str)}
 
-Use GitHub MCP tools to search for VEP tracking issues and read VEP documents. Create VEPInfo objects for all discovered VEPs and return them. If there are existing VEPs, update them with any new information found."""
+INDEXED INFORMATION (pre-fetched for your reference):
+- Release Info: {json.dumps(indexed_context.get("release_info"), indent=2, default=str) if indexed_context.get("release_info") else "Not available"}
+- Issues Index: Found {len(indexed_context.get("issues_index", []))} issues in kubevirt/enhancements (last {indexed_context.get("days_back", "all")} days)
+- PRs Index: Found {len(indexed_context.get("prs_index", []))} PRs in kubevirt/kubevirt (last {indexed_context.get("days_back", "all")} days)
+- VEP Files Index: Found {len(indexed_context.get("vep_files_index", []))} items in veps/ directory
+
+The indexed information above gives you a complete picture of what exists. Use this to:
+1. Know the current release version (from release_info)
+2. Have a list of all issues to check (from issues_index)
+3. Have a list of all PRs that might reference VEPs (from prs_index)
+4. Have a list of all VEP files to read (from vep_files_index)
+
+Now use GitHub MCP tools to:
+- Read the full details of issues mentioned in the issues_index
+- Read the full content of VEP files mentioned in the vep_files_index
+- Cross-reference and create VEPInfo objects for ALL discovered VEPs
+
+IMPORTANT: The indexed information shows you what EXISTS. Your job is to read the full details and create complete VEPInfo objects. Do not skip any items from the index - check each one systematically."""
     
     # Invoke LLM with structured output
     try:
