@@ -54,8 +54,15 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
         # This ensures the subprocess has access to both custom vars (like GITHUB_TOKEN)
         # and system environment variables
         custom_env = config.get("env", {}).copy()
-        # Merge with parent environment - custom_env takes precedence
-        env = {**os.environ, **custom_env}
+        
+        # If we have custom env vars, merge with parent environment
+        # If no custom vars, use None to inherit parent environment automatically
+        if custom_env:
+            # Merge with parent environment - custom_env takes precedence
+            env = {**os.environ, **custom_env}
+        else:
+            # No custom env vars, let subprocess inherit parent environment
+            env = None
         
         server_params = StdioServerParameters(
             command=config["command"],
@@ -79,8 +86,15 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
                             """Async function that creates a session and calls the tool."""
                             # Prepare environment - merge custom env with parent environment
                             custom_env = tool_config.get("env", {}).copy()
-                            # Merge with parent environment - custom_env takes precedence
-                            env = {**os.environ, **custom_env}
+                            
+                            # If we have custom env vars, merge with parent environment
+                            # If no custom vars, use None to inherit parent environment automatically
+                            if custom_env:
+                                # Merge with parent environment - custom_env takes precedence
+                                env = {**os.environ, **custom_env}
+                            else:
+                                # No custom env vars, let subprocess inherit parent environment
+                                env = None
                             
                             server_params = StdioServerParameters(
                                 command=tool_config["command"],
@@ -144,13 +158,25 @@ def get_mcp_tools_by_config(*mcp_configs: Dict[str, Any]) -> List[Tool]:
     try:
         return asyncio.run(_get_mcp_tools_async(*mcp_configs))
     except Exception as e:
-        # Check if it's a known issue with missing packages
-        error_str = str(e).lower()
-        if "404" in error_str or "not found" in error_str or "connection closed" in error_str:
-            # This is likely a missing npm package - log and return empty list
+        # Handle both regular exceptions and ExceptionGroup (Python 3.11+)
+        error_messages = []
+        
+        # Check if it's an ExceptionGroup
+        if hasattr(e, 'exceptions'):
+            # It's an ExceptionGroup - check all exceptions
+            for exc in e.exceptions:
+                error_messages.append(str(exc).lower())
+        else:
+            # Regular exception
+            error_messages.append(str(e).lower())
+        
+        # Check if any exception indicates a connection/MCP issue
+        all_errors = " ".join(error_messages)
+        if any(keyword in all_errors for keyword in ["404", "not found", "connection closed", "mcp"]):
+            # This is likely a missing npm package or MCP server failure - log and return empty list
             from services.utils import log
             mcp_names = [config.get("name", "unknown") for config in mcp_configs]
-            log(f"MCP server(s) {', '.join(mcp_names)} not available (package may not exist or not installed): {e}", node="mcp_factory", level="WARNING")
+            log(f"MCP server(s) {', '.join(mcp_names)} not available (package may not exist, not installed, or connection failed): {e}", node="mcp_factory", level="WARNING")
             return []
         # Re-raise other exceptions
         raise
