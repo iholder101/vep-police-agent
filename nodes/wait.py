@@ -30,8 +30,12 @@ def wait_node(state: VEPState) -> Any:
     )
     
     # TODO: Later, implement event-driven waiting (GitHub webhooks, polling, etc.)
-    # For now: simple sleep
-    time.sleep(WAIT_INTERVAL)
+    # For now: simple sleep with interruptible wait
+    try:
+        time.sleep(WAIT_INTERVAL)
+    except KeyboardInterrupt:
+        log("Wait interrupted by user", node="wait", level="INFO")
+        raise
     
     # After waiting, return to scheduler (which will check what needs to run)
     return {}

@@ -3,11 +3,16 @@
 
 import argparse
 import os
+import signal
+import sys
 from datetime import datetime
 from typing import Optional
 from langchain_core.messages import HumanMessage
 from graph import create_graph
 from services.utils import log, invoke_agent
+
+# Global flag for graceful shutdown
+_shutdown_requested = False
 
 
 def get_initial_state(sheet_id: Optional[str] = None):
@@ -74,6 +79,18 @@ def parse_args():
     return parser.parse_args()
 
 
+def signal_handler(signum, frame):
+    """Handle SIGINT (Ctrl+C) gracefully."""
+    global _shutdown_requested
+    if _shutdown_requested:
+        # Second Ctrl+C - force exit
+        log("\nForce exit requested. Terminating...", node="main", level="WARNING")
+        sys.exit(130)  # Standard exit code for SIGINT
+    else:
+        _shutdown_requested = True
+        log("\nShutdown requested (Ctrl+C). Finishing current operation and exiting gracefully...", node="main", level="INFO")
+
+
 def setup_credentials(args):
     """Set up credentials from CLI arguments as environment variables."""
     if args.api_key:
@@ -113,6 +130,11 @@ def setup_credentials(args):
 
 def main():
     """Run the VEP governance agent."""
+    global _shutdown_requested
+    
+    # Register signal handler for graceful shutdown
+    signal.signal(signal.SIGINT, signal_handler)
+    
     # Parse command line arguments
     args = parse_args()
     
@@ -120,6 +142,7 @@ def main():
     setup_credentials(args)
     
     log("Starting VEP governance agent", node="main")
+    log("Press Ctrl+C to exit gracefully", node="main")
     
     # Create the graph
     agent = create_graph()
@@ -135,6 +158,10 @@ def main():
         log("Invoking agent...", node="main")
         response = agent.invoke(initial_state)
         
+        if _shutdown_requested:
+            log("Agent interrupted by user. Exiting...", node="main", level="INFO")
+            return
+        
         log("Agent execution completed", node="main")
         log(f"Final state keys: {list(response.keys())}", node="main")
         
@@ -146,7 +173,13 @@ def main():
         else:
             log("Sheet ID not yet set - will be created on first update_sheets run", node="main")
             
+    except KeyboardInterrupt:
+        log("\nInterrupted by user. Exiting gracefully...", node="main", level="INFO")
+        sys.exit(130)
     except Exception as e:
+        if _shutdown_requested:
+            log(f"Error occurred during shutdown: {e}", node="main", level="WARNING")
+            sys.exit(130)
         log(f"Error running agent: {e}", node="main", level="ERROR")
         import traceback
         log(f"Traceback: {traceback.format_exc()}", node="main", level="ERROR")
