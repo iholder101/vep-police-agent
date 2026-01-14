@@ -35,7 +35,9 @@ MCP_CONFIGS = {
     {
         "name": "google-sheets",
         "command": "sh",
-        "args": ["-c", "exec npx --yes @modelcontextprotocol/server-google-sheets 2>/dev/null"],
+        # Note: @modelcontextprotocol/server-google-sheets doesn't exist
+        # Using mcp-google-sheets instead (requires GOOGLE_CREDENTIALS env var)
+        "args": ["-c", "exec npx --yes mcp-google-sheets 2>/dev/null"],
         "env": {}  # Will be populated with GOOGLE_CREDENTIALS at runtime
     },
 }
