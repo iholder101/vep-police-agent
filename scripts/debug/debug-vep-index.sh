@@ -7,6 +7,9 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# Default sheet ID (can be overridden with --sheet-id flag or SHEET_ID env var)
+DEFAULT_SHEET_ID="${SHEET_ID:-12evICwzi3Hpkbc3vWLp6pKEQNz7G3yFblWP2b764et4}"
+
 # Build podman command - mount files and pass paths to avoid JSON parsing issues
 CMD_ARGS=(
     --api-key /workspace/API_KEY
@@ -16,6 +19,27 @@ CMD_ARGS=(
 # Add GitHub token if file exists
 if [ -f "$PROJECT_ROOT/GITHUB_TOKEN" ]; then
     CMD_ARGS+=(--github-token /workspace/GITHUB_TOKEN)
+fi
+
+# Check if --sheet-id is already in arguments (user override)
+SHEET_ID_IN_ARGS=false
+for arg in "$@"; do
+    if [[ "$arg" == --sheet-id* ]]; then
+        SHEET_ID_IN_ARGS=true
+        break
+    fi
+done
+
+# Add default sheet ID if not overridden
+if [ "$SHEET_ID_IN_ARGS" = false ]; then
+    CMD_ARGS+=(--sheet-id "$DEFAULT_SHEET_ID")
+fi
+
+# Pass through any additional arguments/flags
+if [ $# -gt 0 ]; then
+    for arg in "$@"; do
+        CMD_ARGS+=("$arg")
+    done
 fi
 
 CMD_ARGS+=(--debug discover-veps)
