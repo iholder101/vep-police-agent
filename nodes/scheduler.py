@@ -15,6 +15,14 @@ def scheduler_node(state: VEPState) -> Any:
     """
     last_check_times = state.get("last_check_times", {})
     next_tasks = []
+    one_cycle = state.get("one_cycle", False)
+    
+    # In one-cycle mode, if we just completed update_sheets, don't schedule more tasks
+    if one_cycle and state.get("_exit_after_sheets", False):
+        log("One-cycle mode: Sheet update completed, no more tasks scheduled", node="scheduler")
+        return {
+            "next_tasks": [],  # Clear tasks to exit
+        }
     
     # Check if sheets need updating (priority check)
     sheets_need_update = state.get("sheets_need_update", False)
