@@ -163,12 +163,17 @@ Return ALL discovered VEPs as a list of VEPInfo objects."""
             vep_summary["content_preview"] = content_preview
         vep_files_summary.append(vep_summary)
     
-    # Prepare issue summary text (avoid backslash in f-string)
-    vep_issues_json = json.dumps(vep_related_issues[:20], indent=2, default=str)
-    if len(vep_related_issues) > 20:
-        vep_issues_text = vep_issues_json + f"\n... and {len(vep_related_issues) - 20} more VEP-related issues"
-    else:
-        vep_issues_text = vep_issues_json
+    # Prepare issue summary text - include ALL issues (not just first 20)
+    # For large lists, we'll include all but truncate body_preview to save tokens
+    vep_issues_for_prompt = []
+    for issue in vep_related_issues:
+        issue_copy = issue.copy()
+        # Truncate body_preview to 200 chars to save tokens while keeping all issues
+        if "body_preview" in issue_copy and len(issue_copy["body_preview"]) > 200:
+            issue_copy["body_preview"] = issue_copy["body_preview"][:200] + "..."
+        vep_issues_for_prompt.append(issue_copy)
+    
+    vep_issues_text = json.dumps(vep_issues_for_prompt, indent=2, default=str)
     
     user_prompt = f"""Discover all VEPs from the kubevirt/enhancements repository.
 
@@ -189,22 +194,28 @@ CRITICAL: The VEP files are ALREADY PARSED and their CONTENT is above. You do NO
 - Use the content_preview directly to extract VEP metadata (title, owner, target_release, SIG, etc.)
 - Only use tool calls to read full issue details if the indexed data is insufficient
 
-WORKFLOW:
+WORKFLOW (MUST FOLLOW ALL STEPS):
 1. Read enhancements_readme above to understand VEP process and labels
 2. For each VEP file listed above ({len(vep_files_index)} files):
    - Extract VEP number, title, owner, target_release, SIG from the content_preview
    - Find the corresponding tracking issue from the issues list (match by VEP number in title/labels)
    - Create VEPInfo object with all available information
-3. For VEP-related issues that don't have a VEP file yet:
-   - Use tool calls to read full issue details if needed
-   - Create VEPInfo object from issue information
+3. CRITICAL: For ALL {len(vep_related_issues)} VEP-related issues listed above:
+   - Check if each issue already has a corresponding VEP file (from step 2)
+   - If an issue does NOT have a corresponding VEP file, you MUST create a VEPInfo object from the issue
+   - Extract VEP number from issue title/body/labels (look for patterns like "vep-1234", "VEP-1234", "vep1234")
+   - Use issue title as VEP title if no file exists
+   - Use issue creator/assignee as owner
+   - Create VEPInfo object for EVERY VEP-related issue, even if it doesn't have a file
 4. Cross-reference with PRs to link implementation PRs
 
-IMPORTANT: 
-- You have {len(vep_files_index)} VEP files with content already - use them directly from the indexed data above!
-- A typical release cycle has 20-30+ VEPs - if you find fewer, you're missing some
-- Check ALL {len(vep_files_index)} VEP files systematically
-- The indexed context above eliminates the need for most tool calls - use the data directly"""
+CRITICAL REQUIREMENTS:
+- You have {len(vep_files_index)} VEP files with content already - process ALL of them systematically
+- You have {len(vep_related_issues)} VEP-related issues - you MUST create a VEPInfo for EACH one
+- Total expected VEPs: {len(vep_files_index)} files + issues without files = 20-30+ VEPs minimum
+- If you find fewer than 20 VEPs, you are MISSING some - go back and check ALL issues and files again
+- The indexed context above eliminates the need for most tool calls - use the data directly
+- DO NOT skip any VEP-related issue - every issue marked as VEP-related must become a VEPInfo object"""
     
     # Invoke LLM with structured output
     try:

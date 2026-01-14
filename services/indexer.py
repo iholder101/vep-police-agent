@@ -823,13 +823,15 @@ def index_vep_files() -> List[Dict[str, Any]]:
                             elif file_type == "file":
                                 # It's a file - check if it's a VEP file
                                 basename = name.split("/")[-1] if "/" in name else name
-                                if re.match(r'vep-\d+\.md$', basename):
+                                # VEP files are .md files (not necessarily vep-\d+\.md pattern)
+                                if basename.endswith('.md') and not basename.startswith('README') and 'template' not in basename.lower():
                                     # Store full path for reading later
                                     full_path = path if "/" in path else f"veps/{name}"
                                     vep_files.append(full_path)
                         elif isinstance(item, str):
                             basename = item.split("/")[-1] if "/" in item else item
-                            if re.match(r'vep-\d+\.md$', basename):
+                            # VEP files are .md files (not necessarily vep-\d+\.md pattern)
+                            if basename.endswith('.md') and not basename.startswith('README') and 'template' not in basename.lower():
                                 vep_files.append(item if "/" in item else f"veps/{item}")
                 elif isinstance(listing_data, dict):
                     # Try common keys that might contain file list
@@ -847,12 +849,14 @@ def index_vep_files() -> List[Dict[str, Any]]:
                                             subdirectories.append(path if "/" in path else f"veps/{name}")
                                     elif file_type == "file":
                                         basename = name.split("/")[-1] if "/" in name else name
-                                        if re.match(r'vep-\d+\.md$', basename):
+                                        # VEP files are .md files (not necessarily vep-\d+\.md pattern)
+                                        if basename.endswith('.md') and not basename.startswith('README') and 'template' not in basename.lower():
                                             full_path = path if "/" in path else f"veps/{name}"
                                             vep_files.append(full_path)
                                 elif isinstance(item, str):
                                     basename = item.split("/")[-1] if "/" in item else item
-                                    if re.match(r'vep-\d+\.md$', basename):
+                                    # VEP files are .md files (not necessarily vep-\d+\.md pattern)
+                                    if basename.endswith('.md') and not basename.startswith('README') and 'template' not in basename.lower():
                                         vep_files.append(item if "/" in item else f"veps/{item}")
             except (json.JSONDecodeError, TypeError, AttributeError) as e:
                 log(f"Could not parse directory listing as JSON, trying regex extraction: {e}", node="indexer", level="DEBUG")
@@ -866,6 +870,7 @@ def index_vep_files() -> List[Dict[str, Any]]:
                     time.sleep(2)  # 2s delay between subdirectory requests to stay under 60/hour
                 
                 try:
+                    log(f"Reading subdirectory {subdir} ({i+1}/{len(subdirectories)})", node="indexer", level="DEBUG")
                     # Try with owner/repo/path format first
                     subdir_content = _call_with_retry(
                         get_file_tool.func,
@@ -883,17 +888,21 @@ def index_vep_files() -> List[Dict[str, Any]]:
                             )
                         except TypeError:
                             # Function doesn't accept path parameter, skip
+                            log(f"Tool doesn't accept path parameter for {subdir}", node="indexer", level="DEBUG")
                             continue
                     
                     if subdir_content is None:
-                        log(f"Failed to read subdirectory {subdir} after retries", node="indexer", level="DEBUG")
+                        log(f"Failed to read subdirectory {subdir} after retries", node="indexer", level="WARNING")
                         continue
                     
                     subdir_str = str(subdir_content)
+                    log(f"Subdirectory {subdir} content length: {len(subdir_str)}", node="indexer", level="DEBUG")
                     if len(subdir_str) < 100:
+                        log(f"Skipping {subdir} - content too short", node="indexer", level="DEBUG")
                         continue
                     
                     # Parse subdirectory listing
+                    files_found_in_subdir = 0
                     try:
                         if isinstance(subdir_content, str):
                             subdir_data = json.loads(subdir_content)
@@ -903,6 +912,8 @@ def index_vep_files() -> List[Dict[str, Any]]:
                             subdir_data = None
                         
                         if isinstance(subdir_data, list):
+                            log(f"Subdirectory {subdir} contains {len(subdir_data)} items", node="indexer", level="DEBUG")
+                            file_names_in_subdir = []
                             for item in subdir_data:
                                 if isinstance(item, dict):
                                     name = item.get("name") or item.get("path") or ""
@@ -911,26 +922,47 @@ def index_vep_files() -> List[Dict[str, Any]]:
                                     
                                     if file_type == "file":
                                         basename = name.split("/")[-1] if "/" in name else name
-                                        if re.match(r'vep-\d+\.md$', basename):
+                                        file_names_in_subdir.append(basename)
+                                        # VEP files are .md files in subdirectories (not vep-\d+\.md pattern)
+                                        # Skip non-markdown files and template files
+                                        if basename.endswith('.md') and not basename.startswith('README') and 'template' not in basename.lower():
                                             full_path = path if "/" in path else f"{subdir}/{name}"
-                                            vep_files.append(full_path)
-                    except (json.JSONDecodeError, TypeError, AttributeError):
-                        # Fallback: extract using regex
-                        vep_pattern = r'vep-\d+\.md'
-                        matches = re.findall(vep_pattern, subdir_str)
+                                            if full_path not in vep_files:
+                                                vep_files.append(full_path)
+                                                files_found_in_subdir += 1
+                                                log(f"Found VEP file: {full_path}", node="indexer", level="DEBUG")
+                            
+                            # Log all file names for debugging
+                            if file_names_in_subdir:
+                                log(f"Files in {subdir}: {file_names_in_subdir[:10]}{'...' if len(file_names_in_subdir) > 10 else ''}", node="indexer", level="DEBUG")
+                    except (json.JSONDecodeError, TypeError, AttributeError) as e:
+                        log(f"Could not parse subdirectory {subdir} as JSON: {e}, trying regex", node="indexer", level="DEBUG")
+                        # Fallback: extract using regex - look for .md files
+                        # Match any .md filename (not just vep-\d+\.md)
+                        md_pattern = r'([a-zA-Z0-9_-]+\.md)'
+                        matches = re.findall(md_pattern, subdir_str)
                         for match in matches:
-                            full_path = f"{subdir}/{match}"
-                            if full_path not in vep_files:
-                                vep_files.append(full_path)
+                            # Skip README and template files
+                            if not match.startswith('README') and 'template' not in match.lower():
+                                full_path = f"{subdir}/{match}"
+                                if full_path not in vep_files:
+                                    vep_files.append(full_path)
+                                    files_found_in_subdir += 1
+                                    log(f"Found VEP file via regex: {full_path}", node="indexer", level="DEBUG")
+                    
+                    log(f"Found {files_found_in_subdir} VEP file(s) in {subdir}", node="indexer", level="DEBUG")
                 except Exception as e:
                     log(f"Error reading subdirectory {subdir}: {e}", node="indexer", level="DEBUG")
                     continue
             
             # Fallback: extract VEP file names using regex from string (handles paths too)
             if not vep_files:
-                vep_pattern = r'vep-\d+\.md'
-                matches = re.findall(vep_pattern, content_str)
-                vep_files = list(set(matches))  # Remove duplicates
+                # Match any .md filename (not just vep-\d+\.md)
+                md_pattern = r'([a-zA-Z0-9_-]+\.md)'
+                matches = re.findall(md_pattern, content_str)
+                # Filter out README and template files
+                vep_files = [m for m in matches if not m.startswith('README') and 'template' not in m.lower()]
+                vep_files = list(set(vep_files))  # Remove duplicates
                 log(f"Extracted {len(vep_files)} VEP files using regex fallback", node="indexer", level="DEBUG")
             
             # Remove duplicates and sort VEP files numerically (vep-0176 > vep-0174)
