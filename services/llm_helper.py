@@ -83,8 +83,8 @@ def invoke_llm_with_tools(
                 tool_name = tool_call.get("name", "")
                 tool_args = tool_call.get("args", {})
                 
-                # Log tool call details
-                log(f"Executing tool: {tool_name} with args: {json.dumps(tool_args, default=str)[:200]}...", node=operation_type, level="DEBUG")
+                # Log tool call details (truncated to reduce verbosity)
+                log(f"Executing tool: {tool_name} with args: {json.dumps(tool_args, default=str)[:40]}...", node=operation_type, level="DEBUG")
                 
                 # Find and execute the tool
                 tool_result = None
@@ -94,8 +94,8 @@ def invoke_llm_with_tools(
                             tool_result = tool.func(**tool_args)
                             # Log tool result (truncate if too long)
                             result_str = str(tool_result)
-                            if len(result_str) > 500:
-                                result_str = result_str[:500] + "... (truncated)"
+                            if len(result_str) > 200:
+                                result_str = result_str[:200] + "... (truncated)"
                             log(f"Tool {tool_name} result: {result_str}", node=operation_type, level="DEBUG")
                             break
                         except Exception as e:
