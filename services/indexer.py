@@ -13,7 +13,7 @@ from services.utils import log
 from services.mcp_factory import get_mcp_tools_by_name
 
 
-def _call_with_retry(tool_func, max_retries=3, delay=2, **kwargs):
+def _call_with_retry(tool_func, max_retries=3, delay=5, **kwargs):
     """Call a tool function with retry logic for rate limit errors.
     
     Args:
@@ -33,12 +33,24 @@ def _call_with_retry(tool_func, max_retries=3, delay=2, **kwargs):
             # Check if it's a rate limit error
             if "rate limit" in error_str or "rate_limit" in error_str:
                 if attempt < max_retries - 1:
-                    wait_time = delay * (2 ** attempt)  # Exponential backoff
+                    # For IP-based rate limits (60/hour), wait longer
+                    # Calculate wait time: if reset is on the hour, wait until next hour
+                    wait_time = delay * (2 ** attempt)  # Exponential backoff: 5s, 10s, 20s
+                    # For IP-based limits, also add a base delay to get closer to next hour
+                    if "62." in str(e) or "79." in str(e) or "ip" in error_str:
+                        # IP-based rate limit - wait longer (typically resets on the hour)
+                        current_minute = datetime.now().minute
+                        minutes_until_hour = 60 - current_minute
+                        if minutes_until_hour < 60 and minutes_until_hour > 0:
+                            # Add extra wait to get closer to hour boundary
+                            wait_time = max(wait_time, minutes_until_hour * 60 - 30)  # Wait until 30s before next hour
+                    
                     log(f"Rate limit hit, waiting {wait_time}s before retry {attempt + 1}/{max_retries}", node="indexer", level="WARNING")
                     time.sleep(wait_time)
                     continue
                 else:
-                    log(f"Rate limit error after {max_retries} retries: {e}", node="indexer", level="ERROR")
+                    log(f"Rate limit error after {max_retries} retries. Error: {str(e)[:200]}", node="indexer", level="ERROR")
+                    log("Rate limit typically resets on the hour. Consider waiting or ensuring GITHUB_TOKEN is being used.", node="indexer", level="WARNING")
                     return None
             else:
                 # Not a rate limit error, re-raise
@@ -849,9 +861,9 @@ def index_vep_files() -> List[Dict[str, Any]]:
             log(f"Found {len(subdirectories)} subdirectories to search: {subdirectories[:5]}{'...' if len(subdirectories) > 5 else ''}", node="indexer", level="DEBUG")
             
             for i, subdir in enumerate(subdirectories):
-                # Add small delay between requests to avoid rate limits
+                # Add delay between requests to avoid rate limits (IP-based: 60/hour)
                 if i > 0:
-                    time.sleep(0.5)  # 500ms delay between subdirectory requests
+                    time.sleep(2)  # 2s delay between subdirectory requests to stay under 60/hour
                 
                 try:
                     # Try with owner/repo/path format first
@@ -936,9 +948,9 @@ def index_vep_files() -> List[Dict[str, Any]]:
             # Read each VEP file and include its content
             vep_data = []
             for i, vep_file_path in enumerate(vep_files):
-                # Add small delay between requests to avoid rate limits
+                # Add delay between requests to avoid rate limits (IP-based: 60/hour)
                 if i > 0:
-                    time.sleep(0.3)  # 300ms delay between file reads
+                    time.sleep(1)  # 1s delay between file reads to stay under 60/hour
                 
                 try:
                     # vep_file_path is already a full path like "veps/sig-compute/vep-0176.md"
