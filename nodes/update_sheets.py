@@ -83,6 +83,13 @@ Your task:
    - Compare current sheet data with the VEP state
    - Update the sheet with new/changed VEP data
    - Maintain data integrity (don't lose existing data)
+   - IMPORTANT: After writing data, format it as a proper Google Sheets table:
+     * Format the header row (row 1) with bold text and a background color (e.g., light gray #f3f3f3 or blue)
+     * Apply alternating row colors to data rows for better readability
+     * Freeze the header row so it stays visible when scrolling (use freeze_rows tool if available)
+     * Enable filters on the header row (use format_sheet or apply_filter tools if available)
+     * Set appropriate column widths for readability
+     * This creates a table-like structure similar to Insert > Table in Google Sheets
 3. Handle the sheet configuration:
    - sheet_id: The Google Sheets document ID (from URL: https://docs.google.com/spreadsheets/d/{sheet_id}/edit)
    - create_new: If True, create a new sheet; if False, update existing
