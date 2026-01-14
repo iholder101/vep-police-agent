@@ -2,9 +2,11 @@
 
 from typing import List, Any, Dict, Optional
 import asyncio
+import os
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from langchain_core.tools import Tool
+from services.utils import log
 
 # Dictionary mapping MCP names to their configurations
 # 
@@ -175,16 +177,26 @@ def get_mcp_tools_by_name(*mcp_names: str) -> List[Tool]:
         # Create a copy of the config to avoid mutating the original
         config = MCP_CONFIGS[name].copy()
         
-        # Inject credentials for Google Sheets
+        # Inject credentials
+        config["env"] = config.get("env", {}).copy()
+        
         if name == "google-sheets":
             from services.utils import get_google_token
             try:
                 token = get_google_token()
-                config["env"] = config.get("env", {}).copy()
                 config["env"]["GOOGLE_CREDENTIALS"] = token
             except FileNotFoundError:
                 # If token file doesn't exist, continue without it (will fail at runtime)
                 pass
+        elif name == "github":
+            # Inject GitHub token from environment if available
+            import os
+            github_token = os.environ.get("GITHUB_TOKEN")
+            if github_token:
+                config["env"]["GITHUB_TOKEN"] = github_token
+                log(f"GitHub token injected into MCP server environment", node="mcp_factory", level="DEBUG")
+            else:
+                log("GITHUB_TOKEN not found in environment - API rate limits may apply", node="mcp_factory", level="WARNING")
         
         configs.append(config)
     
