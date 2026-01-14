@@ -1,5 +1,6 @@
 """Scheduler node - determines which tasks to run based on timing and state."""
 
+import os
 from datetime import datetime
 from typing import Any
 from state import VEPState
@@ -56,20 +57,24 @@ def scheduler_node(state: VEPState) -> Any:
             if "fetch_veps" not in next_tasks:
                 next_tasks.append("fetch_veps")
     
-    # Check if run_monitoring is due
-    last_check = last_check_times.get("run_monitoring")
-    interval = intervals["run_monitoring"]
-    
-    if last_check is None:
-        # Never run before - add to queue
-        if "run_monitoring" not in next_tasks:
-            next_tasks.append("run_monitoring")
-    else:
-        # Check if enough time has passed
-        time_since = (now - last_check).total_seconds()
-        if time_since >= interval:
+    # Check if run_monitoring is due (skip in test-sheets debug mode)
+    debug_mode = os.environ.get("DEBUG_MODE")
+    if debug_mode != "test-sheets":
+        last_check = last_check_times.get("run_monitoring")
+        interval = intervals["run_monitoring"]
+        
+        if last_check is None:
+            # Never run before - add to queue
             if "run_monitoring" not in next_tasks:
                 next_tasks.append("run_monitoring")
+        else:
+            # Check if enough time has passed
+            time_since = (now - last_check).total_seconds()
+            if time_since >= interval:
+                if "run_monitoring" not in next_tasks:
+                    next_tasks.append("run_monitoring")
+    else:
+        log("Debug mode 'test-sheets' enabled - skipping run_monitoring", node="scheduler", level="DEBUG")
     
     # If next_tasks already has items from previous scheduler run, use those
     # (This handles cases where nodes might have queued tasks, though in current

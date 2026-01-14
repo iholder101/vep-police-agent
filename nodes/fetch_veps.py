@@ -1,6 +1,7 @@
 """VEP discovery node - fetches VEPs from kubevirt/enhancements repository."""
 
 import json
+import os
 from datetime import datetime
 from typing import Any
 from state import VEPState, VEPInfo
@@ -37,6 +38,42 @@ def fetch_veps_node(state: VEPState) -> Any:
     next_tasks = state.get("next_tasks", [])
     if next_tasks and next_tasks[0] == "fetch_veps":
         next_tasks = next_tasks[1:]
+    
+    # In test-sheets mode, create minimal mock VEPs without LLM calls
+    debug_mode = os.environ.get("DEBUG_MODE")
+    if debug_mode == "test-sheets":
+        log("Debug mode 'test-sheets' enabled - creating minimal mock VEPs for sheets testing", node="fetch_veps", level="DEBUG")
+        # Create a few minimal VEPs for testing sheets
+        mock_veps = [
+            VEPInfo(
+                name="vep-001",
+                title="Test VEP 1",
+                owning_sig="sig-compute",
+                target_release="v1.8",
+                status="open"
+            ),
+            VEPInfo(
+                name="vep-002",
+                title="Test VEP 2",
+                owning_sig="sig-network",
+                target_release="v1.8",
+                status="in-progress"
+            ),
+            VEPInfo(
+                name="vep-003",
+                title="Test VEP 3",
+                owning_sig="sig-storage",
+                target_release="v1.9",
+                status="closed"
+            ),
+        ]
+        log(f"Created {len(mock_veps)} mock VEPs for sheets testing", node="fetch_veps", level="DEBUG")
+        return {
+            "veps": mock_veps,
+            "last_check_times": last_check_times,
+            "next_tasks": next_tasks,
+            "sheets_need_update": True,  # Trigger sheets update
+        }
     
     # Build system prompt
     system_prompt = """You are a VEP governance agent discovering Virtualization Enhancement Proposals from the KubeVirt enhancements repository.
