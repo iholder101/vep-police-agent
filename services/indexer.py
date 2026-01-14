@@ -370,49 +370,97 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
         tools = get_mcp_tools_by_name("github")
         log(f"Available GitHub tools: {[t.name for t in tools]}", node="indexer", level="DEBUG")
         
-        # Find list_issues tool - try exact matches first, then partial
+        # Prefer search_issues over list_issues for comprehensive results
+        # search_issues can get all issues matching criteria, while list_issues may be paginated
+        search_issues_tool = None
         list_issues_tool = None
-        tool_names_to_try = [
-            "mcp_GitHub_list_issues",  # Try full name first
-            "list_issues",
-            "search_issues",
-            "get_issues",
-            "mcp_GitHub_search_issues",
-        ]
         
-        # First try exact match
+        # Look for search_issues first (better for getting all issues)
         for tool in tools:
-            if tool.name in tool_names_to_try:
-                list_issues_tool = tool
-                log(f"Found issues tool (exact match): {tool.name}", node="indexer", level="DEBUG")
+            if "search_issues" in tool.name.lower():
+                search_issues_tool = tool
+                log(f"Found search_issues tool: {tool.name}", node="indexer", level="DEBUG")
                 break
         
-        # If no exact match, try partial
-        if not list_issues_tool:
+        # Fallback to list_issues
+        if not search_issues_tool:
+            tool_names_to_try = [
+                "mcp_GitHub_list_issues",
+                "list_issues",
+                "get_issues",
+            ]
             for tool in tools:
-                tool_name_lower = tool.name.lower()
-                if any(name.lower() in tool_name_lower for name in tool_names_to_try):
+                if tool.name in tool_names_to_try:
                     list_issues_tool = tool
-                    log(f"Found issues tool (partial match): {tool.name}", node="indexer", level="DEBUG")
+                    log(f"Found list_issues tool: {tool.name}", node="indexer", level="DEBUG")
                     break
+            if not list_issues_tool:
+                for tool in tools:
+                    tool_name_lower = tool.name.lower()
+                    if any(name.lower() in tool_name_lower for name in tool_names_to_try):
+                        list_issues_tool = tool
+                        log(f"Found list_issues tool (partial match): {tool.name}", node="indexer", level="DEBUG")
+                        break
         
-        if not list_issues_tool:
+        if not search_issues_tool and not list_issues_tool:
             log(f"Could not find issues listing tool. Available tools: {[t.name for t in tools]}", node="indexer", level="WARNING")
             return []
         
         try:
-            # Try different parameter formats
-            try:
-                issues_result = list_issues_tool.func(
-                    owner="kubevirt",
-                    repo="enhancements",
-                    state="all"
+            # Use search_issues if available (more comprehensive)
+            if search_issues_tool:
+                log("Using search_issues to get all issues from kubevirt/enhancements", node="indexer", level="DEBUG")
+                # Search for all issues in enhancements repo (most are VEP-related)
+                # Get open issues
+                open_issues_result = _call_with_retry(
+                    search_issues_tool.func,
+                    q="repo:kubevirt/enhancements is:issue is:open",
                 )
-            except TypeError:
-                issues_result = list_issues_tool.func(
-                    repo="kubevirt/enhancements",
-                    state="all"
+                # Get closed issues too (VEPs can be closed/merged)
+                closed_issues_result = _call_with_retry(
+                    search_issues_tool.func,
+                    q="repo:kubevirt/enhancements is:issue is:closed",
                 )
+                
+                # Combine results
+                open_issues = []
+                closed_issues = []
+                
+                if isinstance(open_issues_result, str):
+                    try:
+                        open_issues = json.loads(open_issues_result)
+                    except:
+                        pass
+                elif isinstance(open_issues_result, list):
+                    open_issues = open_issues_result
+                
+                if isinstance(closed_issues_result, str):
+                    try:
+                        closed_issues = json.loads(closed_issues_result)
+                    except:
+                        pass
+                elif isinstance(closed_issues_result, list):
+                    closed_issues = closed_issues_result
+                
+                # Combine lists
+                issues_result = open_issues + closed_issues
+                log(f"Retrieved {len(open_issues)} open issues and {len(closed_issues)} closed issues via search_issues", node="indexer")
+            else:
+                # Fallback to list_issues
+                log("Using list_issues to get issues from kubevirt/enhancements", node="indexer", level="DEBUG")
+                try:
+                    issues_result = _call_with_retry(
+                        list_issues_tool.func,
+                        owner="kubevirt",
+                        repo="enhancements",
+                        state="all"
+                    )
+                except TypeError:
+                    issues_result = _call_with_retry(
+                        list_issues_tool.func,
+                        repo="kubevirt/enhancements",
+                        state="all"
+                    )
             
             # Parse result
             if isinstance(issues_result, str):
