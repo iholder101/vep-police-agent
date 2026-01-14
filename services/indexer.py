@@ -951,7 +951,13 @@ def index_vep_files() -> List[Dict[str, Any]]:
                                     file_type = item.get("type", "")
                                     path = item.get("path", name)
                                     
-                                    if file_type == "file":
+                                    if file_type == "dir":
+                                        # It's a nested subdirectory - add it to the queue for recursive search
+                                        full_subdir_path = path if "/" in path else f"{subdir}/{name}"
+                                        if full_subdir_path not in subdirectories:
+                                            subdirectories.append(full_subdir_path)
+                                            log(f"Found nested subdirectory: {full_subdir_path}", node="indexer", level="DEBUG")
+                                    elif file_type == "file":
                                         basename = name.split("/")[-1] if "/" in name else name
                                         file_names_in_subdir.append(basename)
                                         # VEP files are .md files in subdirectories (not vep-\d+\.md pattern)
