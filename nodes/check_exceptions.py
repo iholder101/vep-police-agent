@@ -48,6 +48,8 @@ def check_exceptions_node(state: VEPState) -> Any:
 
 Your task:
 1. Use GitHub MCP tools to search for exception-related issues in kubevirt/enhancements (look for "exception" label or keyword)
+   - CRITICAL: All search_issues queries MUST include "is:issue" or "is:pull-request"
+   - Example: "repo:kubevirt/enhancements label:exception is:issue"
 2. For each VEP in the provided state, check if work is happening after freeze dates:
    - Enhancement Freeze (EF): VEP PRs created/updated after EF need exception
    - Code Freeze (CF): Implementation PRs created/updated after CF need exception

@@ -178,8 +178,14 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
                     
                     tool_func = make_tool_func(mcp_tool.name, config, input_schema)
                     
-                    # Build enhanced description with parameter info
+                    # Build enhanced description with parameter info and examples
                     description = mcp_tool.description or ""
+                    
+                    # Add tool-specific documentation and examples
+                    tool_docs = _get_tool_documentation(mcp_tool.name)
+                    if tool_docs:
+                        description += "\n\n" + tool_docs
+                    
                     if input_schema and 'properties' in input_schema:
                         param_info = []
                         properties = input_schema['properties']
@@ -200,6 +206,44 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
                     all_tools.append(langchain_tool)
     
     return all_tools
+
+
+def _get_tool_documentation(tool_name: str) -> str:
+    """
+    Get enhanced documentation for specific tools with examples and requirements.
+    This helps the LLM understand how to use tools correctly without needing explicit instructions in prompts.
+    """
+    docs = {
+        "search_issues": """CRITICAL REQUIREMENTS:
+- The 'q' parameter MUST include either "is:issue" or "is:pull-request" in the query string
+- GitHub's search API requires this qualifier to distinguish between issues and pull requests
+
+CORRECT EXAMPLES:
+- "repo:kubevirt/enhancements \"VEP 160\" is:issue" (searches for issues)
+- "org:kubevirt \"VEP 160\" is:pull-request" (searches for pull requests)
+- "repo:kubevirt/enhancements label:vep is:issue" (searches for issues with vep label)
+- "repo:kubevirt/enhancements is:issue state:open" (all open issues)
+
+INCORRECT (will fail with 422 error):
+- "repo:kubevirt/enhancements \"VEP 160\"" (missing is:issue or is:pull-request)
+- "org:kubevirt VEP" (missing is:issue or is:pull-request)
+
+If you need both issues and PRs, make two separate queries.""",
+        
+        "list_issues": """This tool lists issues in a repository. Use this when you need to get all issues from a specific repo.
+- Use search_issues when you need to search with filters
+- Use list_issues when you need to enumerate all issues in a repo""",
+        
+        "get_issue": """Get details of a specific issue by number.
+- Requires: owner, repo, issue_number
+- Returns full issue details including body, comments, labels, etc.""",
+        
+        "get_pull_request": """Get details of a specific pull request by number.
+- Requires: owner, repo, pull_number
+- Returns full PR details including diff, reviews, comments, etc.""",
+    }
+    
+    return docs.get(tool_name, "")
 
 
 def _extract_error_messages(exc: Exception) -> list:

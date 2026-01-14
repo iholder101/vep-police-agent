@@ -185,6 +185,8 @@ Step 1: Determine Current Development Cycle
 
 Step 2: Query All Issues in kubevirt/enhancements
 - Use GitHub search/list_issues to get ALL issues in kubevirt/enhancements repository
+- CRITICAL: All search_issues queries MUST include "is:issue" or "is:pull-request"
+- Example: "repo:kubevirt/enhancements is:issue" (to get all issues)
 - Do not filter - get all issues first, then identify VEP trackers
 - Look for issues that:
   * Have labels like "kind/vep", "vep", or similar VEP-related labels
