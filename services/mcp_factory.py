@@ -273,7 +273,13 @@ def get_mcp_tools_by_name(*mcp_names: str) -> List[Tool]:
                             config["env"]["GOOGLE_APPLICATION_CREDENTIALS"] = token_path
                             log(f"Using Google credentials from file: {token_path}", node="mcp_factory", level="DEBUG")
                         else:
-                            log(f"Google token is not valid JSON and not a valid file path", node="mcp_factory", level="WARNING")
+                            # Token is neither JSON nor a file path - might be an API key
+                            # mcp-google-sheets will try to use Application Default Credentials (ADC)
+                            # which may work if gcloud auth is configured, but may have limited permissions
+                            if token_path.startswith("AIza"):
+                                log("GOOGLE_TOKEN appears to be an API key, not service account JSON. mcp-google-sheets requires service account credentials for full functionality. Will attempt to use Application Default Credentials.", node="mcp_factory", level="WARNING")
+                            else:
+                                log(f"Google token is not valid JSON and not a valid file path. mcp-google-sheets will attempt to use Application Default Credentials.", node="mcp_factory", level="WARNING")
             except FileNotFoundError:
                 # If token file doesn't exist, continue without it (will fail at runtime)
                 log("GOOGLE_TOKEN not found - Google Sheets MCP will not be available", node="mcp_factory", level="WARNING")
