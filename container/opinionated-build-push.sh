@@ -19,8 +19,19 @@ tag_exists() {
     local tag=$1
     local image_name="quay.io/${QUAY_USERNAME}/${IMAGE_NAME}:${tag}"
     
-    # Use podman manifest inspect to check if tag exists (faster than pull)
-    if podman manifest inspect "${image_name}" &>/dev/null; then
+    # Use skopeo if available (most reliable for remote registries)
+    if command -v skopeo &>/dev/null; then
+        if skopeo inspect "docker://${image_name}" &>/dev/null 2>&1; then
+            return 0  # Tag exists
+        else
+            return 1  # Tag does not exist
+        fi
+    fi
+    
+    # Fallback: Use podman pull --quiet (reliable but slower)
+    # This will actually pull the image, but --quiet suppresses output
+    # We check if it succeeds - if tag doesn't exist, pull will fail
+    if podman pull --quiet "${image_name}" &>/dev/null 2>&1; then
         return 0  # Tag exists
     else
         return 1  # Tag does not exist
