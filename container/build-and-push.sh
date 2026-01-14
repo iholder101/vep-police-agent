@@ -14,22 +14,56 @@ fi
 QUAY_USERNAME="${QUAY_USERNAME:-$DEFAULT_QUAY_USERNAME}"
 IMAGE_NAME="${IMAGE_NAME:-vep-police-agent}"
 
-# Try to get git commit hash for tag, fallback to "latest"
-if command -v git &> /dev/null && git rev-parse --git-dir &> /dev/null; then
-    GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "")
-    if [ -n "$GIT_COMMIT" ]; then
-        DEFAULT_TAG="$GIT_COMMIT"
-    else
-        DEFAULT_TAG="latest"
+# Function to check if a tag exists in quay.io
+tag_exists() {
+    local tag=$1
+    local image_name="quay.io/${QUAY_USERNAME}/${IMAGE_NAME}:${tag}"
+    
+    # Use skopeo if available (most reliable for remote registries)
+    if command -v skopeo &>/dev/null; then
+        if skopeo inspect "docker://${image_name}" &>/dev/null 2>&1; then
+            return 0  # Tag exists
+        else
+            return 1  # Tag does not exist
+        fi
     fi
+    
+    # Fallback: Use podman pull --quiet (reliable but slower)
+    if podman pull --quiet "${image_name}" &>/dev/null 2>&1; then
+        return 0  # Tag exists
+    else
+        return 1  # Tag does not exist
+    fi
+}
+
+# Generate base tag from current date (DD_MM_YYYY format)
+BASE_TAG=$(date +"%d_%m_%Y")
+
+# If IMAGE_TAG is explicitly set, use it; otherwise use date-based tag with auto-increment
+if [ -n "${IMAGE_TAG}" ]; then
+    # User explicitly set IMAGE_TAG, use it as-is
+    FINAL_TAG="${IMAGE_TAG}"
 else
-    DEFAULT_TAG="latest"
+    # Use date-based tag and check if it exists, increment if needed
+    FINAL_TAG="${BASE_TAG}"
+    suffix=0
+    
+    # Check if base tag exists, increment suffix if needed
+    while tag_exists "${FINAL_TAG}"; do
+        if [ $suffix -eq 0 ]; then
+            FINAL_TAG="${BASE_TAG}-1"
+            suffix=1
+        else
+            suffix=$((suffix + 1))
+            FINAL_TAG="${BASE_TAG}-${suffix}"
+        fi
+    done
 fi
 
-IMAGE_TAG="${IMAGE_TAG:-$DEFAULT_TAG}"
+IMAGE_TAG="${FINAL_TAG}"
 
-# Option to also tag as "latest"
-ADD_LATEST_TAG="${ADD_LATEST_TAG:-false}"
+# Option to also tag as "latest" (default to true for date-based tags)
+ADD_LATEST_TAG="${ADD_LATEST_TAG:-true}"
 
 # Full image name
 FULL_IMAGE_NAME="quay.io/${QUAY_USERNAME}/${IMAGE_NAME}:${IMAGE_TAG}"
