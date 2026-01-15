@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 from state import VEPState
 from services.utils import log
 from services.llm_helper import invoke_llm_check
