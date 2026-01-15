@@ -52,6 +52,85 @@ def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int =
     }
 
 
+def log_startup_flags(args, index_cache_minutes: int) -> None:
+    """Log all startup configuration flags (excluding sensitive credentials).
+    
+    Args:
+        args: Parsed command line arguments
+        index_cache_minutes: Calculated index cache timeout in minutes
+    """
+    import os
+    
+    log("Starting VEP governance agent", node="main")
+    log("Configuration flags:", node="main")
+    
+    flags = []
+    
+    # Credential flags (show file paths, not content)
+    if args.api_key:
+        if os.path.exists(args.api_key):
+            flags.append(f"  --api-key: {args.api_key} (file)")
+        else:
+            flags.append("  --api-key: <provided>")
+    if args.google_token:
+        if os.path.exists(args.google_token):
+            flags.append(f"  --google-token: {args.google_token} (file)")
+        else:
+            flags.append("  --google-token: <provided>")
+    if args.github_token:
+        if os.path.exists(args.github_token):
+            flags.append(f"  --github-token: {args.github_token} (file)")
+        else:
+            flags.append("  --github-token: <provided>")
+    
+    # Configuration flags
+    if args.sheet_id:
+        flags.append(f"  --sheet-id: {args.sheet_id}")
+    if args.debug:
+        flags.append(f"  --debug: {args.debug}")
+    if args.one_cycle:
+        flags.append("  --one-cycle: enabled")
+    if args.fastest_model:
+        flags.append("  --fastest-model: enabled")
+    if args.no_index_cache:
+        flags.append("  --no-index-cache: enabled")
+    elif index_cache_minutes != 60:
+        flags.append(f"  --index-cache-minutes: {index_cache_minutes}")
+    if args.skip_monitoring:
+        flags.append("  --skip-monitoring: enabled")
+    if args.skip_sheets:
+        flags.append("  --skip-sheets: enabled")
+    if args.mock_veps:
+        flags.append("  --mock-veps: enabled")
+    if args.mock_analyzed_combined:
+        flags.append("  --mock-analyzed-combined: enabled")
+    if args.mock_alert_summary:
+        flags.append("  --mock-alert-summary: enabled")
+    
+    # Log all flags
+    if flags:
+        for flag in flags:
+            log(flag, node="main")
+    else:
+        log("  (using defaults)", node="main")
+    
+    log("Press Ctrl+C to exit gracefully", node="main")
+    
+    # Log mode descriptions
+    if args.one_cycle:
+        log("One-cycle mode: will exit after sheet update completes", node="main")
+    if args.skip_monitoring:
+        log("Skip-monitoring mode: monitoring checks (deadlines, activity, compliance, exceptions) will be skipped", node="main")
+    if args.skip_sheets:
+        log("Skip-sheets mode: Google Sheets updates will be skipped", node="main")
+    if args.mock_veps:
+        log("Mock VEPs mode: will use mock VEPs instead of fetching from GitHub", node="main")
+    if args.mock_analyzed_combined:
+        log("Mock analyzed-combined mode: will skip LLM call and use naive analysis", node="main")
+    if args.mock_alert_summary:
+        log("Mock alert-summary mode: will skip LLM call and create mocked alerts", node="main")
+
+
 def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
@@ -206,55 +285,8 @@ def main():
     elif index_cache_minutes != 60:  # Only log if different from default
         log(f"Index cache timeout set to {index_cache_minutes} minutes", node="main")
 
-    # Log startup configuration (excluding sensitive credentials)
-    log("Starting VEP governance agent", node="main")
-    log("Configuration flags:", node="main")
-    flags = []
-    if args.api_key:
-        # Show file path if it's a file, otherwise just indicate it was set
-        if os.path.exists(args.api_key):
-            flags.append(f"  --api-key: {args.api_key} (file)")
-        else:
-            flags.append("  --api-key: <provided>")
-    if args.google_token:
-        if os.path.exists(args.google_token):
-            flags.append(f"  --google-token: {args.google_token} (file)")
-        else:
-            flags.append("  --google-token: <provided>")
-    if args.github_token:
-        if os.path.exists(args.github_token):
-            flags.append(f"  --github-token: {args.github_token} (file)")
-        else:
-            flags.append("  --github-token: <provided>")
-    if args.sheet_id:
-        flags.append(f"  --sheet-id: {args.sheet_id}")
-    if args.debug:
-        flags.append(f"  --debug: {args.debug}")
-    if args.one_cycle:
-        flags.append("  --one-cycle: enabled")
-    if args.fastest_model:
-        flags.append("  --fastest-model: enabled")
-    if args.no_index_cache:
-        flags.append("  --no-index-cache: enabled")
-    elif index_cache_minutes != 60:
-        flags.append(f"  --index-cache-minutes: {index_cache_minutes}")
-    if args.skip_monitoring:
-        flags.append("  --skip-monitoring: enabled")
-    if args.skip_sheets:
-        flags.append("  --skip-sheets: enabled")
-    if args.mock_veps:
-        flags.append("  --mock-veps: enabled")
-    if args.mock_analyzed_combined:
-        flags.append("  --mock-analyzed-combined: enabled")
-    if args.mock_alert_summary:
-        flags.append("  --mock-alert-summary: enabled")
-    
-    if flags:
-        for flag in flags:
-            log(flag, node="main")
-    else:
-        log("  (using defaults)", node="main")
-    log("Press Ctrl+C to exit gracefully", node="main")
+    # Log startup configuration flags
+    log_startup_flags(args, index_cache_minutes)
     
     # Create the graph
     agent = create_graph()
@@ -264,18 +296,6 @@ def main():
     initial_state = get_initial_state(sheet_id=args.sheet_id, index_cache_minutes=index_cache_minutes, one_cycle=args.one_cycle, skip_monitoring=args.skip_monitoring, skip_sheets=args.skip_sheets, mock_veps=args.mock_veps, mock_analyzed_combined=args.mock_analyzed_combined, mock_alert_summary=args.mock_alert_summary)
     log("Initial state prepared", node="main")
     log(f"Sheet config: {initial_state['sheet_config']}", node="main")
-    if args.one_cycle:
-        log("One-cycle mode: will exit after sheet update completes", node="main")
-    if args.skip_monitoring:
-        log("Skip-monitoring mode: monitoring checks (deadlines, activity, compliance, exceptions) will be skipped", node="main")
-    if args.skip_sheets:
-        log("Skip-sheets mode: Google Sheets updates will be skipped", node="main")
-    if args.mock_veps:
-        log("Mock VEPs mode: will use mock VEPs instead of fetching from GitHub", node="main")
-    if args.mock_analyzed_combined:
-        log("Mock analyzed-combined mode: will skip LLM call and use naive analysis", node="main")
-    if args.mock_alert_summary:
-        log("Mock alert-summary mode: will skip LLM call and create mocked alerts", node="main")
     
     # Run the agent
     try:
