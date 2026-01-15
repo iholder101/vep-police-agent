@@ -259,6 +259,9 @@ CRITICAL: Column A MUST be "VEP ID" with tracking_issue_id values. Every VEP mus
                 "sheet_config": sheet_config,
             }
         
+        # Store success value before overwriting result with dict
+        update_success = result.success if hasattr(result, 'success') else False
+        
         result = {
             "last_check_times": last_check_times,
             "sheets_need_update": False,  # Clear flag after successful update
@@ -267,7 +270,7 @@ CRITICAL: Column A MUST be "VEP ID" with tracking_issue_id values. Every VEP mus
         }
         
         # Check if one-cycle mode is enabled - exit after sheet update
-        if state.get("config_cache", {}).get("one_cycle", False) and result.success:
+        if state.get("config_cache", {}).get("one_cycle", False) and update_success:
             log("One-cycle mode: Sheet update successful, setting exit flag", node="update_sheets")
             # Clear next_tasks to prevent further execution
             result["next_tasks"] = []
@@ -277,7 +280,7 @@ CRITICAL: Column A MUST be "VEP ID" with tracking_issue_id values. Every VEP mus
         # Check if test-sheets debug mode is enabled - exit after sheet update
         import os
         debug_mode = os.environ.get("DEBUG_MODE")
-        if debug_mode == "test-sheets" and result.success:
+        if debug_mode == "test-sheets" and update_success:
             log("Debug mode 'test-sheets': Sheet update successful, setting exit flag", node="update_sheets")
             # Clear next_tasks to prevent further execution
             result["next_tasks"] = []
