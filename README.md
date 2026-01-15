@@ -165,7 +165,7 @@ The agent's execution flow is orchestrated by a central scheduler that routes to
 graph TD
     Start([Start]) --> Scheduler[scheduler]
     
-    Scheduler -->|No VEPs| FetchVEPs[fetch_veps]
+    Scheduler -->|No VEPs or periodic refresh| FetchVEPs[fetch_veps]
     Scheduler -->|Need monitoring| RunMonitoring[run_monitoring]
     Scheduler -->|Sheets need update| UpdateSheets[update_sheets]
     Scheduler -->|No tasks| Wait[wait]
@@ -204,7 +204,9 @@ graph TD
 
 **Flow Description:**
 1. **Entry Point**: The `scheduler` node is the central coordinator and entry point
-2. **VEP Discovery**: If no VEPs exist, routes to `fetch_veps` to discover VEPs from GitHub
+2. **VEP Discovery**: Routes to `fetch_veps` in two cases:
+   - **Priority**: If no VEPs exist (immediate fetch)
+   - **Periodic**: Every 6 hours to refresh and discover new VEPs
 3. **Parallel Monitoring**: `run_monitoring` triggers four parallel checks:
    - `check_deadlines`: Tracks EF/CF deadlines
    - `check_activity`: Monitors VEP activity
