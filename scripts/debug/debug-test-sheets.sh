@@ -47,6 +47,9 @@ if [ $# -gt 0 ]; then
     done
 fi
 
+# Use --mock-veps flag (maintains backward compatibility with --debug test-sheets)
+CMD_ARGS+=(--mock-veps)
+# Also set --debug test-sheets for backward compatibility (affects exit behavior)
 CMD_ARGS+=(--debug test-sheets)
 
 podman run --rm --pull=newer \

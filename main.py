@@ -15,7 +15,7 @@ from services.utils import log, invoke_agent
 _shutdown_requested = False
 
 
-def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False, skip_monitoring: bool = False, skip_sheets: bool = False):
+def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False, skip_monitoring: bool = False, skip_sheets: bool = False, mock_veps: bool = False):
     """Create initial state for the agent."""
     sheet_config = {
         "sheet_name": "VEP Status",  # Optional: name for the sheet/tab
@@ -46,6 +46,7 @@ def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int =
         "one_cycle": one_cycle,  # Flag to exit after one cycle
         "skip_monitoring": skip_monitoring,  # Flag to skip monitoring checks
         "skip_sheets": skip_sheets,  # Flag to skip sheet updates
+        "mock_veps": mock_veps,  # Flag to use mock VEPs instead of fetching from GitHub
     }
 
 
@@ -110,6 +111,11 @@ def parse_args():
         "--skip-sheets",
         action="store_true",
         help="Skip Google Sheets updates. Useful for debugging email alerts. When combined with --skip-monitoring, focuses on email notification only."
+    )
+    parser.add_argument(
+        "--mock-veps",
+        action="store_true",
+        help="Use mock VEPs instead of fetching from GitHub. Skips VEP discovery entirely and creates sample VEPs for testing. Useful for testing sheets and alerts without API calls."
     )
     return parser.parse_args()
 

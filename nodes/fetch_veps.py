@@ -40,9 +40,13 @@ def fetch_veps_node(state: VEPState) -> Any:
         next_tasks = next_tasks[1:]
     
     # In test-sheets mode, create minimal mock VEPs without LLM calls
+    # Check if mock VEPs should be used (from flag or legacy debug mode)
+    mock_veps = state.get("mock_veps", False)
     debug_mode = os.environ.get("DEBUG_MODE")
-    if debug_mode == "test-sheets":
-        log("Debug mode 'test-sheets' enabled - creating minimal mock VEPs for sheets testing", node="fetch_veps", level="DEBUG")
+    use_mock_veps = mock_veps or (debug_mode == "test-sheets")
+    
+    if use_mock_veps:
+        log("Mock VEPs mode enabled - creating minimal mock VEPs for testing (skipping GitHub fetch)", node="fetch_veps")
         
         # Import required models for mock VEPs
         from state import VEPMilestone, VEPCompliance, VEPActivity

@@ -200,3 +200,4 @@ class VEPState(TypedDict):
     _exit_after_sheets: Optional[bool]  # Internal flag to signal exit after sheets update
     skip_monitoring: bool  # Flag to skip monitoring checks for faster debugging
     skip_sheets: bool  # Flag to skip sheet updates for faster debugging
+    mock_veps: bool  # Flag to use mock VEPs instead of fetching from GitHub
