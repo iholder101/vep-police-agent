@@ -418,59 +418,126 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
                     date_str = cutoff_date.strftime("%Y-%m-%d")
                     date_filter = f" updated:>={date_str}"
                 
-                # Search for all issues in enhancements repo (most are VEP-related)
-                # Get open issues (with date filter if specified)
-                open_query = f"repo:kubevirt/enhancements is:issue is:open{date_filter}"
-                open_issues_result = _call_with_retry(
-                    search_issues_tool.func,
-                    q=open_query,
-                )
-                # Get closed issues too (VEPs can be closed/merged) (with date filter if specified)
-                closed_query = f"repo:kubevirt/enhancements is:issue is:closed{date_filter}"
-                closed_issues_result = _call_with_retry(
-                    search_issues_tool.func,
-                    q=closed_query,
-                )
+                def fetch_all_pages(query: str, state: str) -> list:
+                    """Fetch all pages of search results for a query."""
+                    all_items = []
+                    page = 1
+                    per_page = 100  # GitHub Search API max is 100 per page
+                    total_count = None
+                    
+                    while True:
+                        # Try to pass pagination parameters (some MCP tools may not support this)
+                        try:
+                            result = _call_with_retry(
+                                search_issues_tool.func,
+                                q=query,
+                                per_page=per_page,
+                                page=page,
+                            )
+                        except TypeError:
+                            # Tool doesn't support pagination params, try without
+                            result = _call_with_retry(
+                                search_issues_tool.func,
+                                q=query,
+                            )
+                            # If we already got results, break (no pagination support)
+                            if all_items:
+                                break
+                        
+                        # Parse result
+                        items = []
+                        result_dict = None
+                        
+                        if isinstance(result, str):
+                            try:
+                                result_dict = json.loads(result)
+                            except:
+                                pass
+                        elif isinstance(result, dict):
+                            result_dict = result
+                        elif isinstance(result, list):
+                            items = result
+                        
+                        if result_dict:
+                            if "items" in result_dict:
+                                items = result_dict["items"]
+                            if "total_count" in result_dict:
+                                total_count = result_dict["total_count"]
+                            if "incomplete_results" in result_dict and result_dict["incomplete_results"]:
+                                log(f"Warning: Search results for {state} issues may be incomplete", node="indexer", level="WARNING")
+                        
+                        if not items:
+                            break
+                        
+                        all_items.extend(items)
+                        
+                        # Check if we've got all results
+                        if total_count is not None and len(all_items) >= total_count:
+                            break
+                        
+                        # If we got fewer than per_page, we're done
+                        if len(items) < per_page:
+                            break
+                        
+                        # If we can't paginate (no per_page support), break after first page
+                        if page == 1 and total_count is None:
+                            # Check if we got a full page - if not, we're done
+                            if len(items) < 30:  # Default page size
+                                break
+                            # Otherwise, log that we might be missing results
+                            log(f"Warning: Search API may have more results but pagination not supported. Got {len(items)} items for {state} issues.", node="indexer", level="WARNING")
+                            break
+                        
+                        page += 1
+                        # Safety limit: don't fetch more than 10 pages (1000 items max)
+                        if page > 10:
+                            log(f"Warning: Reached pagination limit (10 pages) for {state} issues. There may be more results.", node="indexer", level="WARNING")
+                            break
+                    
+                    if total_count is not None and len(all_items) < total_count:
+                        log(f"Warning: Expected {total_count} {state} issues but only retrieved {len(all_items)}", node="indexer", level="WARNING")
+                    
+                    return all_items
                 
-                # Combine results - search_issues returns a dict with "items" key
-                open_issues = []
-                closed_issues = []
+                # Search for VEP-related issues: use "VEP in:title" to match user's query
+                # This is more specific and matches what the user sees on GitHub
+                open_query = f"repo:kubevirt/enhancements is:issue is:open VEP in:title{date_filter}"
+                closed_query = f"repo:kubevirt/enhancements is:issue is:closed VEP in:title{date_filter}"
                 
-                # Handle open issues
-                if isinstance(open_issues_result, str):
-                    try:
-                        parsed = json.loads(open_issues_result)
-                        if isinstance(parsed, dict) and "items" in parsed:
-                            open_issues = parsed["items"]
-                        elif isinstance(parsed, list):
-                            open_issues = parsed
-                    except:
-                        pass
-                elif isinstance(open_issues_result, dict):
-                    if "items" in open_issues_result:
-                        open_issues = open_issues_result["items"]
-                    else:
-                        open_issues = [open_issues_result]  # Single issue as dict
-                elif isinstance(open_issues_result, list):
-                    open_issues = open_issues_result
+                # Also search for issues without "VEP" in title but with VEP-related labels
+                # This catches VEPs that might not have "VEP" in the title
+                open_query_all = f"repo:kubevirt/enhancements is:issue is:open{date_filter}"
+                closed_query_all = f"repo:kubevirt/enhancements is:issue is:closed{date_filter}"
                 
-                # Handle closed issues
-                if isinstance(closed_issues_result, str):
-                    try:
-                        parsed = json.loads(closed_issues_result)
-                        if isinstance(parsed, dict) and "items" in parsed:
-                            closed_issues = parsed["items"]
-                        elif isinstance(parsed, list):
-                            closed_issues = parsed
-                    except:
-                        pass
-                elif isinstance(closed_issues_result, dict):
-                    if "items" in closed_issues_result:
-                        closed_issues = closed_issues_result["items"]
-                    else:
-                        closed_issues = [closed_issues_result]  # Single issue as dict
-                elif isinstance(closed_issues_result, list):
-                    closed_issues = closed_issues_result
+                log(f"Fetching open issues with query: {open_query}", node="indexer", level="DEBUG")
+                open_issues_vep = fetch_all_pages(open_query, "open (VEP in title)")
+                
+                log(f"Fetching all open issues with query: {open_query_all}", node="indexer", level="DEBUG")
+                open_issues_all = fetch_all_pages(open_query_all, "open (all)")
+                
+                # Merge results, deduplicating by issue number
+                open_issues_dict = {}
+                for issue in open_issues_vep + open_issues_all:
+                    if isinstance(issue, dict):
+                        issue_num = issue.get("number")
+                        if issue_num:
+                            open_issues_dict[issue_num] = issue
+                open_issues = list(open_issues_dict.values())
+                
+                log(f"Fetching closed issues with query: {closed_query}", node="indexer", level="DEBUG")
+                closed_issues_vep = fetch_all_pages(closed_query, "closed (VEP in title)")
+                
+                log(f"Fetching all closed issues with query: {closed_query_all}", node="indexer", level="DEBUG")
+                closed_issues_all = fetch_all_pages(closed_query_all, "closed (all)")
+                
+                # Merge results, deduplicating by issue number
+                closed_issues_dict = {}
+                for issue in closed_issues_vep + closed_issues_all:
+                    if isinstance(issue, dict):
+                        issue_num = issue.get("number")
+                        if issue_num:
+                            closed_issues_dict[issue_num] = issue
+                closed_issues = list(closed_issues_dict.values())
                 
                 # Combine lists
                 issues_result = open_issues + closed_issues
