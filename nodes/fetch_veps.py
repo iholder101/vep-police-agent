@@ -161,7 +161,30 @@ def fetch_veps_node(state: VEPState) -> Any:
     # Build system prompt
     system_prompt = """You are a VEP governance agent discovering Virtualization Enhancement Proposals from the KubeVirt enhancements repository.
 
-CRITICAL: You must follow this systematic workflow to discover ALL VEPs. Do not skip steps.
+CRITICAL UNDERSTANDING - THE TRACKING ISSUE IS THE VEP:
+================================================================================
+THE TRACKING ISSUE IN kubevirt/enhancements IS THE PRIMARY DEFINITION OF A VEP.
+A VEP exists as long as its tracking issue is open (until the feature reaches GA).
+
+VEP Lifecycle:
+1. A tracking ISSUE is opened in kubevirt/enhancements - THIS IS THE VEP
+2. VEP PRs to kubevirt/enhancements create/update the VEP .md file:
+   - Initial PR creates the design document
+   - Additional PRs update it during the cycle (based on implementation)
+   - PRs before cycle graduation update target (beta/GA)
+3. Implementation PRs to kubevirt/kubevirt implement the VEP
+4. The tracking issue remains open until the feature reaches GA
+
+Edge Case (rare, but happens):
+- Some people mistakenly open a VEP PR before the tracking issue
+- In this case, a VEP file may exist without a corresponding issue
+- This is wrong, but you should still discover these VEPs
+
+PRIORITY ORDER FOR DISCOVERY:
+1. TRACKING ISSUES are PRIMARY - they define VEP existence
+2. VEP FILES are SECONDARY - they document the VEP (may not exist yet)
+3. Handle edge case: Files without issues (wrong, but discover them)
+================================================================================
 
 WORKFLOW (follow in order):
 
@@ -183,89 +206,86 @@ Step 1: Determine Current Development Cycle
 - Read the schedule.md file to understand the current development cycle version (e.g., v1.8)
 - This is critical for finding VEPs targeting the current release
 
-Step 2: Query All Issues in kubevirt/enhancements
-- Use GitHub search/list_issues to get ALL issues in kubevirt/enhancements repository
-- Refer to the search_issues tool description for query requirements and examples
-- Do not filter - get all issues first, then identify VEP trackers
-- Look for issues that:
-  * Have labels like "kind/vep", "vep", or similar VEP-related labels
-  * Reference VEP numbers in title or body (e.g., "vep-1234", "VEP-1234")
-  * Are tracking issues for enhancements
-- VEP tracking issues typically link to VEP documents in the veps/ directory
+Step 2: Process ALL VEP TRACKING ISSUES FIRST (PRIMARY - THE ISSUE IS THE VEP)
+- The indexed_context["issues_index"] contains VEP-related issues - these are THE VEPs
+- For EACH VEP-related issue in the index:
+  * Extract VEP number from issue title/body/labels (e.g., "VEP 176", "VEP-176", "VEP #176", "vep-1234")
+  * Use issue number as tracking_issue_id (REQUIRED - this is the primary identifier)
+  * Extract title from issue title
+  * Extract owner from issue assignee or body
+  * Extract SIG from issue labels (sig/compute, sig/network, sig/storage)
+  * Use issue state as status (open = active VEP, closed = completed/merged)
+  * Use issue timestamps for created_at and last_updated
+  * Create a VEPInfo object for THIS ISSUE - THE ISSUE IS THE VEP
+- CRITICAL: Every VEP-related issue MUST become a VEPInfo object
+- The tracking issue remains open until the feature reaches GA - this defines the VEP's lifecycle
 
-Step 3: Process ALL VEP Documents from Index (CRITICAL - DO NOT SKIP ANY)
-- The indexed_context["vep_files_index"] contains ALL VEP files - you MUST process EVERY ONE
+Step 3: Match VEP Files to Tracking Issues (SECONDARY - FILES DOCUMENT THE VEP)
+- The indexed_context["vep_files_index"] contains VEP files - these document the VEPs
 - For EACH VEP file in the index:
-  * The file content is already in the index - use it directly
   * Extract the VEP number from the file content (look for "VEP 176", "VEP-176", "VEP #176", etc.)
   * VEP numbers may also be in the filename (vep-0176.md) or path
-  * Extract title, owner, SIG, target release, and all metadata from the file content
-  * Find the corresponding tracking issue by matching VEP number
-  * Create a VEPInfo object for this VEP
-- VEP files may have descriptive names (e.g., "attestation-proposal.md") - the VEP number is in the content
-- Each VEP document contains:
-  * VEP number (e.g., vep-1234) - extract from content if not in filename
-  * Title and description
-  * Owner information
-  * Target release version
-  * SIG information
-  * Status and metadata
+  * Find the corresponding tracking issue (from Step 2) by matching VEP number
+  * If a matching issue exists, enrich the VEPInfo with file content:
+    - Update title if more detailed in file
+    - Update owner if specified in file
+    - Extract target release from file
+    - Extract additional metadata from file
+  * If NO matching issue exists (edge case - wrong but happens):
+    - Create a VEPInfo object from the file
+    - Use a placeholder tracking_issue_id or derive from VEP number
+    - Note that this is an edge case (file without issue)
+- VEP files are created/updated via PRs to kubevirt/enhancements
+- Files may not exist yet for new VEPs - that's OK, the issue is still the VEP
 
-Step 4: Process VEPs that ONLY exist as Issues (CRITICAL - MANY VEPs HAVE NO FILE YET)
-- Many VEPs only exist as tracking issues - they don't have files yet
-- For EACH VEP-related issue in indexed_context["issues_index"]:
-  * Extract VEP number from issue title/body (e.g., "VEP 176", "VEP-176", "VEP #176")
-  * Check if this VEP number already has a file (from Step 3)
-  * If NO file exists for this VEP number, create a VEPInfo object from the issue:
-    - Use issue number as tracking_issue_id
-    - Extract VEP number from issue title/body
-    - Extract title from issue title
-    - Extract owner from issue assignee or body
-    - Extract SIG from issue labels (sig/compute, sig/network, sig/storage)
-    - Use issue state as status
-    - Use issue timestamps for created_at and last_updated
-  * This is critical - many VEPs are tracked only via issues until they're formalized
-
-Step 5: Find Related PRs
+Step 4: Find Related PRs
+- VEP PRs to kubevirt/enhancements: Create/update the VEP .md file
+  * Initial PR creates the design document
+  * Additional PRs update it during the cycle
+  * PRs before cycle graduation update target (beta/GA)
+- Implementation PRs to kubevirt/kubevirt: Implement the VEP
 - Use the indexed PRs list from kubevirt/kubevirt (provided in indexed_context)
 - Search for PRs in kubevirt/enhancements that reference VEP numbers
 - Match PRs from the index to their corresponding VEPs by:
   * Checking PR titles/bodies for VEP number references (e.g., "vep-1234", "VEP-1234")
   * Checking PR labels for VEP-related labels
   * Linking implementation PRs to VEP tracking issues
-- Link PRs to their corresponding VEPs
+- Link PRs to their corresponding VEPs (tracking_issue_id is the key)
 
-Step 6: Create VEPInfo Objects for ALL Discovered VEPs
-- You MUST create a VEPInfo object for EVERY VEP you found in the indexed context
-- Ensure you've processed every VEP file and every VEP-related issue
+Step 5: Create VEPInfo Objects for ALL Discovered VEPs
+- You MUST create a VEPInfo object for EVERY VEP tracking issue you found
+- REMEMBER: THE TRACKING ISSUE IS THE VEP - files are just documentation
 - For each discovered VEP, create a VEPInfo object with:
-- tracking_issue_id: The GitHub issue number that tracks this VEP
-- name: VEP identifier (e.g., "vep-1234")
-- title: VEP title from the document or issue
-- owner: GitHub username of VEP owner (from issue or document)
-- owning_sig: Primary SIG ("compute", "network", or "storage")
-- status: Current status from tracking issue
-- last_updated: Last update timestamp from issue or document
-- created_at: Creation timestamp
+- tracking_issue_id: The GitHub issue number that tracks this VEP (REQUIRED - from Step 2)
+- name: VEP identifier (e.g., "vep-1234") - extract from issue or file
+- title: VEP title from the issue (preferred) or document
+- owner: GitHub username of VEP owner (from issue assignee/body, or document)
+- owning_sig: Primary SIG ("compute", "network", or "storage") - from issue labels or file
+- status: Current status from tracking issue (open = active, closed = completed)
+- last_updated: Last update timestamp from tracking issue
+- created_at: Creation timestamp from tracking issue
 - current_milestone: Initial milestone data with target_release from current development cycle
 - compliance: Initial compliance data (can be minimal, monitoring checks will fill in)
 - activity: Initial activity data (can be minimal, monitoring checks will fill in)
-- target_release: Target release version (should match current development cycle if active)
+- target_release: Target release version (from file if available, or issue)
 
 CRITICAL REQUIREMENTS - YOU MUST FIND ALL VEPs:
-- The indexed context provides a COMPLETE list of VEP files and issues - you MUST process EVERY SINGLE ONE
-- For EACH VEP file in indexed_context["vep_files_index"], you MUST:
-  1. Read the file content (it's in the index, but verify by reading if needed)
-  2. Extract the VEP number (e.g., vep-0176, vep-0168, etc.)
-  3. Find the corresponding tracking issue
-  4. Create a VEPInfo object
+- THE TRACKING ISSUE IS THE PRIMARY SOURCE OF TRUTH - process issues FIRST
 - For EACH VEP-related issue in indexed_context["issues_index"], you MUST:
-  1. Check if it corresponds to a VEP file
-  2. If no file exists, it might be a new VEP - still create a VEPInfo from the issue
-  3. Extract VEP number from issue title/body if present
-- DO NOT SKIP ANY ITEMS - process the entire index systematically
+  1. Create a VEPInfo object (THE ISSUE IS THE VEP)
+  2. Extract VEP number from issue title/body/labels
+  3. Use issue number as tracking_issue_id (REQUIRED)
+  4. Extract all metadata from the issue
+  5. Then match to VEP file (if exists) to enrich with file content
+- For EACH VEP file in indexed_context["vep_files_index"], you MUST:
+  1. Extract the VEP number (e.g., vep-0176, vep-0168, etc.)
+  2. Find the corresponding tracking issue (from Step 2)
+  3. If issue exists: Enrich the VEPInfo with file content
+  4. If NO issue exists (edge case): Create VEPInfo from file (note this is wrong but happens)
+- DO NOT SKIP ANY ISSUES - every VEP-related issue MUST become a VEPInfo object
+- DO NOT SKIP ANY FILES - match them to issues or handle edge case
 - The indexed context is your source of truth - it lists everything that exists
-- Work through the index methodically: for each item, determine if it's a VEP, extract its information, and create a VEPInfo object
+- PRIORITY: Issues first (they define VEPs), then files (they document VEPs)
 
 IMPORTANT GUIDANCE:
 - You will receive INDEXED CONTEXT that pre-lists all issues and VEP files - USE THIS COMPREHENSIVE LIST
@@ -361,23 +381,45 @@ CRITICAL: The VEP files are ALREADY PARSED and their CONTENT is above. You do NO
 - Use the content_preview directly to extract VEP metadata (title, owner, target_release, SIG, etc.)
 - Only use tool calls to read full issue details if the indexed data is insufficient
 
+CRITICAL UNDERSTANDING - THE TRACKING ISSUE IS THE VEP:
+================================================================================
+THE TRACKING ISSUE IN kubevirt/enhancements IS THE PRIMARY DEFINITION OF A VEP.
+A VEP exists as long as its tracking issue is open (until the feature reaches GA).
+
+VEP Lifecycle:
+1. A tracking ISSUE is opened in kubevirt/enhancements - THIS IS THE VEP
+2. VEP PRs to kubevirt/enhancements create/update the VEP .md file
+3. Implementation PRs to kubevirt/kubevirt implement the VEP
+4. The tracking issue remains open until the feature reaches GA
+
+PRIORITY: Issues FIRST (they define VEPs), Files SECOND (they document VEPs)
+================================================================================
+
 WORKFLOW (MUST FOLLOW ALL STEPS):
 1. Read enhancements_readme above to understand VEP process and labels
-2. For each VEP file listed above ({len(vep_files_index)} files):
-   - Extract VEP number, title, owner, target_release, SIG from the content_preview
-   - Find the corresponding tracking issue from the issues list (match by VEP number in title/labels)
-   - Create VEPInfo object with all available information
-3. CRITICAL: For ALL {len(vep_related_issues)} VEP-related issues listed above:
-   - PRIORITIZE OPEN ISSUES: Open issues are especially important - they may be VEPs with PRs that haven't merged yet, so the .md files don't exist yet
-   - Check if each issue already has a corresponding VEP file (from step 2)
-   - If an issue does NOT have a corresponding VEP file, you MUST create a VEPInfo object from the issue
-   - For OPEN issues without files: These are likely active VEPs waiting for PR merge - extract all available info from the issue
-   - Extract VEP number from issue title/body/labels (look for patterns like "vep-1234", "VEP-1234", "vep1234")
-   - If no VEP number found, use issue number as identifier (e.g., "issue-123" or derive from title)
-   - Use issue title as VEP title if no file exists
-   - Use issue creator/assignee as owner
-   - Create VEPInfo object for EVERY VEP-related issue, especially OPEN ones, even if they don't have a file yet
-4. Cross-reference with PRs to link implementation PRs
+
+2. CRITICAL FIRST: Process ALL {len(vep_related_issues)} VEP-related ISSUES (THE ISSUES ARE THE VEPs):
+   - For EACH VEP-related issue in the list above:
+     * Extract VEP number from issue title/body/labels (look for patterns like "vep-1234", "VEP-1234", "vep1234")
+     * Use issue number as tracking_issue_id (REQUIRED - this is the primary identifier)
+     * Use issue title as VEP title
+     * Use issue creator/assignee as owner
+     * Extract SIG from issue labels (sig/compute, sig/network, sig/storage)
+     * Use issue state as status (open = active VEP, closed = completed)
+     * Use issue timestamps for created_at and last_updated
+     * Create a VEPInfo object for THIS ISSUE - THE ISSUE IS THE VEP
+   - PRIORITIZE OPEN ISSUES: Open issues are active VEPs (feature not yet GA)
+   - EVERY VEP-related issue MUST become a VEPInfo object - do not skip any
+
+3. SECONDARY: Match VEP files to issues (files document the VEPs):
+   - For each VEP file listed above ({len(vep_files_index)} files):
+     * Extract VEP number, title, owner, target_release, SIG from the content_preview
+     * Find the corresponding tracking issue (from step 2) by matching VEP number
+     * If issue exists: Enrich the VEPInfo with file content (update title, owner, target_release if more detailed)
+     * If NO issue exists (edge case - wrong but happens): Create VEPInfo from file, note this is an edge case
+   - Files may not exist yet for new VEPs - that's OK, the issue is still the VEP
+
+4. Cross-reference with PRs to link VEP PRs and implementation PRs
 
 CRITICAL REQUIREMENTS:
 - You have {len(vep_files_index)} VEP files with content already - you MUST process ALL {len(vep_files_index)} of them systematically
