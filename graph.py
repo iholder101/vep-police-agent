@@ -82,8 +82,10 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     workflow.add_edge("merge_vep_updates", "analyze_combined")
     
     # Analysis completes, run sheet update and alert summary in parallel
-    workflow.add_edge("analyze_combined", "update_sheets")
+    # Always route to alert_summary (for email alerts)
     workflow.add_edge("analyze_combined", "alert_summary")
+    # Also route to update_sheets (it will check skip_sheets flag internally)
+    workflow.add_edge("analyze_combined", "update_sheets")
     
     # Alert summary triggers email sending
     workflow.add_edge("alert_summary", "send_email")

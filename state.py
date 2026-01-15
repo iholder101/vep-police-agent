@@ -193,3 +193,10 @@ class VEPState(TypedDict):
     
     # Google Sheets configuration
     sheet_config: Dict[str, Any]  # Sheet configuration: sheet_id, create_new, sheet_name, etc.
+    
+    # Configuration flags
+    index_cache_minutes: int  # Maximum age of index cache in minutes
+    one_cycle: bool  # Flag to indicate if the agent should run only one cycle
+    _exit_after_sheets: Optional[bool]  # Internal flag to signal exit after sheets update
+    skip_monitoring: bool  # Flag to skip monitoring checks for faster debugging
+    skip_sheets: bool  # Flag to skip sheet updates for faster debugging

@@ -200,6 +200,15 @@ def send_email_node(state: VEPState) -> Any:
         message_id = send_message.get("id")
         log(f"Email sent successfully to {len(recipients)} recipient(s) (message ID: {message_id})", node="send_email")
         
+        # Check if one-cycle mode is enabled - exit after email is sent
+        if state.get("one_cycle", False):
+            log("One-cycle mode: Email sent successfully, setting exit flag", node="send_email")
+            # Set flag to signal main loop to exit
+            return {
+                "last_check_times": last_check_times,
+                "_exit_after_sheets": True,  # Reuse this flag name for consistency
+            }
+        
     except Exception as e:
         error_msg = str(e)
         if "Insufficient Permission" in error_msg or "403" in error_msg:

@@ -33,6 +33,21 @@ def update_sheets_node(state: VEPState) -> Any:
     veps = state.get("veps", [])
     sheets_need_update = state.get("sheets_need_update", False)
     sheet_config = state.get("sheet_config", {})
+    skip_sheets = state.get("skip_sheets", False)
+    
+    # Check if sheets should be skipped
+    if skip_sheets:
+        log("Skip-sheets mode enabled, skipping Google Sheets update", node="update_sheets")
+        last_check_times = state.get("last_check_times", {})
+        last_check_times["update_sheets"] = datetime.now()
+        next_tasks = state.get("next_tasks", [])
+        if next_tasks and next_tasks[0] == "update_sheets":
+            next_tasks = next_tasks[1:]
+        return {
+            "last_check_times": last_check_times,
+            "sheets_need_update": False,
+            "next_tasks": next_tasks,
+        }
     
     # Log sheet URL if already configured
     existing_sheet_id = sheet_config.get("sheet_id")
