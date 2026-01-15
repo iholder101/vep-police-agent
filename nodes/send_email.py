@@ -206,9 +206,24 @@ def send_email_node(state: VEPState) -> Any:
     except Exception as e:
         error_msg = str(e)
         if "Insufficient Permission" in error_msg or "403" in error_msg:
-            log(f"Gmail API permission error: Service account needs domain-wide delegation enabled. See: https://developers.google.com/identity/protocols/oauth2/service-account#delegatingauthority", node="send_email", level="ERROR")
+            log("="*80, node="send_email", level="ERROR")
+            log("GMAIL API PERMISSION ERROR", node="send_email", level="ERROR")
+            log("="*80, node="send_email", level="ERROR")
+            log("The service account needs domain-wide delegation enabled to send emails.", node="send_email", level="ERROR")
+            log("", node="send_email", level="ERROR")
+            log("To fix this:", node="send_email", level="ERROR")
+            log("1. Go to Google Cloud Console > IAM & Admin > Service Accounts", node="send_email", level="ERROR")
+            log("2. Select your service account", node="send_email", level="ERROR")
+            log("3. Enable 'Domain-wide delegation'", node="send_email", level="ERROR")
+            log("4. Add the Gmail API scope: https://www.googleapis.com/auth/gmail.send", node="send_email", level="ERROR")
+            log("5. Authorize the service account in Google Workspace Admin Console", node="send_email", level="ERROR")
+            log("", node="send_email", level="ERROR")
+            log("See: https://developers.google.com/identity/protocols/oauth2/service-account#delegatingauthority", node="send_email", level="ERROR")
+            log("="*80, node="send_email", level="ERROR")
         else:
             log(f"Error sending email via Gmail API: {e}", node="send_email", level="ERROR")
+            import traceback
+            log(f"Traceback: {traceback.format_exc()}", node="send_email", level="ERROR")
         # Don't fail the workflow - just log the error
         return {
             "last_check_times": last_check_times,

@@ -45,6 +45,8 @@ def fetch_veps_node(state: VEPState) -> Any:
     debug_mode = os.environ.get("DEBUG_MODE")
     use_mock_veps = mock_veps or (debug_mode == "test-sheets")
     
+    log(f"Mock VEPs check: mock_veps={mock_veps}, debug_mode={debug_mode}, use_mock_veps={use_mock_veps}", node="fetch_veps", level="DEBUG")
+    
     if use_mock_veps:
         log("Mock VEPs mode enabled - creating minimal mock VEPs for testing (skipping GitHub fetch)", node="fetch_veps")
         
