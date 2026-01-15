@@ -92,8 +92,30 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
                 # List available tools from the MCP server
                 tools_result = await session.list_tools()
                 
+                # List of write operations to exclude (agent should only read from GitHub)
+                # These tools modify GitHub repositories and should not be available to the agent
+                write_operations_to_exclude = {
+                    "create_or_update_file",
+                    "create_issue",
+                    "create_pull_request",
+                    "push_files",
+                    "create_repository",
+                    "fork_repository",
+                    "create_branch",
+                    "update_issue",
+                    "add_issue_comment",
+                    "create_pull_request_review",
+                    "merge_pull_request",
+                    "update_pull_request_branch",
+                }
+                
                 # Convert MCP tools to LangChain tools
                 for mcp_tool in tools_result.tools:
+                    # Skip write operations - agent should only read from GitHub
+                    if mcp_tool.name in write_operations_to_exclude:
+                        log(f"Excluding write operation tool: {mcp_tool.name} (agent is read-only)", node="mcp_factory", level="DEBUG")
+                        continue
+                    
                     # Get the tool's input schema to extract parameter names
                     input_schema = None
                     if hasattr(mcp_tool, 'inputSchema') and mcp_tool.inputSchema:
