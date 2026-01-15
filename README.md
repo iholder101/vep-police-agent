@@ -1,0 +1,261 @@
+# VEP Police Agent
+
+An AI-powered governance agent for monitoring and managing KubeVirt Virtualization Enhancement Proposals (VEPs). This agent continuously tracks VEP progress, monitors compliance, checks deadlines, and maintains a Google Sheets dashboard with real-time VEP status.
+
+## Purpose
+
+The VEP Police Agent automates the monitoring and governance of the KubeVirt VEP process by:
+
+- **Discovering and tracking all VEPs** from GitHub issues and documentation
+- **Monitoring compliance** with VEP process requirements (SIG sign-offs, template completeness, etc.)
+- **Tracking deadlines** (Enhancement Freeze, Code Freeze) and sending alerts
+- **Monitoring activity** on VEPs and flagging inactive ones
+- **Maintaining a Google Sheets dashboard** with comprehensive VEP status
+- **Detecting exceptions** and tracking post-freeze work
+
+The agent uses Large Language Models (LLMs) via Google's Gemini API to intelligently analyze VEP data, GitHub issues, and PRs, making it capable of understanding context and making nuanced decisions about VEP status and compliance.
+
+## Features
+
+- 🤖 **AI-Powered Analysis**: Uses Gemini models to intelligently analyze VEP data and GitHub content
+- 📊 **Google Sheets Integration**: Maintains a real-time dashboard with VEP status, compliance flags, and alerts
+- 🔍 **Comprehensive VEP Discovery**: Finds VEPs from GitHub issues, PRs, and documentation files
+- ⏰ **Deadline Monitoring**: Tracks Enhancement Freeze (EF) and Code Freeze (CF) dates from release schedules
+- ✅ **Compliance Checking**: Verifies SIG sign-offs, template completeness, and process adherence
+- 📈 **Activity Monitoring**: Flags inactive VEPs and tracks review lag times
+- 🔄 **Continuous Operation**: Runs continuously or in one-cycle mode for scheduled jobs
+- 🚀 **Containerized**: Runs in Podman/Docker containers for easy deployment
+- 🔐 **MCP Integration**: Uses Model Context Protocol (MCP) for GitHub and Google Sheets access
+
+## Requirements
+
+- Python 3.11+
+- Podman or Docker (for containerized execution)
+- Google Gemini API key
+- Google Service Account credentials (for Google Sheets access)
+- GitHub Personal Access Token (optional, but recommended for higher rate limits)
+
+## Installation
+
+### 1. Clone the Repository
+
+```bash
+git clone <repository-url>
+cd vep-police-agent
+```
+
+### 2. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Set Up Credentials
+
+Create the following files in the project root:
+
+**API_KEY**: Your Google Gemini API key
+```bash
+echo "your-gemini-api-key" > API_KEY
+```
+
+**GOOGLE_TOKEN**: Google Service Account JSON credentials for Google Sheets access
+```bash
+# Copy your service account JSON file content to GOOGLE_TOKEN
+cat path/to/service-account.json > GOOGLE_TOKEN
+```
+
+**GITHUB_TOKEN** (optional but recommended): GitHub Personal Access Token
+```bash
+echo "your-github-token" > GITHUB_TOKEN
+```
+
+### 4. Build Container Image (Optional)
+
+If you want to run in a container:
+
+```bash
+cd container
+./build-and-push.sh
+```
+
+## Usage
+
+### Running Locally
+
+```bash
+python main.py \
+    --api-key API_KEY \
+    --google-token GOOGLE_TOKEN \
+    --github-token GITHUB_TOKEN \
+    --sheet-id YOUR_SHEET_ID
+```
+
+### Running in Container
+
+The easiest way is to use the provided scripts:
+
+```bash
+# Run one cycle and exit (useful for cron jobs)
+./scripts/run-one-cycle.sh
+
+# Run continuously
+./scripts/run-latest-agent.sh
+```
+
+### Command Line Options
+
+- `--api-key PATH`: Path to Google Gemini API key file
+- `--google-token PATH`: Path to Google Service Account JSON file
+- `--github-token PATH`: Path to GitHub Personal Access Token file
+- `--sheet-id ID`: Google Sheets document ID (from URL: `https://docs.google.com/spreadsheets/d/{ID}/edit`)
+- `--one-cycle`: Run one cycle and exit after sheet update completes
+- `--fastest-model`: Force all nodes to use `GEMINI_3_FLASH_PREVIEW` (fastest model)
+- `--debug MODE`: Enable debug mode (`discover-veps` or `test-sheets`)
+- `--index-cache-minutes MINUTES`: Maximum age of index cache in minutes (default: 60)
+- `--no-index-cache`: Disable index caching
+
+### Debug Modes
+
+**Discover VEPs** (indexes and prints VEP data, then exits):
+```bash
+./scripts/debug/debug-vep-index.sh
+```
+
+**Test Sheets** (tests Google Sheets integration with mock data):
+```bash
+./scripts/debug/debug-test-sheets.sh
+```
+
+## Configuration
+
+### Model Selection
+
+Models are configured per node in `config.py`. By default:
+- **Fast nodes**: Use `GEMINI_3_FLASH_PREVIEW` (check_activity, check_compliance, etc.)
+- **Deep reasoning nodes**: Use `GEMINI_3_PRO_PREVIEW` (analyze_combined, merge_vep_updates, update_sheets)
+
+Use `--fastest-model` to override all nodes to use the fastest model for testing.
+
+### Google Sheets Setup
+
+1. Create a Google Sheet (or use an existing one)
+2. Share it with your service account email (found in `GOOGLE_TOKEN`)
+3. Grant **Editor** access
+4. Copy the Sheet ID from the URL: `https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit`
+5. Pass the Sheet ID with `--sheet-id` or set `SHEET_ID` environment variable
+
+### Index Caching
+
+The agent caches indexed VEP data to avoid redundant API calls:
+- Cache file: `.vep_index_cache.json` (added to `.gitignore`)
+- Default cache age: 60 minutes
+- Use `--no-index-cache` to disable caching
+- Use `--index-cache-minutes` to adjust cache duration
+
+## Architecture
+
+The agent is built using **LangGraph** for orchestration and follows a node-based architecture:
+
+### Core Nodes
+
+- **fetch_veps**: Discovers VEPs from GitHub issues and documentation
+- **run_monitoring**: Triggers parallel monitoring checks
+- **check_activity**: Monitors VEP activity and flags inactive ones
+- **check_compliance**: Verifies VEP process compliance
+- **check_deadlines**: Tracks deadlines and sends alerts
+- **check_exceptions**: Monitors for exceptions and post-freeze work
+- **merge_vep_updates**: Merges updates from parallel checks
+- **analyze_combined**: Performs holistic analysis across all VEPs
+- **update_sheets**: Updates Google Sheets with VEP status
+- **scheduler**: Determines which nodes to run next
+- **wait**: Waits between cycles
+
+### Services
+
+- **indexer.py**: Pre-fetches and indexes GitHub data (issues, PRs, VEP files, release schedules)
+- **llm_helper.py**: Utilities for invoking LLMs with tools and structured output
+- **mcp_factory.py**: Manages Model Context Protocol (MCP) tools for GitHub and Google Sheets
+- **utils.py**: General utilities (logging, API key management)
+
+### State Management
+
+State is managed through LangGraph's state graph, containing:
+- VEP list and metadata
+- Alerts and compliance flags
+- Last check times
+- Sheet configuration
+- Task scheduling
+
+## Development
+
+### Project Structure
+
+```
+vep-police-agent/
+├── main.py              # Entry point
+├── graph.py             # LangGraph definition
+├── state.py             # State models (Pydantic)
+├── config.py            # Configuration (models, settings)
+├── agent.md             # Detailed agent requirements
+├── nodes/               # Agent nodes (one per file)
+├── services/            # Core services
+├── scripts/             # Helper scripts
+└── container/           # Container build files
+```
+
+### Adding a New Node
+
+1. Create a new file in `nodes/`
+2. Define a function that takes `VEPState` and returns updated state
+3. Add the node to `graph.py`
+4. Configure model selection in `config.py` if needed
+
+### Testing
+
+Use debug modes for testing:
+- `--debug discover-veps`: Test VEP discovery and indexing
+- `--debug test-sheets`: Test Google Sheets integration
+
+### Logging
+
+The agent uses structured logging with timestamps and node names:
+```
+[2026-01-15 09:00:00] [INFO ] [fetch_veps     ] Fetching VEPs from GitHub
+```
+
+## Troubleshooting
+
+### Google Sheets Access Denied
+
+If you see "Requested entity was not found":
+1. Ensure the sheet is shared with your service account email
+2. Grant **Editor** access (not just Viewer)
+3. Verify the Sheet ID is correct
+
+### Rate Limit Errors
+
+GitHub API rate limits:
+- Without token: 60 requests/hour (IP-based)
+- With token: 5000 requests/hour
+
+The agent includes retry logic with exponential backoff for rate limit errors.
+
+### Index Cache Issues
+
+If VEP discovery seems stale:
+- Use `--no-index-cache` to force fresh indexing
+- Delete `.vep_index_cache.json` manually
+- Adjust `--index-cache-minutes` for your needs
+
+## Credits
+
+This project was developed with **heavy use of Cursor**, an AI-powered code editor. Cursor's advanced code generation, refactoring, and debugging capabilities were instrumental in implementing the complex agent logic, MCP integrations, and LangGraph orchestration. The iterative development process, prompt-driven code generation, and intelligent code completion provided by Cursor significantly accelerated the development of this agent.
+
+## License
+
+[Add your license here]
+
+## Contributing
+
+[Add contribution guidelines here]
