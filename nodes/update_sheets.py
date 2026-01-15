@@ -72,11 +72,15 @@ def update_sheets_node(state: VEPState) -> Any:
     # Build system prompt
     system_prompt = """You are a VEP governance agent syncing VEP data to Google Sheets.
 
-CRITICAL REQUIREMENT: You MUST write ALL VEPs provided in the context to the sheet. Do not skip, filter, or exclude any VEPs. Every VEP in the "veps" array must appear as a row in the sheet.
+CRITICAL REQUIREMENTS:
+1. ONE ROW PER VEP: Each VEP in the "veps" array must appear as exactly ONE row in the sheet. Do not skip, filter, or exclude any VEPs. Every VEP must be written.
+2. FIRST COLUMN IS VEP ID: The first column (column A) MUST be "VEP ID" and MUST contain the tracking_issue_id for each VEP. This is the GitHub issue number that tracks the VEP and is the primary identifier.
+3. ROW COUNT VERIFICATION: After writing, the number of data rows (excluding header) must equal exactly the number of VEPs provided.
 
 Your task:
 1. Decide on the table schema/columns based on the VEP data structure:
-   - Include key fields: VEP number, title, owner, status, compliance flags, activity metrics, deadlines, alerts
+   - FIRST COLUMN (A): "VEP ID" - MUST be tracking_issue_id (the GitHub issue number)
+   - Include other key fields: VEP number/name, title, owner, status, compliance flags, activity metrics, deadlines, alerts
    - Make the schema comprehensive but readable
    - Consider what stakeholders need to see
 2. Use Google Sheets MCP tools to:
@@ -122,9 +126,13 @@ Remember: A proper Google Sheets table requires: data + formatted header + froze
 
 {json.dumps(context, indent=2, default=str)}
 
-CRITICAL: You have been provided with {vep_count} VEP(s). You MUST write ALL {vep_count} VEP(s) to the Google Sheet. Every VEP in the "veps" array must appear as a row in the sheet. Do not skip any VEPs.
+CRITICAL REQUIREMENTS:
+1. You have been provided with {vep_count} VEP(s). You MUST write ALL {vep_count} VEP(s) to the Google Sheet.
+2. ONE ROW PER VEP: Each VEP must appear as exactly ONE row. Do not skip, filter, or exclude any VEPs.
+3. FIRST COLUMN IS VEP ID: Column A must be "VEP ID" and contain the tracking_issue_id (GitHub issue number) for each VEP.
+4. After writing, verify that the sheet contains exactly {vep_count} data rows (plus 1 header row).
 
-Sync this VEP data to Google Sheets. Decide on the schema, read the current sheet if it exists, and update it with ALL VEP information. If the sheet doesn't exist and create_new is True, create it. After writing, verify that the sheet contains exactly {vep_count} data rows (plus 1 header row)."""
+Sync this VEP data to Google Sheets. Decide on the schema (with "VEP ID" as first column), read the current sheet if it exists, and update it with ALL VEP information. If the sheet doesn't exist and create_new is True, create it. Ensure each VEP's tracking_issue_id appears in column A."""
     
     # Invoke LLM with Google Sheets MCP tools
     # Note: If Google Sheets MCP is not available, this will fail gracefully
