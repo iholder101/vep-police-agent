@@ -96,6 +96,20 @@ Analyze the combined results from all monitoring checks. Merge insights and gene
     # Use the updated VEPs from LLM directly
     updated_veps = result.updated_veps
     
+    # CRITICAL: Ensure all VEPs are preserved - LLM might drop some during analysis
+    if len(updated_veps) < len(veps):
+        log(f"Warning: LLM returned {len(updated_veps)} VEP(s), expected {len(veps)}. Preserving all VEPs.", node="analyze_combined", level="WARNING")
+        # Fallback: keep existing VEPs that weren't in the analysis result
+        existing_names = {vep.name for vep in updated_veps}
+        for vep in veps:
+            if vep.name not in existing_names:
+                log(f"Preserving VEP {vep.name} that was dropped during analysis", node="analyze_combined", level="DEBUG")
+                updated_veps.append(vep)
+    
+    # Also check if we have MORE VEPs than expected (shouldn't happen, but log it)
+    if len(updated_veps) > len(veps):
+        log(f"Info: LLM returned {len(updated_veps)} VEP(s), expected {len(veps)}. Using all returned VEPs.", node="analyze_combined", level="INFO")
+    
     # Use LLM's decision on whether sheets need updating
     sheets_need_update = result.sheets_need_update
     

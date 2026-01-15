@@ -73,14 +73,19 @@ Merge all the updates from the different checks into complete VEP objects. Each 
     # The LLM returns merged VEPs - use them directly
     merged_veps = result.updated_veps
     
-    # If LLM didn't return all VEPs (shouldn't happen, but handle gracefully)
+    # CRITICAL: Ensure all VEPs are preserved - LLM might drop some during merge
     if len(merged_veps) < len(veps):
-        log(f"Warning: LLM returned {len(merged_veps)} VEP(s), expected {len(veps)}", node="merge_vep_updates", level="WARNING")
+        log(f"Warning: LLM returned {len(merged_veps)} VEP(s), expected {len(veps)}. Preserving all VEPs.", node="merge_vep_updates", level="WARNING")
         # Fallback: keep existing VEPs that weren't in the merge result
         existing_names = {vep.name for vep in merged_veps}
         for vep in veps:
             if vep.name not in existing_names:
+                log(f"Preserving VEP {vep.name} that was dropped during merge", node="merge_vep_updates", level="DEBUG")
                 merged_veps.append(vep)
+    
+    # Also check if we have MORE VEPs than expected (shouldn't happen, but log it)
+    if len(merged_veps) > len(veps):
+        log(f"Info: LLM returned {len(merged_veps)} VEP(s), expected {len(veps)}. Using all returned VEPs.", node="merge_vep_updates", level="INFO")
     
     alerts = state.get("alerts", [])
     alerts.extend(result.alerts)

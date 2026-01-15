@@ -186,7 +186,11 @@ def main():
             # In one-cycle mode, run until update_sheets completes
             log("Invoking agent (one-cycle mode)...", node="main")
             current_state = initial_state
-            while True:
+            max_iterations = 50  # Safety limit
+            iteration = 0
+            
+            while iteration < max_iterations:
+                iteration += 1
                 response = agent.invoke(current_state)
                 
                 if _shutdown_requested:
@@ -196,15 +200,16 @@ def main():
                 # Check if we should exit after sheet update
                 if response.get("_exit_after_sheets", False):
                     log("One-cycle mode: Sheet update completed, exiting", node="main")
-                    break
+                    return  # Exit immediately
                 
                 # Update state for next iteration
                 current_state = response
                 
-                # Safety check: if no tasks are scheduled, exit
-                if not response.get("next_tasks"):
-                    log("No more tasks scheduled, exiting", node="main")
-                    break
+                # Safety check: if no tasks are scheduled and sheets don't need update, exit
+                if not response.get("next_tasks") and not response.get("sheets_need_update", False):
+                    log("No more tasks scheduled and sheets are up to date, exiting", node="main")
+                    return
+            log(f"One-cycle mode: Reached max iterations ({max_iterations}), exiting", node="main", level="WARNING")
         else:
             # Normal mode - run continuously
             log("Invoking agent...", node="main")

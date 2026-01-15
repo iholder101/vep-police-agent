@@ -100,6 +100,11 @@ def route_scheduler(state: VEPState) -> Literal["fetch_veps", "run_monitoring", 
     - "run_monitoring" (triggers all checks in parallel)
     - "update_sheets" (when sheets need updating)
     """
+    # In one-cycle mode, if sheet update completed, exit (don't route to wait)
+    if state.get("one_cycle", False) and state.get("_exit_after_sheets", False):
+        # Don't route anywhere - main loop will detect this and exit
+        return "wait"  # Return wait but wait node will exit immediately
+    
     next_tasks = state.get("next_tasks", [])
     
     if not next_tasks:

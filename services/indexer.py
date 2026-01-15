@@ -422,29 +422,49 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
                     q="repo:kubevirt/enhancements is:issue is:closed",
                 )
                 
-                # Combine results
+                # Combine results - search_issues returns a dict with "items" key
                 open_issues = []
                 closed_issues = []
                 
+                # Handle open issues
                 if isinstance(open_issues_result, str):
                     try:
-                        open_issues = json.loads(open_issues_result)
+                        parsed = json.loads(open_issues_result)
+                        if isinstance(parsed, dict) and "items" in parsed:
+                            open_issues = parsed["items"]
+                        elif isinstance(parsed, list):
+                            open_issues = parsed
                     except:
                         pass
+                elif isinstance(open_issues_result, dict):
+                    if "items" in open_issues_result:
+                        open_issues = open_issues_result["items"]
+                    else:
+                        open_issues = [open_issues_result]  # Single issue as dict
                 elif isinstance(open_issues_result, list):
                     open_issues = open_issues_result
                 
+                # Handle closed issues
                 if isinstance(closed_issues_result, str):
                     try:
-                        closed_issues = json.loads(closed_issues_result)
+                        parsed = json.loads(closed_issues_result)
+                        if isinstance(parsed, dict) and "items" in parsed:
+                            closed_issues = parsed["items"]
+                        elif isinstance(parsed, list):
+                            closed_issues = parsed
                     except:
                         pass
+                elif isinstance(closed_issues_result, dict):
+                    if "items" in closed_issues_result:
+                        closed_issues = closed_issues_result["items"]
+                    else:
+                        closed_issues = [closed_issues_result]  # Single issue as dict
                 elif isinstance(closed_issues_result, list):
                     closed_issues = closed_issues_result
                 
                 # Combine lists
                 issues_result = open_issues + closed_issues
-                log(f"Retrieved {len(open_issues)} open issues and {len(closed_issues)} closed issues via search_issues", node="indexer")
+                log(f"Retrieved {len(open_issues)} open issues and {len(closed_issues)} closed issues via search_issues (total: {len(issues_result)})", node="indexer")
             else:
                 # Fallback to list_issues
                 log("Using list_issues to get issues from kubevirt/enhancements", node="indexer", level="DEBUG")
