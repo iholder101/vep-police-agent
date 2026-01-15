@@ -223,9 +223,9 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
                     )
                     all_tools.append(langchain_tool)
                 
-                # Log filtering summary
-                if excluded_count > 0:
-                    log(f"Filtered {excluded_count} write operation(s) from {total_tools} total tools ({len(all_tools)} read-only tools available)", node="mcp_factory", level="DEBUG")
+                # Log filtering summary for GitHub MCP
+                if config.get("name") == "github" and excluded_count > 0:
+                    log(f"GitHub MCP: Filtered {excluded_count} write operation(s) from {total_tools} total tools ({len(all_tools)} read-only tools available)", node="mcp_factory")
     
     return all_tools
 
