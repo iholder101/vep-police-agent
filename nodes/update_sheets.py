@@ -83,13 +83,32 @@ Your task:
    - Include other key fields: VEP number/name, title, owner, status, compliance flags, activity metrics, deadlines, alerts
    - Make the schema comprehensive but readable
    - Consider what stakeholders need to see
-2. Use Google Sheets MCP tools to:
-   - Read the current sheet (if sheet_id is provided in config)
-   - Create a new sheet if needed (if create_new is True or sheet doesn't exist)
-   - Compare current sheet data with the VEP state
-   - Update the sheet with ALL VEP data from the context (write every VEP, don't skip any)
-   - Maintain data integrity (don't lose existing data)
-   - IMPORTANT: The number of data rows (excluding header) must equal the number of VEPs provided
+2. Use Google Sheets MCP tools in this order:
+   STEP 1: Verify spreadsheet access
+   - If sheet_id is provided in config, use get_spreadsheet(spreadsheetId) to verify the spreadsheet exists and is accessible
+   - If get_spreadsheet fails with "Requested entity was not found", the service account doesn't have access
+     → You cannot proceed - return an error explaining the spreadsheet needs to be shared with the service account
+   - If get_spreadsheet succeeds, proceed to STEP 2
+   
+   STEP 2: Read existing data (if any)
+   - Use get_sheet_data(spreadsheetId, sheetName) or read_range(spreadsheetId, range) to read current data
+   - This helps you understand the existing structure
+   - If the sheet is empty or doesn't exist, you'll write all data fresh
+   
+   STEP 3: Write all VEP data
+   - Use write_range(spreadsheetId, range, values) to write ALL VEPs as rows
+   - Range should be "Sheet1!A1:Z{N}" where N is the number of rows (header + data rows)
+   - First row is header: ["VEP ID", "Name", "Title", ...]
+   - Each subsequent row is one VEP: [tracking_issue_id, name, title, ...]
+   - IMPORTANT: Write ALL {vep_count} VEPs - every VEP must be a row
+   - IMPORTANT: Column A (first column) MUST be "VEP ID" containing tracking_issue_id
+   
+   STEP 4: Format the table (see step 3 below)
+   
+   ERROR HANDLING:
+   - If you get "Requested entity was not found" for get_spreadsheet: The service account doesn't have access to the spreadsheet. Return an error.
+   - If you get "Drive storage quota exceeded": Cannot create new spreadsheets. Use existing shared spreadsheet.
+   - Do NOT try to create a new spreadsheet if sheet_id is provided - use the existing one or return an error
 3. CRITICAL: After writing data, you MUST create a proper Google Sheets table with these steps (in order):
    Step A: Write all data to the sheet (use write_range with all rows including header)
    Step B: Format the header row (row 1):
@@ -132,7 +151,24 @@ CRITICAL REQUIREMENTS:
 3. FIRST COLUMN IS VEP ID: Column A must be "VEP ID" and contain the tracking_issue_id (GitHub issue number) for each VEP.
 4. After writing, verify that the sheet contains exactly {vep_count} data rows (plus 1 header row).
 
-Sync this VEP data to Google Sheets. Decide on the schema (with "VEP ID" as first column), read the current sheet if it exists, and update it with ALL VEP information. If the sheet doesn't exist and create_new is True, create it. Ensure each VEP's tracking_issue_id appears in column A."""
+Sync this VEP data to Google Sheets.
+
+WORKFLOW:
+1. If sheet_id is provided ({sheet_config.get('sheet_id', 'NOT PROVIDED')}):
+   - First, use get_spreadsheet(spreadsheetId="{sheet_config.get('sheet_id')}") to verify access
+   - If access is denied, return an error - the spreadsheet must be shared with the service account
+   - If access succeeds, read existing data with get_sheet_data or read_range
+   - Then write all {vep_count} VEPs using write_range
+   
+2. If sheet_id is NOT provided and create_new is True:
+   - Try to create a new spreadsheet (may fail if quota exceeded)
+   
+3. After writing data:
+   - Format header row (bold, background color)
+   - Freeze header row
+   - Create filters on header row
+   
+CRITICAL: Column A MUST be "VEP ID" with tracking_issue_id values. Every VEP must be exactly one row."""
     
     # Invoke LLM with Google Sheets MCP tools
     # Note: If Google Sheets MCP is not available, this will fail gracefully

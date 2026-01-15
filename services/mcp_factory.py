@@ -279,7 +279,20 @@ If you need both issues and PRs, make two separate queries.""",
         "get_spreadsheet": """Get metadata about a specific spreadsheet.
 - Requires: spreadsheetId (string)
 - Returns: spreadsheet metadata including sheet names, properties, etc.
-- Use this to check if a spreadsheet exists and get its structure""",
+- Use this to check if a spreadsheet exists and get its structure
+- If this fails with "Requested entity was not found", the service account doesn't have access to the spreadsheet""",
+        
+        "get_sheet_data": """Read all data from a specific sheet/tab in a spreadsheet.
+- Requires: spreadsheetId (string), sheetName (string, optional - defaults to first sheet)
+- Returns: 2D array of all cell values in the sheet
+- Use this to read existing data from a sheet before updating
+- Alternative to read_range when you want all data from a sheet""",
+        
+        "list_sheets": """List all sheets/tabs in a spreadsheet.
+- Requires: spreadsheetId (string)
+- Returns: array of sheet names and metadata
+- Use this to see what sheets exist in the spreadsheet
+- If this fails with "Requested entity was not found", the service account doesn't have access""",
     }
     
     return docs.get(tool_name, "")
