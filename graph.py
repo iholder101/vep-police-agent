@@ -59,6 +59,8 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     workflow.set_entry_point("scheduler")
     
     # Define edges from scheduler - can route to multiple operations
+    # Note: We handle parallel execution of update_sheets and alert_summary
+    # by routing to them sequentially (scheduler queues them)
     workflow.add_conditional_edges(
         "scheduler",
         route_scheduler_operations,
@@ -113,7 +115,7 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     return workflow.compile()
 
 
-def route_scheduler_operations(state: VEPState) -> Literal["fetch_veps", "run_monitoring", "update_sheets", "alert_summary", "update_and_alert_parallel", "wait"]:
+def route_scheduler_operations(state: VEPState) -> Literal["fetch_veps", "run_monitoring", "update_sheets", "alert_summary", "wait"]:
     """Route based on scheduler's next_tasks.
     
     Routes to the first task in the queue. The scheduler can queue:
@@ -121,11 +123,11 @@ def route_scheduler_operations(state: VEPState) -> Literal["fetch_veps", "run_mo
     - "run_monitoring" (triggers all checks in parallel) - only if not skip_monitoring
     - "update_sheets" (updates Google Sheets)
     - "alert_summary" (checks if alerts need to be sent)
-    - "update_and_alert_parallel" (runs both update_sheets and alert_summary in parallel)
     - "wait" (wait until next round hour)
     
-    Special handling: If both update_sheets and alert_summary are in the queue and should run,
-    we can route to a parallel execution path.
+    Note: Multiple tasks (e.g., update_sheets and alert_summary) are handled
+    by routing to them sequentially. The scheduler queues tasks and processes
+    them one at a time, returning to scheduler after each completes.
     """
     import os
     debug_mode = os.environ.get("DEBUG_MODE")
@@ -139,17 +141,8 @@ def route_scheduler_operations(state: VEPState) -> Literal["fetch_veps", "run_mo
     if not next_tasks:
         return "wait"
     
-    # Check if both update_sheets and alert_summary are in the queue
-    # If so, route to parallel execution
-    has_update_sheets = "update_sheets" in next_tasks
-    has_alert_summary = "alert_summary" in next_tasks
-    
-    if has_update_sheets and has_alert_summary:
-        # Both should run - check if they're the first two tasks (priority)
-        if next_tasks[0] in ("update_sheets", "alert_summary") and next_tasks[1] in ("update_sheets", "alert_summary"):
-            return "update_and_alert_parallel"
-    
     # Return first task (scheduler should prioritize)
+    # Multiple tasks are handled sequentially by returning to scheduler after each completes
     task = next_tasks[0]
     
     # If skip_monitoring is enabled, don't route to run_monitoring (shouldn't be in queue, but be safe)
@@ -162,7 +155,7 @@ def route_scheduler_operations(state: VEPState) -> Literal["fetch_veps", "run_mo
             return "wait"
     
     # Validate it's a known task, otherwise wait
-    valid_tasks = {"fetch_veps", "run_monitoring", "update_sheets", "alert_summary", "update_and_alert_parallel", "wait"}
+    valid_tasks = {"fetch_veps", "run_monitoring", "update_sheets", "alert_summary", "wait"}
     return task if task in valid_tasks else "wait"
 
 
