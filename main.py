@@ -15,7 +15,7 @@ from services.utils import log, invoke_agent
 _shutdown_requested = False
 
 
-def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False, skip_monitoring: bool = False, skip_sheets: bool = False, mock_veps: bool = False):
+def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False, skip_monitoring: bool = False, skip_sheets: bool = False, mock_veps: bool = False, mock_analyzed_combined: bool = False):
     """Create initial state for the agent."""
     sheet_config = {
         "sheet_name": "VEP Status",  # Optional: name for the sheet/tab
@@ -47,6 +47,7 @@ def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int =
         "skip_monitoring": skip_monitoring,  # Flag to skip monitoring checks
         "skip_sheets": skip_sheets,  # Flag to skip sheet updates
         "mock_veps": mock_veps,  # Flag to use mock VEPs instead of fetching from GitHub
+        "mock_analyzed_combined": mock_analyzed_combined,  # Flag to skip LLM in analyze_combined
     }
 
 
@@ -237,6 +238,8 @@ def main():
         flags.append("  --skip-sheets: enabled")
     if args.mock_veps:
         flags.append("  --mock-veps: enabled")
+    if args.mock_analyzed_combined:
+        flags.append("  --mock-analyzed-combined: enabled")
     
     if flags:
         for flag in flags:
@@ -261,6 +264,8 @@ def main():
         log("Skip-sheets mode: Google Sheets updates will be skipped", node="main")
     if args.mock_veps:
         log("Mock VEPs mode: will use mock VEPs instead of fetching from GitHub", node="main")
+    if args.mock_analyzed_combined:
+        log("Mock analyzed-combined mode: will skip LLM call and use naive analysis", node="main")
     
     # Run the agent
     try:
