@@ -410,16 +410,26 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
             # Use search_issues if available (more comprehensive)
             if search_issues_tool:
                 log("Using search_issues to get all issues from kubevirt/enhancements", node="indexer", level="DEBUG")
+                # Build date filter for search query (if days_back specified)
+                date_filter = ""
+                if days_back is not None:
+                    from datetime import datetime, timedelta
+                    cutoff_date = datetime.now() - timedelta(days=days_back)
+                    date_str = cutoff_date.strftime("%Y-%m-%d")
+                    date_filter = f" updated:>={date_str}"
+                
                 # Search for all issues in enhancements repo (most are VEP-related)
-                # Get open issues
+                # Get open issues (with date filter if specified)
+                open_query = f"repo:kubevirt/enhancements is:issue is:open{date_filter}"
                 open_issues_result = _call_with_retry(
                     search_issues_tool.func,
-                    q="repo:kubevirt/enhancements is:issue is:open",
+                    q=open_query,
                 )
-                # Get closed issues too (VEPs can be closed/merged)
+                # Get closed issues too (VEPs can be closed/merged) (with date filter if specified)
+                closed_query = f"repo:kubevirt/enhancements is:issue is:closed{date_filter}"
                 closed_issues_result = _call_with_retry(
                     search_issues_tool.func,
-                    q="repo:kubevirt/enhancements is:issue is:closed",
+                    q=closed_query,
                 )
                 
                 # Combine results - search_issues returns a dict with "items" key

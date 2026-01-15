@@ -352,7 +352,7 @@ INDEXED INFORMATION (pre-fetched - USE THIS DATA DIRECTLY, DO NOT RE-READ FILES)
 - Enhancements README: {json.dumps(indexed_context.get("enhancements_readme"), indent=2, default=str) if indexed_context.get("enhancements_readme") else "Not available"}
 - Issues Index: Found {len(issues_index)} total issues, {len(vep_related_issues)} VEP-related issues
   VEP-related issues: {vep_issues_text}
-- PRs Index: Found {len(indexed_context.get("prs_index", []))} PRs (first 10): {json.dumps(indexed_context.get("prs_index", [])[:10], indent=2, default=str)}
+- PRs Index: Found {len(indexed_context.get("prs_index", []))} PRs: {json.dumps(indexed_context.get("prs_index", []), indent=2, default=str)}
 - VEP Files: Found {len(vep_files_index)} VEP files with FULL CONTENT already indexed:
 {json.dumps(vep_files_summary, indent=2, default=str)}
 
