@@ -30,7 +30,15 @@ if [ "$1" = "--delete" ]; then
     # Stop and disable the service if it's running
     if systemctl is-active --quiet "$UNIT_NAME" 2>/dev/null; then
         echo "Stopping service..."
-        systemctl stop "$UNIT_NAME"
+        # Use timeout to prevent hanging (max 30 seconds)
+        if timeout 30 systemctl stop "$UNIT_NAME" 2>/dev/null; then
+            echo "Service stopped successfully"
+        else
+            echo "Warning: Service stop timed out or failed. Attempting to kill..."
+            # Try to kill the main process if stop failed
+            systemctl kill --kill-who=main "$UNIT_NAME" 2>/dev/null || true
+            sleep 2
+        fi
     fi
     
     if systemctl is-enabled --quiet "$UNIT_NAME" 2>/dev/null; then
