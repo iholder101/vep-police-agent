@@ -17,9 +17,11 @@ def scheduler_node(state: VEPState) -> Any:
     next_tasks = []
     one_cycle = state.get("one_cycle", False)
     
-    # In one-cycle mode, if we just completed update_sheets, don't schedule more tasks
-    if one_cycle and state.get("_exit_after_sheets", False):
-        log("One-cycle mode: Sheet update completed, no more tasks scheduled", node="scheduler")
+    # In one-cycle mode or test-sheets debug mode, if we just completed update_sheets, don't schedule more tasks
+    debug_mode = os.environ.get("DEBUG_MODE")
+    if (one_cycle or debug_mode == "test-sheets") and state.get("_exit_after_sheets", False):
+        mode_name = "test-sheets debug mode" if debug_mode == "test-sheets" else "one-cycle mode"
+        log(f"{mode_name}: Sheet update completed, no more tasks scheduled", node="scheduler")
         return {
             "next_tasks": [],  # Clear tasks to exit
         }
