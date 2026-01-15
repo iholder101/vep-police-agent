@@ -226,6 +226,12 @@ def main():
         flags.append("  --no-index-cache: enabled")
     elif index_cache_minutes != 60:
         flags.append(f"  --index-cache-minutes: {index_cache_minutes}")
+    if args.skip_monitoring:
+        flags.append("  --skip-monitoring: enabled")
+    if args.skip_sheets:
+        flags.append("  --skip-sheets: enabled")
+    if args.mock_veps:
+        flags.append("  --mock-veps: enabled")
     
     if flags:
         for flag in flags:
@@ -248,6 +254,8 @@ def main():
         log("Skip-monitoring mode: monitoring checks (deadlines, activity, compliance, exceptions) will be skipped", node="main")
     if args.skip_sheets:
         log("Skip-sheets mode: Google Sheets updates will be skipped", node="main")
+    if args.mock_veps:
+        log("Mock VEPs mode: will use mock VEPs instead of fetching from GitHub", node="main")
     
     # Run the agent
     try:

@@ -17,6 +17,7 @@ CMD_ARGS=(
     --skip-sheets
     --one-cycle
     --fastest-model
+    --mock-veps
 )
 
 # Add GitHub token if file exists
