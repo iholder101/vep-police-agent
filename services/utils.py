@@ -68,15 +68,22 @@ def invoke_agent(agent: CompiledStateGraph, prompt: str) -> str:
     # Handle string content directly
     return str(content) if content is not None else ""
 
-def get_model():
+def get_model(model_name: Optional[str] = None):
     """Get the LLM model instance.
+    
+    Args:
+        model_name: Optional model name. If not provided, uses default from config.
     
     No timeout is set - requests will complete naturally without artificial time limits.
     """
     from langchain_google_genai import ChatGoogleGenerativeAI
+    import config
+    
+    if model_name is None:
+        model_name = config.DEFAULT_MODEL
 
     return ChatGoogleGenerativeAI(
-        model="gemini-3-flash-preview",
+        model=model_name,
         api_key=get_api_key(),
     )
 

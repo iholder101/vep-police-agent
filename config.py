@@ -1,0 +1,93 @@
+"""Configuration file for VEP governance agent.
+
+This module provides centralized configuration for the agent, including:
+- Model selection per node type
+- General agent settings
+- Feature flags
+"""
+
+from typing import Dict, Optional
+
+# Gemini Model name constants
+GEMINI_3_PRO_PREVIEW = "gemini-3-pro-preview"
+GEMINI_3_FLASH_PREVIEW = "gemini-3-flash-preview"
+GEMINI_2_5_FLASH = "gemini-2.5-flash"
+GEMINI_2_5_FLASH_LITE = "gemini-2.5-flash-lite"
+GEMINI_2_5_PRO = "gemini-2.5-pro"
+GEMINI_2_0_FLASH = "gemini-2.0-flash"
+GEMINI_2_0_FLASH_LITE = "gemini-2.0-flash-lite"
+
+
+# Default model for all nodes
+DEFAULT_MODEL = GEMINI_3_FLASH_PREVIEW
+
+# Model configuration per node type
+# Nodes that require deeper reasoning can use more powerful models
+NODE_MODELS: Dict[str, str] = {
+    # Deep reasoning nodes - consider more powerful models
+    "analyze_combined": GEMINI_2_5_PRO,  # Holistic analysis with cross-check reasoning
+    "merge_vep_updates": GEMINI_2_5_PRO,  # Intelligent merging of parallel updates
+    "fetch_veps": DEFAULT_MODEL,  # Complex VEP discovery and extraction
+    
+    # Standard check nodes - use fast model
+    "check_activity": DEFAULT_MODEL,
+    "check_compliance": DEFAULT_MODEL,
+    "check_deadlines": DEFAULT_MODEL,
+    "check_exceptions": DEFAULT_MODEL,
+    
+    # Sheet operations - use fast model
+    "update_sheets": DEFAULT_MODEL,
+    
+    # Other nodes - use default
+    "scheduler": DEFAULT_MODEL,
+    "run_monitoring": DEFAULT_MODEL,
+}
+
+# Available models (for reference and validation)
+AVAILABLE_MODELS = [
+    GEMINI_3_PRO_PREVIEW,    # Latest pro model (preview)
+    GEMINI_3_FLASH_PREVIEW,  # Fast, efficient (default)
+    GEMINI_2_5_FLASH,        # Fast, efficient
+    GEMINI_2_5_FLASH_LITE,   # Very fast, lightweight
+    GEMINI_2_5_PRO,          # Powerful reasoning
+    GEMINI_2_0_FLASH,        # Fast with good reasoning
+    GEMINI_2_0_FLASH_LITE,   # Very fast, lightweight
+]
+
+
+def get_model_for_node(node_name: str) -> str:
+    """Get the model name for a specific node.
+    
+    Args:
+        node_name: Name of the node (e.g., "analyze_combined", "check_activity")
+    
+    Returns:
+        Model name to use for this node
+    """
+    return NODE_MODELS.get(node_name, DEFAULT_MODEL)
+
+
+def set_node_model(node_name: str, model: str) -> None:
+    """Set the model for a specific node.
+    
+    Args:
+        node_name: Name of the node
+        model: Model name to use
+    """
+    if model not in AVAILABLE_MODELS:
+        import warnings
+        warnings.warn(
+            f"Model '{model}' not in AVAILABLE_MODELS list. "
+            f"Available models: {AVAILABLE_MODELS}. "
+            f"Proceeding anyway - model may not be valid."
+        )
+    NODE_MODELS[node_name] = model
+
+
+def get_all_node_models() -> Dict[str, str]:
+    """Get all node model configurations.
+    
+    Returns:
+        Dictionary mapping node names to model names
+    """
+    return NODE_MODELS.copy()

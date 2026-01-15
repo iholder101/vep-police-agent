@@ -46,8 +46,12 @@ def invoke_llm_with_tools(
                 # If model requires fields, try with empty defaults
                 return response_model(**{})
         
+        # Get model for this operation type (node)
+        import config
+        model_name = config.get_model_for_node(operation_type)
+        
         # Create LLM with tools bound
-        llm = get_model()
+        llm = get_model(model_name=model_name)
         llm_with_tools = llm.bind_tools(tools)
         
         # Build messages
