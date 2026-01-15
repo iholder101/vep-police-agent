@@ -355,11 +355,11 @@ Do not return success until you have verified all formatting steps are complete.
         }
         
         # Check if one-cycle mode is enabled - exit after sheet update
+        # But don't clear next_tasks yet - allow alert_summary to run first
         if state.get("one_cycle", False) and update_success:
-            log("One-cycle mode: Sheet update successful, setting exit flag", node="update_sheets")
-            # Clear next_tasks to prevent further execution
-            result["next_tasks"] = []
-            # Set a flag to signal main loop to exit
+            log("One-cycle mode: Sheet update successful, will exit after alert_summary completes", node="update_sheets")
+            # Don't clear next_tasks - let alert_summary run first
+            # Set a flag to signal main loop to exit after alert_summary
             result["_exit_after_sheets"] = True
         
         # Check if test-sheets debug mode is enabled - exit after sheet update
