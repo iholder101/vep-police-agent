@@ -133,6 +133,12 @@ EMAIL_RECIPIENTS: List[str] = [
     "iholder@redhat.com",
 ]
 
+# Email service configuration
+# Set RESEND_API_KEY environment variable to use Resend (easiest email service)
+# Resend: https://resend.com - 3,000 emails/month free, developer-friendly
+# If not set, will try system mail, then fall back to Ethereal Email (sandbox)
+RESEND_API_KEY: Optional[str] = None
+
 
 def get_email_recipients() -> List[str]:
     """Get email recipients for alerts.
@@ -151,3 +157,21 @@ def get_email_recipients() -> List[str]:
         return [email.strip() for email in env_recipients.split(",") if email.strip()]
     # Fall back to config.py setting (already a list)
     return EMAIL_RECIPIENTS.copy() if EMAIL_RECIPIENTS else []
+
+
+def get_resend_api_key() -> Optional[str]:
+    """Get Resend API key for email sending.
+    
+    Checks RESEND_API_KEY environment variable first (takes precedence),
+    then falls back to config.py setting.
+    
+    Returns:
+        Resend API key string, or None if not configured
+    """
+    import os
+    # Check environment variable first (takes precedence)
+    env_key = os.environ.get("RESEND_API_KEY")
+    if env_key:
+        return env_key.strip()
+    # Fall back to config.py setting
+    return RESEND_API_KEY
