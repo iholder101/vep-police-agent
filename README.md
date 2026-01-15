@@ -112,6 +112,17 @@ The easiest way is to use the provided scripts:
 
 # Run continuously
 ./scripts/run-latest-agent.sh
+
+# Create systemd unit for running as a service
+sudo ./scripts/create-systemd-unit.sh
+
+# After creating the unit:
+sudo systemctl start vep-police-agent
+sudo systemctl enable vep-police-agent  # Auto-start on boot
+journalctl -u vep-police-agent -f      # View logs
+
+# Delete the systemd unit
+sudo ./scripts/create-systemd-unit.sh --delete
 ```
 
 **Raw Container Run** (using podman/docker directly):
@@ -166,6 +177,11 @@ podman run --rm --pull=newer \
 ./scripts/debug/debug-test-sheets.sh
 ```
 
+**Test Email** (tests email alert functionality with mock data):
+```bash
+./scripts/debug/debug-test-email.sh
+```
+
 ## Configuration
 
 ### Model Selection
@@ -215,6 +231,16 @@ The agent uses [Resend](https://resend.com) for email delivery (easiest setup):
 - `risk`: VEP is at risk, requires exception, or has other risk indicators
 - `status_change`: VEP status changed (new VEP, status update, etc.)
 - `milestone_update`: VEP milestone status changed
+
+### Scheduling Configuration
+
+The agent runs operations on configurable intervals. By default, all operations run on round hours (e.g., 13:00, 14:00, 15:00):
+
+- **Fetch VEPs**: Every 1 hour (configurable via `FETCH_VEPS_INTERVAL_SECONDS` in `config.py`)
+- **Update Sheets**: Every 1 hour (configurable via `UPDATE_SHEETS_INTERVAL_SECONDS` in `config.py`)
+- **Alert Summary**: Every 1 hour (configurable via `ALERT_SUMMARY_INTERVAL_SECONDS` in `config.py`)
+
+**Round-Hour Scheduling**: By default, operations wait until the next round hour (e.g., if it's 13:45, operations wait until 14:00). Use `--immediate-start` to run the first cycle immediately and use interval-based timing (current time + interval) instead of round hours.
 
 ### Index Caching
 
@@ -281,8 +307,8 @@ graph TD
 **Flow Description:**
 1. **Entry Point**: The `scheduler` node is the central coordinator and entry point
 2. **VEP Discovery**: Routes to `fetch_veps` in two cases:
-   - **Priority**: If no VEPs exist (immediate fetch)
-   - **Periodic**: Every 6 hours to refresh and discover new VEPs
+   - **Priority**: If no VEPs exist (immediate fetch on first run)
+   - **Periodic**: Every configured interval (default: 1 hour) to refresh and discover new VEPs
 3. **Parallel Monitoring**: `run_monitoring` triggers four parallel checks:
    - `check_deadlines`: Tracks EF/CF deadlines
    - `check_activity`: Monitors VEP activity
@@ -292,8 +318,8 @@ graph TD
 5. **Parallel Actions**: After analysis, `update_sheets` and `alert_summary` run in parallel:
    - `update_sheets`: Updates Google Sheets with VEP status
    - `alert_summary`: Composes structured alerts from VEP analysis
-6. **Email Alerts**: `alert_summary` triggers `send_email` to send alerts via Gmail API
-7. **Wait Loop**: If no tasks, waits before returning to scheduler (continuous operation)
+6. **Email Alerts**: `alert_summary` triggers `send_email` to send alerts via Resend API
+7. **Wait Loop**: If no tasks, waits until next round hour (or next interval if `--immediate-start` is used) before returning to scheduler (continuous operation)
 
 ## Troubleshooting
 
