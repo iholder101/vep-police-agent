@@ -30,18 +30,16 @@ def _get_ethereal_credentials() -> Optional[Dict[str, str]]:
             "User-Agent": "VEP-Police-Agent/1.0",
         }
         
-        # Try POST to create account
+        # Try POST to create account with required parameters
         response = requests.post(
             "https://api.nodemailer.com/user",
             headers=headers,
-            json={},  # Some APIs require empty JSON body
+            json={
+                "requestor": "vep-police-agent",
+                "version": "1.0"
+            },
             timeout=10
         )
-        
-        # If POST fails, try GET (some versions of the API use GET)
-        if response.status_code != 200:
-            log(f"POST to Ethereal API failed with {response.status_code}, trying GET", node="send_email", level="DEBUG")
-            response = requests.get("https://api.nodemailer.com/user", headers=headers, timeout=10)
         
         response.raise_for_status()
         data = response.json()
