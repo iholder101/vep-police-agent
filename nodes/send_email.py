@@ -8,6 +8,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from state import VEPState
 from services.utils import log, get_google_token
+import config
 import os
 
 
@@ -40,10 +41,10 @@ def send_email_node(state: VEPState) -> Any:
             "last_check_times": last_check_times,
         }
     
-    # Get email recipients from environment or config
-    recipients_str = os.environ.get("EMAIL_RECIPIENTS", "")
+    # Get email recipients from config (with env var fallback)
+    recipients_str = config.get_email_recipients()
     if not recipients_str:
-        log("EMAIL_RECIPIENTS not set, skipping email send", node="send_email", level="WARNING")
+        log("Email recipients not configured (set EMAIL_RECIPIENTS env var or config.EMAIL_RECIPIENTS), skipping email send", node="send_email", level="WARNING")
         return {
             "last_check_times": last_check_times,
         }

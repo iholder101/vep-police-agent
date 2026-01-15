@@ -4,6 +4,7 @@ This module provides centralized configuration for the agent, including:
 - Model selection per node type
 - General agent settings
 - Feature flags
+- Email notification settings
 """
 
 from typing import Dict, Optional
@@ -119,3 +120,26 @@ def get_all_node_models() -> Dict[str, str]:
         Dictionary mapping node names to model names
     """
     return NODE_MODELS.copy()
+
+
+# Email notification configuration
+# Comma-separated list of email addresses to receive VEP governance alerts
+# Can be overridden by EMAIL_RECIPIENTS environment variable
+EMAIL_RECIPIENTS: Optional[str] = None  # e.g., "user1@example.com,user2@example.com"
+
+
+def get_email_recipients() -> Optional[str]:
+    """Get email recipients for alerts.
+    
+    Checks environment variable first, then falls back to config.py setting.
+    
+    Returns:
+        Comma-separated string of email addresses, or None if not configured
+    """
+    import os
+    # Check environment variable first (takes precedence)
+    env_recipients = os.environ.get("EMAIL_RECIPIENTS")
+    if env_recipients:
+        return env_recipients
+    # Fall back to config.py setting
+    return EMAIL_RECIPIENTS
