@@ -17,10 +17,18 @@ def wait_node(state: VEPState) -> Any:
     
     After waiting, returns to scheduler which will check what needs to run.
     """
-    # In one-cycle mode, if sheet update completed, exit immediately
-    if state.get("one_cycle", False) and state.get("_exit_after_sheets", False):
-        log("One-cycle mode: Exiting immediately after sheet update (skipping wait)", node="wait")
-        return {}
+    # In one-cycle mode or test-sheets debug mode, if sheet update completed, exit immediately
+    import os
+    debug_mode = os.environ.get("DEBUG_MODE")
+    should_exit = (
+        (state.get("one_cycle", False) or debug_mode == "test-sheets") and 
+        state.get("_exit_after_sheets", False)
+    )
+    if should_exit:
+        mode_name = "test-sheets debug mode" if debug_mode == "test-sheets" else "one-cycle mode"
+        log(f"{mode_name}: Exiting immediately after sheet update (skipping wait)", node="wait")
+        import sys
+        sys.exit(0)
     
     next_tasks = state.get("next_tasks", [])
     veps_count = len(state.get("veps", []))

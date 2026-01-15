@@ -274,6 +274,16 @@ CRITICAL: Column A MUST be "VEP ID" with tracking_issue_id values. Every VEP mus
             # Set a flag to signal main loop to exit
             result["_exit_after_sheets"] = True
         
+        # Check if test-sheets debug mode is enabled - exit after sheet update
+        import os
+        debug_mode = os.environ.get("DEBUG_MODE")
+        if debug_mode == "test-sheets" and result.success:
+            log("Debug mode 'test-sheets': Sheet update successful, setting exit flag", node="update_sheets")
+            # Clear next_tasks to prevent further execution
+            result["next_tasks"] = []
+            # Set a flag to signal main loop to exit
+            result["_exit_after_sheets"] = True
+        
         return result
         
     except Exception as e:
