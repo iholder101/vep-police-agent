@@ -174,8 +174,19 @@ Analyze each VEP and compose alerts for alert-worthy situations. Return all aler
     else:
         log("No alerts to send - skipping email", node="alert_summary")
     
-    return {
+    result = {
         "last_check_times": last_check_times,
         "alerts": alerts_dicts,  # Add new alerts to state (empty list if no alerts)
         "alert_summary_text": result.summary_text,  # Store summary text for email
     }
+    
+    # In one-cycle mode, if update_sheets already set _exit_after_sheets, clear next_tasks now
+    # This ensures alert_summary runs before exit
+    if state.get("one_cycle", False) and state.get("_exit_after_sheets", False):
+        log("One-cycle mode: Alert summary completed, clearing queue for exit", node="alert_summary")
+        next_tasks = state.get("next_tasks", [])
+        if "alert_summary" in next_tasks:
+            next_tasks.remove("alert_summary")
+        result["next_tasks"] = next_tasks
+    
+    return result

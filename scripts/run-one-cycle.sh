@@ -60,7 +60,9 @@ fi
 CMD_ARGS+=(--immediate-start)
 
 # Execute the command
+# Set PYTHONUNBUFFERED=1 to ensure logs are flushed immediately (important for real-time log viewing)
 podman run --rm --pull=newer \
+    -e PYTHONUNBUFFERED=1 \
     -v "$PROJECT_ROOT:/workspace:ro" \
     -w /workspace \
     quay.io/mabekitzur/vep-police-agent:latest \

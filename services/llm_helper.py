@@ -71,8 +71,13 @@ def invoke_llm_with_tools(
         iteration = 0
         while iteration < max_iterations:
             iteration += 1
-            log(f"Invoking LLM for {operation_type} (iteration {iteration})", node=operation_type)
-            response = llm_with_tools.invoke(messages)
+            log(f"Invoking LLM for {operation_type} (iteration {iteration}/{max_iterations})...", node=operation_type)
+            try:
+                response = llm_with_tools.invoke(messages)
+                log(f"LLM invocation completed for {operation_type} (iteration {iteration})", node=operation_type, level="DEBUG")
+            except Exception as e:
+                log(f"LLM invocation failed for {operation_type} (iteration {iteration}): {e}", node=operation_type, level="ERROR")
+                raise
             
             # Check if response has tool calls
             if not (hasattr(response, 'tool_calls') and response.tool_calls):
@@ -127,8 +132,10 @@ def invoke_llm_with_tools(
         messages.append(HumanMessage(content="Based on the information gathered, please provide your response in the required structured format."))
         
         # Use structured output - LLM will return validated Pydantic model
+        log(f"Requesting structured output for {operation_type}...", node=operation_type, level="DEBUG")
         structured_llm = llm_with_tools.with_structured_output(response_model)
         result = structured_llm.invoke(messages)
+        log(f"Structured output received for {operation_type}", node=operation_type, level="DEBUG")
         
         # Response is already a validated Pydantic model!
         log(f"Successfully received structured response for {operation_type}", node=operation_type)

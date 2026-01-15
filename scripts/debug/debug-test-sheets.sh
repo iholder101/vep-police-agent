@@ -62,7 +62,9 @@ CMD_ARGS+=(--immediate-start)
 # Also set --debug test-sheets for backward compatibility (affects exit behavior)
 CMD_ARGS+=(--debug test-sheets)
 
+# Set PYTHONUNBUFFERED=1 to ensure logs are flushed immediately (important for real-time log viewing)
 podman run --rm --pull=newer \
+    -e PYTHONUNBUFFERED=1 \
     -v "$PROJECT_ROOT:/workspace:ro" \
     -w /workspace \
     quay.io/mabekitzur/vep-police-agent:latest \
