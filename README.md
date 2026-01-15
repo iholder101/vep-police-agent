@@ -157,6 +157,57 @@ The agent caches indexed VEP data to avoid redundant API calls:
 
 The agent is built using **LangGraph** for orchestration and follows a node-based architecture:
 
+### Node Graph
+
+The agent's execution flow is orchestrated by a central scheduler that routes to different nodes:
+
+```mermaid
+graph TD
+    Start([Start]) --> Scheduler[scheduler]
+    
+    Scheduler -->|No VEPs| FetchVEPs[fetch_veps]
+    Scheduler -->|Need monitoring| RunMonitoring[run_monitoring]
+    Scheduler -->|Sheets need update| UpdateSheets[update_sheets]
+    Scheduler -->|No tasks| Wait[wait]
+    
+    RunMonitoring -->|Parallel| CheckDeadlines[check_deadlines]
+    RunMonitoring -->|Parallel| CheckActivity[check_activity]
+    RunMonitoring -->|Parallel| CheckCompliance[check_compliance]
+    RunMonitoring -->|Parallel| CheckExceptions[check_exceptions]
+    
+    CheckDeadlines --> MergeUpdates[merge_vep_updates]
+    CheckActivity --> MergeUpdates
+    CheckCompliance --> MergeUpdates
+    CheckExceptions --> MergeUpdates
+    
+    MergeUpdates --> AnalyzeCombined[analyze_combined]
+    AnalyzeCombined --> Scheduler
+    
+    FetchVEPs --> Scheduler
+    UpdateSheets --> Scheduler
+    Wait --> Scheduler
+    
+    Scheduler -->|Loop continues| Scheduler
+    
+    style Scheduler fill:#e1f5ff
+    style RunMonitoring fill:#fff4e1
+    style MergeUpdates fill:#e8f5e9
+    style AnalyzeCombined fill:#f3e5f5
+    style UpdateSheets fill:#ffebee
+```
+
+**Flow Description:**
+1. **Entry Point**: The `scheduler` node is the central coordinator and entry point
+2. **VEP Discovery**: If no VEPs exist, routes to `fetch_veps` to discover VEPs from GitHub
+3. **Parallel Monitoring**: `run_monitoring` triggers four parallel checks:
+   - `check_deadlines`: Tracks EF/CF deadlines
+   - `check_activity`: Monitors VEP activity
+   - `check_compliance`: Verifies process compliance
+   - `check_exceptions`: Monitors exceptions
+4. **Merge & Analyze**: All parallel checks converge to `merge_vep_updates`, then `analyze_combined` for holistic analysis
+5. **Sheet Updates**: When sheets need updating, routes to `update_sheets`
+6. **Wait Loop**: If no tasks, waits before returning to scheduler (continuous operation)
+
 ### Core Nodes
 
 - **fetch_veps**: Discovers VEPs from GitHub issues and documentation
