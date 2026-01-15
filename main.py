@@ -82,6 +82,11 @@ def log_startup_flags(args, index_cache_minutes: int) -> None:
             flags.append(f"  --github-token: {args.github_token} (file)")
         else:
             flags.append("  --github-token: <provided>")
+    if args.resend_api_key:
+        if os.path.exists(args.resend_api_key):
+            flags.append(f"  --resend-api-key: {args.resend_api_key} (file)")
+        else:
+            flags.append("  --resend-api-key: <provided>")
     
     # Configuration flags
     if args.sheet_id:
@@ -150,6 +155,11 @@ def parse_args():
         "--github-token",
         type=str,
         help="GitHub token for API access (or set GITHUB_TOKEN environment variable)"
+    )
+    parser.add_argument(
+        "--resend-api-key",
+        type=str,
+        help="Resend API key for email sending (or set RESEND_API_KEY environment variable)"
     )
     parser.add_argument(
         "--debug",
@@ -254,6 +264,16 @@ def setup_credentials(args):
         else:
             os.environ["GITHUB_TOKEN"] = args.github_token
             log("GitHub token set from CLI argument", node="main")
+    
+    if args.resend_api_key:
+        # If it looks like a file path, read it; otherwise treat as API key string
+        if os.path.exists(args.resend_api_key):
+            with open(args.resend_api_key, "r") as f:
+                os.environ["RESEND_API_KEY"] = f.read().strip()
+            log(f"Resend API key loaded from file: {args.resend_api_key}", node="main")
+        else:
+            os.environ["RESEND_API_KEY"] = args.resend_api_key
+            log("Resend API key set from CLI argument", node="main")
     
     if args.debug:
         os.environ["DEBUG_MODE"] = args.debug

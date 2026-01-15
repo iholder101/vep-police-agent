@@ -27,6 +27,11 @@ if [ -f "$PROJECT_ROOT/GITHUB_TOKEN" ]; then
     CMD_ARGS+=(--github-token /workspace/GITHUB_TOKEN)
 fi
 
+# Add Resend API key if file exists
+if [ -f "$PROJECT_ROOT/RESEND_API_KEY" ]; then
+    CMD_ARGS+=(--resend-api-key /workspace/RESEND_API_KEY)
+fi
+
 # Pass through any additional arguments/flags (e.g., --no-index-cache)
 if [ $# -gt 0 ]; then
     CMD_ARGS+=("$@")

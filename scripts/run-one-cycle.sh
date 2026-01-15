@@ -21,6 +21,11 @@ if [ -f "$PROJECT_ROOT/GITHUB_TOKEN" ]; then
     CMD_ARGS+=(--github-token /workspace/GITHUB_TOKEN)
 fi
 
+# Add Resend API key if file exists
+if [ -f "$PROJECT_ROOT/RESEND_API_KEY" ]; then
+    CMD_ARGS+=(--resend-api-key /workspace/RESEND_API_KEY)
+fi
+
 # Check if --sheet-id is already in arguments (user override)
 SHEET_ID_IN_ARGS=false
 for arg in "$@"; do
