@@ -142,6 +142,7 @@ podman run --rm --pull=newer \
 - `--resend-api-key PATH`: Path to Resend API key file for email sending (get free key at https://resend.com/api-keys)
 - `--sheet-id ID`: Google Sheets document ID (from URL: `https://docs.google.com/spreadsheets/d/{ID}/edit`)
 - `--one-cycle`: Run one cycle and exit after sheet update completes
+- `--immediate-start`: Run the first cycle immediately without waiting for round hour. Subsequent cycles will use current time + interval instead of round hours (useful for testing and one-time runs)
 - `--skip-monitoring`: Skip all monitoring checks (deadlines, activity, compliance, exceptions) for faster debugging
 - `--skip-sheets`: Skip Google Sheets updates (useful for testing email alerts)
 - `--skip-send-email`: Skip sending email alerts (useful for debugging without sending emails)
