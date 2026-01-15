@@ -212,7 +212,12 @@ Step 2: Process ALL VEP TRACKING ISSUES FIRST (PRIMARY - THE ISSUE IS THE VEP)
   * Extract VEP number from issue title/body/labels (e.g., "VEP 176", "VEP-176", "VEP #176", "vep-1234")
   * Use issue number as tracking_issue_id (REQUIRED - this is the primary identifier)
   * Extract title from issue title
-  * Extract owner from issue assignee or body
+  * Extract owner using this priority order:
+    1. PRIMARY: Use issue.assignee (if the issue is assigned to someone, they are the owner)
+    2. SECONDARY: Use issue.author (if not assigned, use the person who created/opened the issue)
+    3. TERTIARY: Only if assignee and author are both null/missing, try to extract from issue body
+    4. DO NOT use random mentions, comment authors, or bot usernames as owner
+    5. DO NOT use usernames from the body unless they are explicitly stated as the owner (e.g., "Owner: @username")
   * Extract SIG from issue labels (sig/compute, sig/network, sig/storage)
   * Use issue state as status (open = active VEP, closed = completed/merged)
   * Use issue timestamps for created_at and last_updated
@@ -259,7 +264,7 @@ Step 5: Create VEPInfo Objects for ALL Discovered VEPs
 - tracking_issue_id: The GitHub issue number that tracks this VEP (REQUIRED - from Step 2)
 - name: VEP identifier (e.g., "vep-1234") - extract from issue or file
 - title: VEP title from the issue (preferred) or document
-- owner: GitHub username of VEP owner (from issue assignee/body, or document)
+- owner: GitHub username of VEP owner (PRIORITY: issue.assignee > issue.author > explicit mention in body. DO NOT use random mentions or bots)
 - owning_sig: Primary SIG ("compute", "network", or "storage") - from issue labels or file
 - status: Current status from tracking issue (open = active, closed = completed)
 - last_updated: Last update timestamp from tracking issue
@@ -428,7 +433,11 @@ Step 2: Process ALL {len(vep_related_issues)} VEP-related ISSUES (PRIMARY - THE 
      a. Extract VEP number from issue title/body/labels (patterns: "vep-1234", "VEP-1234", "vep1234", "VEP 1234", "VEP #1234")
      b. Use issue number as tracking_issue_id (REQUIRED - this is the primary identifier)
      c. Use issue title as VEP title
-     d. Use issue creator/assignee as owner
+     d. Extract owner using this priority:
+        1. Use issue.assignee if available (assigned person is the owner)
+        2. Use issue.author if assignee is not available (creator is the owner)
+        3. Only if both are missing, look for explicit owner mention in body (e.g., "Owner: @username")
+        4. DO NOT use random mentions, comment authors, bot usernames, or people who just commented
      e. Extract SIG from issue labels (sig/compute, sig/network, sig/storage)
      f. Use issue state as status (open = active VEP, closed = completed)
      g. Use issue timestamps for created_at and last_updated

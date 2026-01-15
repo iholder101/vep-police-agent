@@ -632,6 +632,22 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
                                 if release_labels:
                                     is_vep_related = True
                                 
+                                # Extract assignee and author information
+                                assignee = None
+                                if issue.get("assignee"):
+                                    if isinstance(issue.get("assignee"), dict):
+                                        assignee = issue.get("assignee", {}).get("login")
+                                    else:
+                                        assignee = issue.get("assignee")
+                                
+                                # Extract author/creator (user who opened the issue)
+                                author = None
+                                if issue.get("user"):
+                                    if isinstance(issue.get("user"), dict):
+                                        author = issue.get("user", {}).get("login")
+                                    else:
+                                        author = issue.get("user")
+                                
                                 issues.append({
                                     "number": issue.get("number"),
                                     "title": issue.get("title"),
@@ -642,6 +658,8 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
                                     "updated_at": issue.get("updated_at"),
                                     "is_vep_related": is_vep_related,
                                     "body_preview": body[:500] if body else "",
+                                    "assignee": assignee,  # Person assigned to the issue (primary owner)
+                                    "author": author,  # Person who created/opened the issue (fallback owner)
                                 })
                         
                         # Filter by date if requested
@@ -713,6 +731,22 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
                         if release_labels:
                             is_vep_related = True
                         
+                        # Extract assignee and author information
+                        assignee = None
+                        if issue.get("assignee"):
+                            if isinstance(issue.get("assignee"), dict):
+                                assignee = issue.get("assignee", {}).get("login")
+                            else:
+                                assignee = issue.get("assignee")
+                        
+                        # Extract author/creator (user who opened the issue)
+                        author = None
+                        if issue.get("user"):
+                            if isinstance(issue.get("user"), dict):
+                                author = issue.get("user", {}).get("login")
+                            else:
+                                author = issue.get("user")
+                        
                         # Include all issues for now, but mark VEP-related ones
                         issues.append({
                             "number": issue.get("number"),
@@ -724,6 +758,8 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
                             "updated_at": issue.get("updated_at"),
                             "is_vep_related": is_vep_related,
                             "body_preview": body[:500] if body else "",  # First 500 chars for VEP number detection
+                            "assignee": assignee,  # Person assigned to the issue (primary owner)
+                            "author": author,  # Person who created/opened the issue (fallback owner)
                         })
                 
                 # Filter by date if requested
