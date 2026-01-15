@@ -27,6 +27,10 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Determine the user to run the service as
+# If run via sudo, use SUDO_USER; otherwise use the actual user (should be root)
+SERVICE_USER="${SUDO_USER:-$(whoami)}"
+
 # Create systemd unit file
 cat > "$UNIT_FILE" <<EOF
 [Unit]
@@ -35,7 +39,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=$SUDO_USER
+User=$SERVICE_USER
 WorkingDirectory=$PROJECT_ROOT
 ExecStart=$PROJECT_ROOT/scripts/run-latest-agent.sh
 Restart=always
