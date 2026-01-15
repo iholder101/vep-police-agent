@@ -209,6 +209,15 @@ def send_email_node(state: VEPState) -> Any:
         if len(text_body) > 500:
             log(f"  ... (truncated, total length: {len(text_body)} chars)", node="send_email", level="INFO")
         log("="*80, node="send_email", level="INFO")
+        
+        # In one-cycle mode, exit even if email sending failed
+        if state.get("one_cycle", False):
+            log("One-cycle mode: Email sending failed, but exiting anyway", node="send_email")
+            return {
+                "last_check_times": last_check_times,
+                "_exit_after_sheets": True,
+            }
+        
         return {
             "last_check_times": last_check_times,
         }
