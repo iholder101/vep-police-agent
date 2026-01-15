@@ -15,6 +15,8 @@ from nodes.check_exceptions import check_exceptions_node
 from nodes.analyze_combined import analyze_combined_node
 from nodes.merge_vep_updates import merge_vep_updates_node
 from nodes.update_sheets import update_sheets_node
+from nodes.alert_summary import alert_summary_node
+from nodes.send_email import send_email_node
 from nodes.wait import wait_node
 
 def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
@@ -49,6 +51,8 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     workflow.add_node("merge_vep_updates", merge_vep_updates_node)
     workflow.add_node("analyze_combined", analyze_combined_node)
     workflow.add_node("update_sheets", update_sheets_node)
+    workflow.add_node("alert_summary", alert_summary_node)
+    workflow.add_node("send_email", send_email_node)
     workflow.add_node("wait", wait_node)
     
     # Set entry point
@@ -77,11 +81,16 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     # After merging, analyze combined results
     workflow.add_edge("merge_vep_updates", "analyze_combined")
     
-    # Analysis completes, returns to scheduler
-    workflow.add_edge("analyze_combined", "scheduler")
+    # Analysis completes, run sheet update and alert summary in parallel
+    workflow.add_edge("analyze_combined", "update_sheets")
+    workflow.add_edge("analyze_combined", "alert_summary")
     
-    # update_sheets goes back to scheduler
+    # Alert summary triggers email sending
+    workflow.add_edge("alert_summary", "send_email")
+    
+    # Both update_sheets and send_email go back to scheduler
     workflow.add_edge("update_sheets", "scheduler")
+    workflow.add_edge("send_email", "scheduler")
     
     # fetch_veps goes back to scheduler
     workflow.add_edge("fetch_veps", "scheduler")
