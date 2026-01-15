@@ -170,8 +170,9 @@ def scheduler_node(state: VEPState) -> Any:
         
         # Priority 2: Check if VEPs need analysis (were fetched but not analyzed)
         elif veps_need_analysis and not skip_monitoring:
-            log("VEPs were fetched but not analyzed, scheduling run_monitoring", node="scheduler")
-            next_tasks.append("run_monitoring")
+            log("VEPs were fetched but not analyzed, scheduling fetch_veps to refresh and then analyze", node="scheduler")
+            next_tasks.append("fetch_veps")
+            # After fetching, run_monitoring will be automatically scheduled
         
         # Priority 3: Check if update_sheets or alert_summary are due
         # Only schedule these if VEPs have been analyzed (or if there are no VEPs to analyze)

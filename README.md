@@ -263,12 +263,12 @@ graph TD
     Start([Start]) --> Scheduler[scheduler]
     
     Scheduler -->|No VEPs or periodic refresh| FetchVEPs[fetch_veps]
-    Scheduler -->|VEPs need analysis| RunMonitoring[run_monitoring]
+    Scheduler -->|VEPs need analysis| FetchVEPs
     Scheduler -->|After analysis| UpdateSheets[update_sheets]
     Scheduler -->|After analysis| AlertSummary[alert_summary]
     Scheduler -->|No tasks| Wait[wait]
     
-    FetchVEPs -->|Auto-schedule| RunMonitoring
+    FetchVEPs -->|Auto-schedule| RunMonitoring[run_monitoring]
     
     RunMonitoring -->|Parallel| CheckDeadlines[check_deadlines]
     RunMonitoring -->|Parallel| CheckActivity[check_activity]
