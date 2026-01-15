@@ -308,19 +308,19 @@ Return ALL discovered VEPs as a list of VEPInfo objects."""
     vep_files_index = indexed_context.get("vep_files_index", [])
     
     # Prepare indexed context summary for the prompt
-    # Include full VEP files data (but truncate very long content to avoid token limits)
+    # Include ALL VEP files (no limit) - truncate content to save tokens but include all files
     vep_files_summary = []
-    for vep_file in vep_files_index[:50]:  # Limit to first 50 VEP files to avoid token overflow
+    for vep_file in vep_files_index:  # Process ALL VEP files - no limit
         vep_summary = {
             "filename": vep_file.get("filename"),
             "vep_number": vep_file.get("vep_number"),
             "has_content": vep_file.get("content") is not None,
             "content_length": vep_file.get("content_length", 0),
         }
-        # Include first 2000 chars of content (enough to extract metadata)
+        # Include first 1500 chars of content (enough to extract metadata, reduced to fit more files)
         if vep_file.get("content"):
-            content_preview = vep_file["content"][:2000]
-            if len(vep_file["content"]) > 2000:
+            content_preview = vep_file["content"][:1500]
+            if len(vep_file["content"]) > 1500:
                 truncated_msg = f"\n... (truncated, total length: {len(vep_file['content'])} chars)"
                 content_preview = content_preview + truncated_msg
             vep_summary["content_preview"] = content_preview
@@ -380,12 +380,16 @@ WORKFLOW (MUST FOLLOW ALL STEPS):
 4. Cross-reference with PRs to link implementation PRs
 
 CRITICAL REQUIREMENTS:
-- You have {len(vep_files_index)} VEP files with content already - process ALL of them systematically
+- You have {len(vep_files_index)} VEP files with content already - you MUST process ALL {len(vep_files_index)} of them systematically
 - You have {len(vep_related_issues)} VEP-related issues - you MUST create a VEPInfo for EACH one
-- Total expected VEPs: {len(vep_files_index)} files + issues without files = 20-30+ VEPs minimum
-- If you find fewer than 20 VEPs, you are MISSING some - go back and check ALL issues and files again
+- MINIMUM EXPECTED: You MUST return at least {max(len(vep_files_index), len(vep_related_issues))} VEPs (the larger of files or issues count)
+- TARGET: You should return {len(vep_files_index) + max(0, len(vep_related_issues) - len(vep_files_index))} VEPs (all files + issues without files)
+- COUNT VERIFICATION: After creating VEPInfo objects, count them. You must have at least one VEPInfo for each VEP file listed above, and one for each VEP-related issue.
+- If you return fewer VEPs than the number of files or issues provided, you are MISSING some - go back and check ALL issues and files again
 - The indexed context above eliminates the need for most tool calls - use the data directly
-- DO NOT skip any VEP-related issue - every issue marked as VEP-related must become a VEPInfo object"""
+- DO NOT skip any VEP-related issue - every issue marked as VEP-related must become a VEPInfo object
+- DO NOT skip any VEP file - every file in the list above must result in a VEPInfo object
+- The number of VEPs you discover should match or exceed the number of VEP files and VEP-related issues provided in the indexed context"""
     
     # Invoke LLM with structured output
     try:
@@ -399,7 +403,10 @@ CRITICAL REQUIREMENTS:
         # Calculate statistics for better logging
         vep_files_count = len(vep_files_index)
         vep_issues_count = len(vep_related_issues)
-        expected_min = vep_files_count  # At minimum, should match number of files
+        # Expected minimum: at least as many as files (since each file should produce a VEP)
+        # But also account for issues without files
+        expected_min = max(vep_files_count, vep_issues_count)
+        expected_target = vep_files_count + max(0, vep_issues_count - vep_files_count)  # All files + issues without files
         
         # Count VEPs by status and SIG
         open_count = sum(1 for vep in discovered_veps if hasattr(vep, 'status') and vep.status and 'open' in str(vep.status).lower())
@@ -415,7 +422,8 @@ CRITICAL REQUIREMENTS:
         log(f"VEP DISCOVERY SUMMARY", node="fetch_veps")
         log("="*80, node="fetch_veps")
         log(f"Total VEPs discovered: {discovered_count}", node="fetch_veps")
-        log(f"  - Expected minimum: {expected_min} (based on {vep_files_count} VEP files + {vep_issues_count} VEP-related issues)", node="fetch_veps")
+        log(f"  - Expected minimum: {expected_min} (based on {vep_files_count} VEP files and {vep_issues_count} VEP-related issues)", node="fetch_veps")
+        log(f"  - Expected target: {expected_target} (all {vep_files_count} files + {max(0, vep_issues_count - vep_files_count)} issues without files)", node="fetch_veps")
         
         if discovered_count > 0:
             log(f"  - Status breakdown: {open_count} open, {closed_count} closed/merged", node="fetch_veps")
@@ -430,7 +438,10 @@ CRITICAL REQUIREMENTS:
             log(f"  - WARNING: No VEPs discovered! Expected at least {expected_min} VEPs.", node="fetch_veps", level="WARNING")
         
         if discovered_count < expected_min:
-            log(f"  - WARNING: Discovered {discovered_count} VEPs but expected at least {expected_min} (missing {expected_min - discovered_count})", node="fetch_veps", level="WARNING")
+            log(f"  - ERROR: Discovered {discovered_count} VEPs but expected at least {expected_min} (missing {expected_min - discovered_count})", node="fetch_veps", level="ERROR")
+            log(f"  - This indicates the LLM did not process all VEP files or issues. Check the prompt and LLM response.", node="fetch_veps", level="ERROR")
+        elif discovered_count < expected_target:
+            log(f"  - WARNING: Discovered {discovered_count} VEPs but target was {expected_target} (missing {expected_target - discovered_count} issues without files)", node="fetch_veps", level="WARNING")
         
         log("="*80, node="fetch_veps")
         
