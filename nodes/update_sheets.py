@@ -270,7 +270,7 @@ CRITICAL: Column A MUST be "VEP ID" with tracking_issue_id values. Every VEP mus
         }
         
         # Check if one-cycle mode is enabled - exit after sheet update
-        if state.get("config_cache", {}).get("one_cycle", False) and update_success:
+        if state.get("one_cycle", False) and update_success:
             log("One-cycle mode: Sheet update successful, setting exit flag", node="update_sheets")
             # Clear next_tasks to prevent further execution
             result["next_tasks"] = []

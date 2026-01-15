@@ -109,10 +109,15 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
                     "update_pull_request_branch",
                 }
                 
+                # Count tools before filtering for logging
+                total_tools = len(tools_result.tools)
+                excluded_count = 0
+                
                 # Convert MCP tools to LangChain tools
                 for mcp_tool in tools_result.tools:
                     # Skip write operations - agent should only read from GitHub
                     if mcp_tool.name in write_operations_to_exclude:
+                        excluded_count += 1
                         log(f"Excluding write operation tool: {mcp_tool.name} (agent is read-only)", node="mcp_factory", level="DEBUG")
                         continue
                     
@@ -217,6 +222,10 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
                         func=tool_func,
                     )
                     all_tools.append(langchain_tool)
+                
+                # Log filtering summary
+                if excluded_count > 0:
+                    log(f"Filtered {excluded_count} write operation(s) from {total_tools} total tools ({len(all_tools)} read-only tools available)", node="mcp_factory", level="DEBUG")
     
     return all_tools
 
