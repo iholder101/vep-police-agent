@@ -175,20 +175,30 @@ def scheduler_node(state: VEPState) -> Any:
             # After fetching, run_monitoring will be automatically scheduled
         
         # Priority 3: Check if update_sheets or alert_summary are due
-        # Only schedule these if VEPs have been analyzed (or if there are no VEPs to analyze)
+        # Only schedule these if:
+        # 1. VEPs have been analyzed (or if there are no VEPs to analyze)
+        # 2. fetch_veps is NOT due (to ensure fresh data before updating sheets/sending emails)
         # Both can be scheduled and will run sequentially (but quickly) for near-parallel execution
         elif not veps_need_analysis:
-            # Check update_sheets
-            should_update_sheets = _should_run_operation("update_sheets", last_check_times, update_sheets_interval, now, immediate_start=immediate_start)
-            if should_update_sheets:
-                log(f"update_sheets is due (interval: {update_sheets_interval}s)", node="scheduler")
-                next_tasks.append("update_sheets")
-            
-            # Check alert_summary
-            should_alert_summary = _should_run_operation("alert_summary", last_check_times, alert_summary_interval, now, immediate_start=immediate_start)
-            if should_alert_summary:
-                log(f"alert_summary is due (interval: {alert_summary_interval}s)", node="scheduler")
-                next_tasks.append("alert_summary")
+            # Safety check: Don't schedule update_sheets/alert_summary if fetch_veps is also due
+            # This ensures we always fetch fresh VEPs before updating sheets or sending emails
+            should_fetch_veps_check = _should_run_operation("fetch_veps", last_check_times, fetch_veps_interval, now, immediate_start=immediate_start)
+            if should_fetch_veps_check:
+                log("fetch_veps is due - deferring update_sheets/alert_summary to ensure fresh data first", node="scheduler")
+                # Don't schedule update_sheets/alert_summary - they'll run after fetch_veps completes
+            else:
+                # fetch_veps is not due, safe to schedule update_sheets/alert_summary
+                # Check update_sheets
+                should_update_sheets = _should_run_operation("update_sheets", last_check_times, update_sheets_interval, now, immediate_start=immediate_start)
+                if should_update_sheets:
+                    log(f"update_sheets is due (interval: {update_sheets_interval}s)", node="scheduler")
+                    next_tasks.append("update_sheets")
+                
+                # Check alert_summary
+                should_alert_summary = _should_run_operation("alert_summary", last_check_times, alert_summary_interval, now, immediate_start=immediate_start)
+                if should_alert_summary:
+                    log(f"alert_summary is due (interval: {alert_summary_interval}s)", node="scheduler")
+                    next_tasks.append("alert_summary")
     
     # Also check if sheets_need_update flag is set (from analyze_combined)
     # Only add if VEPs have been analyzed (or if skip_monitoring is enabled)
