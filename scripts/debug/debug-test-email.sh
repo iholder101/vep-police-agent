@@ -18,6 +18,8 @@ CMD_ARGS=(
     --one-cycle
     --fastest-model
     --mock-veps
+    --mock-analyzed-combined
+    --mock-alert-summary
 )
 
 # Add GitHub token if file exists

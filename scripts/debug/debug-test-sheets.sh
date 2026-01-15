@@ -49,6 +49,9 @@ fi
 
 # Use --mock-veps flag (maintains backward compatibility with --debug test-sheets)
 CMD_ARGS+=(--mock-veps)
+# Use mock flags to skip LLM calls for faster testing
+CMD_ARGS+=(--mock-analyzed-combined)
+CMD_ARGS+=(--mock-alert-summary)
 # Also set --debug test-sheets for backward compatibility (affects exit behavior)
 CMD_ARGS+=(--debug test-sheets)
 
