@@ -12,6 +12,7 @@ from services.response_models import CheckResponse
 class AnalyzeCombinedResponse(CheckResponse):
     """Response model for combined analysis."""
     sheets_need_update: bool = False  # Whether Google Sheets needs to be synced with these changes
+    general_insights: Optional[str] = None  # General insights and patterns across all VEPs (overall release health, trends, cross-VEP patterns)
 
 
 def analyze_combined_node(state: VEPState) -> Any:
@@ -40,6 +41,7 @@ def analyze_combined_node(state: VEPState) -> Any:
         return {
             "last_check_times": last_check_times,
             "alerts": [],
+            "general_insights": None,
             "sheets_need_update": False,
         }
     
@@ -72,6 +74,7 @@ def analyze_combined_node(state: VEPState) -> Any:
             "last_check_times": last_check_times,
             "veps": updated_veps,
             "alerts": alerts,
+            "general_insights": "Mock analysis: All checks completed. Status reviewed.",
             "sheets_need_update": sheets_need_update,
         }
     
@@ -95,13 +98,18 @@ Your task:
    - Priority level
    - Recommended actions
    - Cross-check patterns identified
-4. Generate additional alerts based on combined reasoning
-5. Determine if Google Sheets needs to be updated:
+4. Generate general_insights (free-form text) covering:
+   - Overall release health assessment (e.g., "5 of 20 VEPs are at risk this release cycle")
+   - Cross-VEP patterns and trends (e.g., "Most VEPs are behind schedule", "Compliance issues are concentrated in network SIG")
+   - Release-wide recommendations (e.g., "Consider extending Enhancement Freeze deadline", "Focus SIG review efforts on network VEPs")
+   - High-level observations that don't fit into individual VEP analysis
+5. Generate additional alerts based on combined reasoning
+6. Determine if Google Sheets needs to be updated:
    - Set sheets_need_update to True if there are meaningful changes that should be reflected in the sheets
    - Consider: significant status changes, new alerts, compliance changes, deadline updates
    - Set to False if changes are minor or only internal analysis updates
 
-Return the updated VEP objects with merged analysis and your decision on whether sheets need updating."""
+Return the updated VEP objects with merged analysis, general insights, and your decision on whether sheets need updating."""
     
     # Serialize full state for LLM
     release_schedule = state.get("release_schedule")
@@ -154,11 +162,18 @@ Analyze the combined results from all monitoring checks. Merge insights and gene
     if alerts:
         log(f"Generated {len(result.alerts)} additional alert(s) from combined analysis", node="analyze_combined")
     
+    if result.general_insights:
+        log(f"General insights generated: {len(result.general_insights)} characters", node="analyze_combined", level="DEBUG")
+        # Log first 200 chars as preview
+        preview = result.general_insights[:200] + ("..." if len(result.general_insights) > 200 else "")
+        log(f"General insights preview: {preview}", node="analyze_combined", level="DEBUG")
+    
     log(f"Sheets update needed: {sheets_need_update} (decided by LLM{' or skip_monitoring mode' if skip_monitoring else ''})", node="analyze_combined")
     
     return {
         "last_check_times": last_check_times,
         "veps": updated_veps,  # Return updated VEPs explicitly
         "alerts": alerts,
+        "general_insights": result.general_insights,
         "sheets_need_update": sheets_need_update,
     }

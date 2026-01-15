@@ -37,6 +37,8 @@ def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int =
         "last_check_times": {},
         "next_tasks": [],
         "alerts": [],
+        "alert_summary_text": None,
+        "general_insights": None,
         "sheets_need_update": False,
         "errors": [],
         "config_cache": {},
