@@ -3,3 +3,5 @@ langchain-google-genai
 langgraph
 mcp
 pydantic
+google-api-python-client
+google-auth

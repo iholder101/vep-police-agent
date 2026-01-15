@@ -7,7 +7,7 @@ This module provides centralized configuration for the agent, including:
 - Email notification settings
 """
 
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 # Gemini Model name constants
 GEMINI_3_PRO_PREVIEW = "gemini-3-pro-preview"
@@ -123,23 +123,27 @@ def get_all_node_models() -> Dict[str, str]:
 
 
 # Email notification configuration
-# Comma-separated list of email addresses to receive VEP governance alerts
-# Can be overridden by EMAIL_RECIPIENTS environment variable
-EMAIL_RECIPIENTS: Optional[str] = None  # e.g., "user1@example.com,user2@example.com"
+# List of email addresses to receive VEP governance alerts
+# Can be overridden by EMAIL_RECIPIENTS environment variable (comma-separated string)
+EMAIL_RECIPIENTS: List[str] = [
+    "iholder@redhat.com",
+]
 
 
-def get_email_recipients() -> Optional[str]:
+def get_email_recipients() -> List[str]:
     """Get email recipients for alerts.
     
-    Checks environment variable first, then falls back to config.py setting.
+    Checks environment variable first (takes precedence), then falls back to config.py setting.
+    Environment variable should be comma-separated string, config.py uses a list.
     
     Returns:
-        Comma-separated string of email addresses, or None if not configured
+        List of email addresses (empty list if not configured)
     """
     import os
     # Check environment variable first (takes precedence)
     env_recipients = os.environ.get("EMAIL_RECIPIENTS")
     if env_recipients:
-        return env_recipients
-    # Fall back to config.py setting
-    return EMAIL_RECIPIENTS
+        # Parse comma-separated string from environment variable
+        return [email.strip() for email in env_recipients.split(",") if email.strip()]
+    # Fall back to config.py setting (already a list)
+    return EMAIL_RECIPIENTS.copy() if EMAIL_RECIPIENTS else []

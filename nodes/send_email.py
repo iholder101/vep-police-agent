@@ -42,16 +42,9 @@ def send_email_node(state: VEPState) -> Any:
         }
     
     # Get email recipients from config (with env var fallback)
-    recipients_str = config.get_email_recipients()
-    if not recipients_str:
-        log("Email recipients not configured (set EMAIL_RECIPIENTS env var or config.EMAIL_RECIPIENTS), skipping email send", node="send_email", level="WARNING")
-        return {
-            "last_check_times": last_check_times,
-        }
-    
-    recipients = [email.strip() for email in recipients_str.split(",") if email.strip()]
+    recipients = config.get_email_recipients()
     if not recipients:
-        log("No valid email recipients found, skipping email send", node="send_email", level="WARNING")
+        log("Email recipients not configured (set EMAIL_RECIPIENTS env var or config.EMAIL_RECIPIENTS), skipping email send", node="send_email", level="WARNING")
         return {
             "last_check_times": last_check_times,
         }
