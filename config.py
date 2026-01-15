@@ -39,6 +39,10 @@ NODE_MODELS: Dict[str, str] = {
     # Sheet operations - use fast model
     "update_sheets": GEMINI_3_PRO_PREVIEW,
     
+    # Alert and notification nodes
+    "alert_summary": GEMINI_3_PRO_PREVIEW,  # Composes structured alerts from VEP analysis
+    "send_email": DEFAULT_MODEL,  # Email sending (doesn't use LLM, but included for completeness)
+    
     # Other nodes - use default
     "scheduler": DEFAULT_MODEL,
     "run_monitoring": DEFAULT_MODEL,

@@ -15,6 +15,7 @@ The VEP Police Agent automates the monitoring and governance of the KubeVirt VEP
 - **Monitoring activity** on VEPs and flagging inactive ones
 - **Maintaining a Google Sheets dashboard** with comprehensive VEP status
 - **Detecting exceptions** and tracking post-freeze work
+- **Sending email alerts** for deadline warnings, compliance issues, low activity, and risk indicators
 
 The agent uses Large Language Models (LLMs) via Google's Gemini API to intelligently analyze VEP data, GitHub issues, and PRs, making it capable of understanding context and making nuanced decisions about VEP status and compliance.
 
@@ -22,6 +23,7 @@ The agent uses Large Language Models (LLMs) via Google's Gemini API to intellige
 
 - 🤖 **AI-Powered Analysis**: Uses Gemini models to intelligently analyze VEP data and GitHub content
 - 📊 **Google Sheets Integration**: Maintains a real-time dashboard with VEP status, compliance flags, and alerts
+- 📧 **Email Alerts**: Sends structured email notifications for deadlines, compliance issues, low activity, and risks
 - 🔍 **Comprehensive VEP Discovery**: Finds VEPs from GitHub issues, PRs, and documentation files
 - ⏰ **Deadline Monitoring**: Tracks Enhancement Freeze (EF) and Code Freeze (CF) dates from release schedules
 - ✅ **Compliance Checking**: Verifies SIG sign-offs, template completeness, and process adherence
@@ -133,6 +135,8 @@ podman run --rm --pull=newer \
 - `--github-token PATH`: Path to GitHub Personal Access Token file
 - `--sheet-id ID`: Google Sheets document ID (from URL: `https://docs.google.com/spreadsheets/d/{ID}/edit`)
 - `--one-cycle`: Run one cycle and exit after sheet update completes
+- `--skip-monitoring`: Skip all monitoring checks (deadlines, activity, compliance, exceptions) for faster debugging
+- `--skip-sheets`: Skip Google Sheets updates (useful for testing email alerts)
 - `--fastest-model`: Force all nodes to use `GEMINI_3_FLASH_PREVIEW` (fastest model)
 - `--debug MODE`: Enable debug mode (`discover-veps` or `test-sheets`)
 - `--index-cache-minutes MINUTES`: Maximum age of index cache in minutes (default: 60)
@@ -156,7 +160,7 @@ podman run --rm --pull=newer \
 
 Models are configured per node in `config.py`. By default:
 - **Fast nodes**: Use `GEMINI_3_FLASH_PREVIEW` (check_activity, check_compliance, etc.)
-- **Deep reasoning nodes**: Use `GEMINI_3_PRO_PREVIEW` (analyze_combined, merge_vep_updates, update_sheets)
+- **Deep reasoning nodes**: Use `GEMINI_3_PRO_PREVIEW` (analyze_combined, merge_vep_updates, update_sheets, alert_summary)
 
 Use `--fastest-model` to override all nodes to use the fastest model for testing.
 
@@ -167,6 +171,36 @@ Use `--fastest-model` to override all nodes to use the fastest model for testing
 3. Grant **Editor** access
 4. Copy the Sheet ID from the URL: `https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit`
 5. Pass the Sheet ID with `--sheet-id` or set `SHEET_ID` environment variable
+
+### Email Alerts Configuration
+
+Email alerts are configured in `config.py`:
+
+```python
+EMAIL_RECIPIENTS = [
+    "iholder@redhat.com",
+    "user2@example.com",
+]
+```
+
+Or set `EMAIL_RECIPIENTS` environment variable (comma-separated):
+```bash
+export EMAIL_RECIPIENTS='user1@example.com,user2@example.com'
+```
+
+**Gmail API Setup** (required for sending emails):
+1. Enable Gmail API in Google Cloud Console
+2. Enable domain-wide delegation for your service account
+3. Authorize the service account in Google Workspace Admin Console
+4. See: https://developers.google.com/identity/protocols/oauth2/service-account#delegatingauthority
+
+**Alert Types**:
+- `deadline_approaching`: Deadlines (EF, CF) approaching or passed
+- `low_activity`: VEP has low/no activity (inactive, stale)
+- `compliance_issue`: VEP has compliance problems (missing sign-offs, incomplete template, etc.)
+- `risk`: VEP is at risk, requires exception, or has other risk indicators
+- `status_change`: VEP status changed (new VEP, status update, etc.)
+- `milestone_update`: VEP milestone status changed
 
 ### Index Caching
 
@@ -204,10 +238,13 @@ graph TD
     CheckExceptions --> MergeUpdates
     
     MergeUpdates --> AnalyzeCombined[analyze_combined]
-    AnalyzeCombined --> Scheduler
+    AnalyzeCombined -->|Parallel| UpdateSheets[update_sheets]
+    AnalyzeCombined -->|Parallel| AlertSummary[alert_summary]
+    AlertSummary --> SendEmail[send_email]
     
     FetchVEPs --> Scheduler
     UpdateSheets --> Scheduler
+    SendEmail --> Scheduler
     Wait --> Scheduler
     
     Scheduler -->|Loop continues| Scheduler
@@ -222,6 +259,8 @@ graph TD
     style CheckActivity fill:#607D8B,stroke:#455A64,stroke-width:2px,color:#fff
     style CheckCompliance fill:#9E9E9E,stroke:#616161,stroke-width:2px,color:#fff
     style CheckExceptions fill:#FFC107,stroke:#F57C00,stroke-width:2px,color:#000
+    style AlertSummary fill:#E91E63,stroke:#C2185B,stroke-width:2px,color:#fff
+    style SendEmail fill:#FF5722,stroke:#E64A19,stroke-width:2px,color:#fff
     style Wait fill:#9E9E9E,stroke:#616161,stroke-width:2px,color:#fff
 ```
 
@@ -236,8 +275,11 @@ graph TD
    - `check_compliance`: Verifies process compliance
    - `check_exceptions`: Monitors exceptions
 4. **Merge & Analyze**: All parallel checks converge to `merge_vep_updates`, then `analyze_combined` for holistic analysis
-5. **Sheet Updates**: When sheets need updating, routes to `update_sheets`
-6. **Wait Loop**: If no tasks, waits before returning to scheduler (continuous operation)
+5. **Parallel Actions**: After analysis, `update_sheets` and `alert_summary` run in parallel:
+   - `update_sheets`: Updates Google Sheets with VEP status
+   - `alert_summary`: Composes structured alerts from VEP analysis
+6. **Email Alerts**: `alert_summary` triggers `send_email` to send alerts via Gmail API
+7. **Wait Loop**: If no tasks, waits before returning to scheduler (continuous operation)
 
 ## Troubleshooting
 
