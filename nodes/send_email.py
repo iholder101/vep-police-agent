@@ -1,31 +1,74 @@
-"""Send email node - sends alerts via Gmail API."""
+"""Send email node - sends alerts via Ethereal Email (no config needed)."""
 
 import json
-import base64
+import smtplib
+import requests
 from datetime import datetime
 from typing import Any, List, Dict, Optional
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from state import VEPState
-from services.utils import log, get_google_token
+from services.utils import log
 import config
-import os
+
+
+def _get_ethereal_credentials() -> Optional[Dict[str, str]]:
+    """Get temporary SMTP credentials from Ethereal Email API.
+    
+    Ethereal Email provides temporary SMTP credentials via API - no registration needed.
+    Emails sent to these addresses are captured and can be viewed at https://ethereal.email
+    
+    Returns:
+        Dictionary with SMTP credentials (host, port, user, pass, web_url) or None if failed
+    """
+    try:
+        # Call Ethereal Email API to create a temporary account
+        response = requests.post("https://api.nodemailer.com/user", timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        
+        user = data.get("user")
+        password = data.get("pass")
+        
+        if not user or not password:
+            log("Ethereal Email API returned invalid credentials", node="send_email", level="ERROR")
+            return None
+        
+        return {
+            "host": "smtp.ethereal.email",
+            "port": 587,
+            "user": user,
+            "pass": password,
+            "from_email": user,  # Use the generated email as from address
+            "web_url": f"https://ethereal.email/message/{user}",
+        }
+    except Exception as e:
+        log(f"Failed to get Ethereal Email credentials: {e}", node="send_email", level="ERROR")
+        import traceback
+        log(f"Traceback: {traceback.format_exc()}", node="send_email", level="DEBUG")
+        return None
 
 
 def send_email_node(state: VEPState) -> Any:
-    """Send alerts via email using Gmail API.
+    """Send alerts via email using Ethereal Email (zero configuration).
     
     This node:
     1. Reads alerts from state (composed by alert_summary)
     2. Formats email content (HTML or plain text)
-    3. Sends email via Gmail API using service account credentials
-    4. Handles errors gracefully (logs but doesn't fail the workflow)
+    3. Gets temporary SMTP credentials from Ethereal Email API (no registration needed)
+    4. Sends email via SMTP using those credentials
+    5. Emails are captured at Ethereal Email and can be viewed online
+    6. Handles errors gracefully (logs but doesn't fail the workflow)
     
     Email configuration:
     - Recipients: From EMAIL_RECIPIENTS env var (comma-separated) or config
-    - From: Service account email (from GOOGLE_TOKEN)
+    - From: Generated Ethereal Email address
     - Subject: "VEP Governance Alerts - [date]"
     - Body: Formatted alert summary
+    
+    Note: Emails sent via Ethereal Email are captured in a sandbox and can be viewed
+    at https://ethereal.email. This is perfect for testing and development.
+    No registration, tokens, or configuration needed!
     """
     alerts = state.get("alerts", [])
     alert_summary_text = state.get("alert_summary_text", "")
@@ -49,30 +92,15 @@ def send_email_node(state: VEPState) -> Any:
             "last_check_times": last_check_times,
         }
     
-    # Get service account email from Google token
-    try:
-        google_token = get_google_token()
-        if not google_token:
-            log("GOOGLE_TOKEN not available, cannot send email", node="send_email", level="WARNING")
-            return {
-                "last_check_times": last_check_times,
-            }
-        
-        # Parse service account JSON to get email
-        import json as json_module
-        service_account = json_module.loads(google_token)
-        from_email = service_account.get("client_email")
-        
-        if not from_email:
-            log("Service account email not found in GOOGLE_TOKEN, cannot send email", node="send_email", level="WARNING")
-            return {
-                "last_check_times": last_check_times,
-            }
-    except Exception as e:
-        log(f"Error parsing Google token: {e}", node="send_email", level="ERROR")
+    # Get Ethereal Email credentials (no registration needed!)
+    ethereal = _get_ethereal_credentials()
+    if not ethereal:
+        log("Failed to get Ethereal Email credentials, cannot send email", node="send_email", level="ERROR")
         return {
             "last_check_times": last_check_times,
         }
+    
+    log(f"Using Ethereal Email: {ethereal['from_email']} (view at {ethereal['web_url']})", node="send_email", level="INFO")
     
     # Format email content
     subject = f"VEP Governance Alerts - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
@@ -80,7 +108,7 @@ def send_email_node(state: VEPState) -> Any:
     # Group alerts by subject and severity
     alerts_by_subject = {}
     for alert in alerts:
-        subject_key = alert.get("subject", "other")
+        subject_key = alert.get("type", "other")
         if subject_key not in alerts_by_subject:
             alerts_by_subject[subject_key] = []
         alerts_by_subject[subject_key].append(alert)
@@ -88,7 +116,7 @@ def send_email_node(state: VEPState) -> Any:
     # Build email body (HTML)
     html_body = f"""<html>
 <head><style>
-  body {{ font-family: Arial, sans-serif; }}
+  body {{ font-family: Arial, sans-serif; margin: 20px; }}
   h1 {{ color: #333; }}
   h2 {{ color: #666; margin-top: 20px; }}
   .alert {{ margin: 10px 0; padding: 10px; border-left: 4px solid #ccc; }}
@@ -98,6 +126,7 @@ def send_email_node(state: VEPState) -> Any:
   .low {{ border-left-color: #388e3c; background-color: #e8f5e9; }}
   .vep-id {{ font-weight: bold; color: #1976d2; }}
   .metadata {{ font-size: 0.9em; color: #666; margin-top: 5px; }}
+  .note {{ margin-top: 20px; padding: 10px; background-color: #e3f2fd; border-left: 4px solid #2196f3; }}
 </style></head>
 <body>
 <h1>VEP Governance Alerts</h1>
@@ -129,6 +158,14 @@ def send_email_node(state: VEPState) -> Any:
 </div>
 """
     
+    # Add note about Ethereal Email
+    html_body += f"""
+<div class="note">
+  <strong>Note:</strong> This email was sent via Ethereal Email (testing sandbox).
+  View all emails at: <a href="{ethereal['web_url']}">{ethereal['web_url']}</a>
+</div>
+"""
+    
     html_body += """
 </body>
 </html>
@@ -152,9 +189,11 @@ def send_email_node(state: VEPState) -> Any:
             text_body += f"  - VEP {vep_id} ({vep_name}): {title}\n    {message}\n"
         text_body += "\n"
     
+    text_body += f"\nNote: This email was sent via Ethereal Email (testing sandbox).\nView all emails at: {ethereal['web_url']}\n"
+    
     # Create email message
     message = MIMEMultipart("alternative")
-    message["From"] = from_email
+    message["From"] = ethereal["from_email"]
     message["To"] = ", ".join(recipients)
     message["Subject"] = subject
     
@@ -164,70 +203,36 @@ def send_email_node(state: VEPState) -> Any:
     message.attach(text_part)
     message.attach(html_part)
     
-    # Encode message
-    raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
-    
-    # Send via Gmail API
+    # Send via SMTP using Ethereal Email credentials
     try:
-        from google.oauth2 import service_account
-        from googleapiclient.discovery import build
+        log(f"Connecting to {ethereal['host']}:{ethereal['port']}", node="send_email", level="DEBUG")
         
-        # Create credentials from service account JSON
-        # Note: Gmail API with service accounts requires domain-wide delegation
-        # If you get "Insufficient Permission" errors, you need to:
-        # 1. Enable domain-wide delegation in Google Cloud Console
-        # 2. Authorize the service account in Google Workspace Admin Console
-        credentials = service_account.Credentials.from_service_account_info(
-            json_module.loads(google_token),
-            scopes=["https://www.googleapis.com/auth/gmail.send"]
-        )
+        # Create SMTP connection with TLS
+        server = smtplib.SMTP(ethereal["host"], ethereal["port"])
+        server.starttls()  # Enable TLS
         
-        # Build Gmail service
-        service = build("gmail", "v1", credentials=credentials)
+        # Login
+        server.login(ethereal["user"], ethereal["pass"])
         
-        # Send message
-        send_message = service.users().messages().send(
-            userId="me",
-            body={"raw": raw_message}
-        ).execute()
+        # Send email
+        server.send_message(message)
+        server.quit()
         
-        message_id = send_message.get("id")
-        log(f"Email sent successfully to {len(recipients)} recipient(s) (message ID: {message_id})", node="send_email")
+        log(f"Email sent successfully via Ethereal Email to {len(recipients)} recipient(s)", node="send_email")
+        log(f"View email at: {ethereal['web_url']}", node="send_email", level="INFO")
         
         # Check if one-cycle mode is enabled - exit after email is sent
         if state.get("one_cycle", False):
             log("One-cycle mode: Email sent successfully, setting exit flag", node="send_email")
-            # Set flag to signal main loop to exit
             return {
                 "last_check_times": last_check_times,
-                "_exit_after_sheets": True,  # Reuse this flag name for consistency
+                "_exit_after_sheets": True,
             }
         
     except Exception as e:
-        error_msg = str(e)
-        if "Insufficient Permission" in error_msg or "403" in error_msg:
-            log("="*80, node="send_email", level="ERROR")
-            log("GMAIL API PERMISSION ERROR", node="send_email", level="ERROR")
-            log("="*80, node="send_email", level="ERROR")
-            log("The service account needs domain-wide delegation enabled to send emails.", node="send_email", level="ERROR")
-            log("", node="send_email", level="ERROR")
-            log("To fix this:", node="send_email", level="ERROR")
-            log("1. Go to Google Cloud Console > IAM & Admin > Service Accounts", node="send_email", level="ERROR")
-            log("2. Select your service account", node="send_email", level="ERROR")
-            log("3. Enable 'Domain-wide delegation'", node="send_email", level="ERROR")
-            log("4. Add the Gmail API scope: https://www.googleapis.com/auth/gmail.send", node="send_email", level="ERROR")
-            log("5. Authorize the service account in Google Workspace Admin Console", node="send_email", level="ERROR")
-            log("", node="send_email", level="ERROR")
-            log("See: https://developers.google.com/identity/protocols/oauth2/service-account#delegatingauthority", node="send_email", level="ERROR")
-            log("="*80, node="send_email", level="ERROR")
-        else:
-            log(f"Error sending email via Gmail API: {e}", node="send_email", level="ERROR")
-            import traceback
-            log(f"Traceback: {traceback.format_exc()}", node="send_email", level="ERROR")
-        # Don't fail the workflow - just log the error
-        return {
-            "last_check_times": last_check_times,
-        }
+        log(f"Error sending email via Ethereal Email: {e}", node="send_email", level="ERROR")
+        import traceback
+        log(f"Traceback: {traceback.format_exc()}", node="send_email", level="ERROR")
     
     return {
         "last_check_times": last_check_times,
