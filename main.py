@@ -117,6 +117,11 @@ def parse_args():
         action="store_true",
         help="Use mock VEPs instead of fetching from GitHub. Skips VEP discovery entirely and creates sample VEPs for testing. Useful for testing sheets and alerts without API calls."
     )
+    parser.add_argument(
+        "--mock-analyzed-combined",
+        action="store_true",
+        help="Skip LLM call in analyze_combined node and use naive analysis instead. Useful for faster testing without LLM costs."
+    )
     return parser.parse_args()
 
 
@@ -245,7 +250,7 @@ def main():
     log("Graph created successfully", node="main")
     
     # Initialize state
-    initial_state = get_initial_state(sheet_id=args.sheet_id, index_cache_minutes=index_cache_minutes, one_cycle=args.one_cycle, skip_monitoring=args.skip_monitoring, skip_sheets=args.skip_sheets, mock_veps=args.mock_veps)
+    initial_state = get_initial_state(sheet_id=args.sheet_id, index_cache_minutes=index_cache_minutes, one_cycle=args.one_cycle, skip_monitoring=args.skip_monitoring, skip_sheets=args.skip_sheets, mock_veps=args.mock_veps, mock_analyzed_combined=args.mock_analyzed_combined)
     log("Initial state prepared", node="main")
     log(f"Sheet config: {initial_state['sheet_config']}", node="main")
     if args.one_cycle:

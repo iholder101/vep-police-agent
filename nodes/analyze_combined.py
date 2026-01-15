@@ -43,6 +43,38 @@ def analyze_combined_node(state: VEPState) -> Any:
             "sheets_need_update": False,
         }
     
+    # Check if mock mode is enabled - skip LLM and do naive analysis
+    mock_mode = state.get("mock_analyzed_combined", False)
+    if mock_mode:
+        log("Mock analyzed-combined mode: Skipping LLM call, using naive analysis", node="analyze_combined")
+        
+        # Naive analysis: just preserve all VEPs, add basic combined insights, set sheets_need_update
+        alerts = state.get("alerts", [])
+        updated_veps = []
+        
+        for vep in veps:
+            # Add basic combined insights if not present
+            if not hasattr(vep, 'analysis') or vep.analysis is None:
+                vep.analysis = {}
+            
+            if "combined_insights" not in vep.analysis:
+                vep.analysis["combined_insights"] = "Mock analysis: All checks completed. Status reviewed."
+            
+            updated_veps.append(vep)
+        
+        # Always set sheets_need_update in mock mode if skip_monitoring is enabled
+        skip_monitoring = state.get("skip_monitoring", False)
+        sheets_need_update = True if skip_monitoring else False
+        
+        log(f"Mock analysis complete: {len(updated_veps)} VEP(s), {len(alerts)} alert(s), sheets_need_update={sheets_need_update}", node="analyze_combined")
+        
+        return {
+            "last_check_times": last_check_times,
+            "veps": updated_veps,
+            "alerts": alerts,
+            "sheets_need_update": sheets_need_update,
+        }
+    
     # Build system prompt
     system_prompt = """You are a VEP governance agent performing holistic analysis of VEP status.
 
