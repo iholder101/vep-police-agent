@@ -263,9 +263,12 @@ graph TD
     Start([Start]) --> Scheduler[scheduler]
     
     Scheduler -->|No VEPs or periodic refresh| FetchVEPs[fetch_veps]
-    Scheduler -->|Need monitoring| RunMonitoring[run_monitoring]
-    Scheduler -->|Sheets need update| UpdateSheets[update_sheets]
+    Scheduler -->|VEPs need analysis| RunMonitoring[run_monitoring]
+    Scheduler -->|After analysis| UpdateSheets[update_sheets]
+    Scheduler -->|After analysis| AlertSummary[alert_summary]
     Scheduler -->|No tasks| Wait[wait]
+    
+    FetchVEPs -->|Auto-schedule| RunMonitoring
     
     RunMonitoring -->|Parallel| CheckDeadlines[check_deadlines]
     RunMonitoring -->|Parallel| CheckActivity[check_activity]
@@ -278,11 +281,11 @@ graph TD
     CheckExceptions --> MergeUpdates
     
     MergeUpdates --> AnalyzeCombined[analyze_combined]
-    AnalyzeCombined -->|Parallel| UpdateSheets[update_sheets]
-    AnalyzeCombined -->|Parallel| AlertSummary[alert_summary]
-    AlertSummary --> SendEmail[send_email]
+    AnalyzeCombined -->|Routes back| Scheduler
     
-    FetchVEPs --> Scheduler
+    AlertSummary -->|If alerts exist| SendEmail[send_email]
+    AlertSummary -->|No alerts| Scheduler
+    
     UpdateSheets --> Scheduler
     SendEmail --> Scheduler
     Wait --> Scheduler
@@ -309,17 +312,23 @@ graph TD
 2. **VEP Discovery**: Routes to `fetch_veps` in two cases:
    - **Priority**: If no VEPs exist (immediate fetch on first run)
    - **Periodic**: Every configured interval (default: 1 hour) to refresh and discover new VEPs
-3. **Parallel Monitoring**: `run_monitoring` triggers four parallel checks:
+3. **Automatic Analysis Pipeline**: After `fetch_veps` completes, the scheduler automatically schedules `run_monitoring` to ensure VEPs always go through the full analysis pipeline before updating sheets or sending emails
+4. **Parallel Monitoring**: `run_monitoring` triggers four parallel checks:
    - `check_deadlines`: Tracks EF/CF deadlines
    - `check_activity`: Monitors VEP activity
    - `check_compliance`: Verifies process compliance
    - `check_exceptions`: Monitors exceptions
-4. **Merge & Analyze**: All parallel checks converge to `merge_vep_updates`, then `analyze_combined` for holistic analysis
-5. **Parallel Actions**: After analysis, `update_sheets` and `alert_summary` run in parallel:
+5. **Merge & Analyze**: All parallel checks converge to `merge_vep_updates`, then `analyze_combined` for holistic analysis
+6. **Post-Analysis Actions**: After `analyze_combined` completes, it routes back to `scheduler`, which automatically schedules both `update_sheets` and `alert_summary` in parallel:
    - `update_sheets`: Updates Google Sheets with VEP status
    - `alert_summary`: Composes structured alerts from VEP analysis
-6. **Email Alerts**: `alert_summary` triggers `send_email` to send alerts via Resend API
-7. **Wait Loop**: If no tasks, waits until next round hour (or next interval if `--immediate-start` is used) before returning to scheduler (continuous operation)
+7. **Email Alerts**: `alert_summary` conditionally routes to `send_email` (if alerts exist) or back to `scheduler` (if no alerts)
+8. **Wait Loop**: If no tasks, waits until next round hour (or next interval if `--immediate-start` is used) before returning to scheduler (continuous operation)
+
+**Key Design Principles:**
+- **Analysis Pipeline Enforcement**: VEPs must always go through `fetch_veps → run_monitoring → merge_vep_updates → analyze_combined` before updating sheets or sending emails
+- **Parallel Execution**: `update_sheets` and `alert_summary` run in parallel after analysis completes for efficiency
+- **Scheduler-Driven**: The scheduler is the central coordinator that ensures proper sequencing and prevents skipping the analysis pipeline
 
 ## Troubleshooting
 
