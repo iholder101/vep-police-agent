@@ -175,8 +175,45 @@ def main():
         log("Index caching disabled (--no-index-cache)", node="main")
     elif index_cache_minutes != 60:  # Only log if different from default
         log(f"Index cache timeout set to {index_cache_minutes} minutes", node="main")
-    
+
+    # Log startup configuration (excluding sensitive credentials)
     log("Starting VEP governance agent", node="main")
+    log("Configuration flags:", node="main")
+    flags = []
+    if args.api_key:
+        # Show file path if it's a file, otherwise just indicate it was set
+        if os.path.exists(args.api_key):
+            flags.append(f"  --api-key: {args.api_key} (file)")
+        else:
+            flags.append("  --api-key: <provided>")
+    if args.google_token:
+        if os.path.exists(args.google_token):
+            flags.append(f"  --google-token: {args.google_token} (file)")
+        else:
+            flags.append("  --google-token: <provided>")
+    if args.github_token:
+        if os.path.exists(args.github_token):
+            flags.append(f"  --github-token: {args.github_token} (file)")
+        else:
+            flags.append("  --github-token: <provided>")
+    if args.sheet_id:
+        flags.append(f"  --sheet-id: {args.sheet_id}")
+    if args.debug:
+        flags.append(f"  --debug: {args.debug}")
+    if args.one_cycle:
+        flags.append("  --one-cycle: enabled")
+    if args.fastest_model:
+        flags.append("  --fastest-model: enabled")
+    if args.no_index_cache:
+        flags.append("  --no-index-cache: enabled")
+    elif index_cache_minutes != 60:
+        flags.append(f"  --index-cache-minutes: {index_cache_minutes}")
+    
+    if flags:
+        for flag in flags:
+            log(flag, node="main")
+    else:
+        log("  (using defaults)", node="main")
     log("Press Ctrl+C to exit gracefully", node="main")
     
     # Create the graph
