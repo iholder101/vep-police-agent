@@ -122,6 +122,9 @@ def scheduler_node(state: VEPState) -> Any:
         if not veps:
             log("First run: VEPs list is empty, also scheduling fetch_veps", node="scheduler")
             next_tasks.append("fetch_veps")
+        # Also schedule alert_summary on first run to check for alerts immediately
+        log("First run: Scheduling alert_summary", node="scheduler")
+        next_tasks.append("alert_summary")
     else:
         # If immediate_start is enabled, don't check for round hour - use interval-based timing
         if not immediate_start:
