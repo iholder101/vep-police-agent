@@ -22,8 +22,27 @@ def _get_ethereal_credentials() -> Optional[Dict[str, str]]:
         Dictionary with SMTP credentials (host, port, user, pass, web_url) or None if failed
     """
     try:
-        # Call Ethereal Email API to create a temporary account
-        response = requests.post("https://api.nodemailer.com/user", timeout=10)
+        # Try the Ethereal Email API endpoint
+        # Note: The API may be rate-limited or require specific headers
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "VEP-Police-Agent/1.0",
+        }
+        
+        # Try POST to create account
+        response = requests.post(
+            "https://api.nodemailer.com/user",
+            headers=headers,
+            json={},  # Some APIs require empty JSON body
+            timeout=10
+        )
+        
+        # If POST fails, try GET (some versions of the API use GET)
+        if response.status_code != 200:
+            log(f"POST to Ethereal API failed with {response.status_code}, trying GET", node="send_email", level="DEBUG")
+            response = requests.get("https://api.nodemailer.com/user", headers=headers, timeout=10)
+        
         response.raise_for_status()
         data = response.json()
         
@@ -44,6 +63,7 @@ def _get_ethereal_credentials() -> Optional[Dict[str, str]]:
         }
     except Exception as e:
         log(f"Failed to get Ethereal Email credentials: {e}", node="send_email", level="ERROR")
+        log("Ethereal Email API may be temporarily unavailable. Email will not be sent.", node="send_email", level="WARNING")
         import traceback
         log(f"Traceback: {traceback.format_exc()}", node="send_email", level="DEBUG")
         return None
@@ -233,6 +253,21 @@ def send_email_node(state: VEPState) -> Any:
         log(f"Error sending email via Ethereal Email: {e}", node="send_email", level="ERROR")
         import traceback
         log(f"Traceback: {traceback.format_exc()}", node="send_email", level="ERROR")
+        
+        # Log email content as fallback so user can see what would have been sent
+        log("="*80, node="send_email", level="INFO")
+        log("EMAIL CONTENT (failed to send, but here's what would have been sent):", node="send_email", level="INFO")
+        log("="*80, node="send_email", level="INFO")
+        log(f"To: {', '.join(recipients)}", node="send_email", level="INFO")
+        log(f"Subject: {subject}", node="send_email", level="INFO")
+        log("Body (text preview):", node="send_email", level="INFO")
+        # Log first 500 chars of text body
+        text_preview = text_body[:500] + ("..." if len(text_body) > 500 else "")
+        for line in text_preview.split("\n")[:20]:  # First 20 lines
+            log(f"  {line}", node="send_email", level="INFO")
+        if len(text_body) > 500:
+            log(f"  ... (truncated, total length: {len(text_body)} chars)", node="send_email", level="INFO")
+        log("="*80, node="send_email", level="INFO")
     
     return {
         "last_check_times": last_check_times,
