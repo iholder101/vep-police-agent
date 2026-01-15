@@ -1,6 +1,9 @@
 # VEP Police Agent
 
-An AI-powered governance agent for monitoring and managing KubeVirt Virtualization Enhancement Proposals (VEPs). This agent continuously tracks VEP progress, monitors compliance, checks deadlines, and maintains a Google Sheets dashboard with real-time VEP status.
+An AI-powered governance agent for monitoring and managing KubeVirt [Virtualization Enhancement Proposals](https://github.com/kubevirt/enhancements)
+(VEPs).
+This agent continuously tracks VEP progress, monitors compliance, checks deadlines,
+and maintains a Google Sheets dashboard with real-time VEP status.
 
 ## Purpose
 
