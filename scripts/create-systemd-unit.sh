@@ -55,7 +55,14 @@ sudo systemctl restart ${UNIT_NAME}
 sudo systemctl disable ${UNIT_NAME}
 
 Note: Logs are automatically saved by systemd and can be viewed with journalctl.
-      Logs persist across reboots (configurable in journald.conf).
+      The script enables persistent journal by default - logs persist across reboots
+      and can be viewed even after the service is stopped.
+      
+      Retention period is configurable in /etc/systemd/journald.conf
+      (default: usually 1 month or until disk space limit).
+      
+      To view logs from a stopped service:
+      journalctl -u ${UNIT_NAME} --since "2024-01-15" --until "2024-01-16"
 EOF
     exit 0
 fi
@@ -109,6 +116,17 @@ EOF
 # Set proper permissions
 chmod 644 "$UNIT_FILE"
 
+# Ensure persistent journal is enabled (logs persist across reboots)
+if [ ! -d "/var/log/journal" ]; then
+    echo "Enabling persistent journal for log persistence..."
+    mkdir -p /var/log/journal
+    systemd-tmpfiles --create --prefix /var/log/journal 2>/dev/null || true
+    systemctl restart systemd-journald 2>/dev/null || true
+    echo "✓ Persistent journal enabled"
+else
+    echo "✓ Persistent journal already enabled"
+fi
+
 # Reload systemd to recognize new unit
 systemctl daemon-reload
 
@@ -133,4 +151,8 @@ echo "To stop the service:"
 echo "  sudo systemctl stop $UNIT_NAME"
 echo ""
 echo "Note: Logs are automatically saved by systemd and can be viewed with journalctl."
-echo "      Logs persist across reboots (configurable in journald.conf)."
+echo "      Persistent journal is enabled - logs will persist across reboots and after service stops."
+echo ""
+echo "To view logs from a stopped service (e.g., yesterday):"
+echo "  journalctl -u ${UNIT_NAME} --since yesterday"
+echo "  journalctl -u ${UNIT_NAME} --since '2024-01-15' --until '2024-01-16'"
