@@ -90,20 +90,6 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     # Analysis completes, return to scheduler (scheduler decides what to do next)
     workflow.add_edge("analyze_combined", "scheduler")
     
-    # Scheduler can route to update_sheets and/or alert_summary in parallel
-    # Add conditional routing from scheduler for these operations
-    workflow.add_conditional_edges(
-        "scheduler",
-        route_scheduler_operations,
-        {
-            "fetch_veps": "fetch_veps",
-            "run_monitoring": "run_monitoring",
-            "update_sheets": "update_sheets",
-            "alert_summary": "alert_summary",
-            "wait": "wait",
-        }
-    )
-    
     # Alert summary decides if email needed, then routes to send_email or scheduler
     workflow.add_conditional_edges(
         "alert_summary",
