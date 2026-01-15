@@ -139,6 +139,13 @@ EMAIL_RECIPIENTS: List[str] = [
 # If not set, will try system mail, then fall back to Ethereal Email (sandbox)
 RESEND_API_KEY: Optional[str] = None
 
+# Agent operation intervals (in seconds)
+# These control how often different operations run
+# All operations run on round hours (e.g., 13:00, 14:00, 15:00)
+FETCH_VEPS_INTERVAL_SECONDS: int = 3600  # 1 hour - how often to fetch/update VEPs from GitHub
+UPDATE_SHEETS_INTERVAL_SECONDS: int = 3600  # 1 hour - how often to update Google Sheets
+ALERT_SUMMARY_INTERVAL_SECONDS: int = 3600  # 1 hour - how often to check if alerts need to be sent
+
 
 def get_email_recipients() -> List[str]:
     """Get email recipients for alerts.

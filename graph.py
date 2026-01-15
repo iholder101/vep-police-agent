@@ -58,11 +58,17 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     # Set entry point
     workflow.set_entry_point("scheduler")
     
-    # Define edges from scheduler
-    # No path_map needed - route_scheduler returns node names directly
+    # Define edges from scheduler - can route to multiple operations
     workflow.add_conditional_edges(
         "scheduler",
-        route_scheduler,
+        route_scheduler_operations,
+        {
+            "fetch_veps": "fetch_veps",
+            "run_monitoring": "run_monitoring",
+            "update_sheets": "update_sheets",
+            "alert_summary": "alert_summary",
+            "wait": "wait",
+        }
     )
     
     # run_monitoring triggers all checks in parallel
@@ -81,28 +87,39 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     # After merging, analyze combined results
     workflow.add_edge("merge_vep_updates", "analyze_combined")
     
-    # Analysis completes, run sheet update and alert summary in parallel
-    # Always route to alert_summary (for email alerts)
-    workflow.add_edge("analyze_combined", "alert_summary")
-    # Also route to update_sheets (it will check skip_sheets flag internally)
-    workflow.add_edge("analyze_combined", "update_sheets")
+    # Analysis completes, return to scheduler (scheduler decides what to do next)
+    workflow.add_edge("analyze_combined", "scheduler")
     
-    # Alert summary triggers email sending
-    workflow.add_edge("alert_summary", "send_email")
+    # Scheduler can route to update_sheets and/or alert_summary in parallel
+    # Add conditional routing from scheduler for these operations
+    workflow.add_conditional_edges(
+        "scheduler",
+        route_scheduler_operations,
+        {
+            "fetch_veps": "fetch_veps",
+            "run_monitoring": "run_monitoring",
+            "update_sheets": "update_sheets",
+            "alert_summary": "alert_summary",
+            "wait": "wait",
+        }
+    )
+    
+    # Alert summary decides if email needed, then routes to send_email or scheduler
+    workflow.add_conditional_edges(
+        "alert_summary",
+        route_after_alert_summary,
+        {
+            "send_email": "send_email",
+            "scheduler": "scheduler",
+        }
+    )
     
     # Both update_sheets and send_email go back to scheduler
     workflow.add_edge("update_sheets", "scheduler")
     workflow.add_edge("send_email", "scheduler")
     
-    # fetch_veps routes conditionally: if skip_monitoring, go to analyze_combined; otherwise scheduler
-    workflow.add_conditional_edges(
-        "fetch_veps",
-        route_after_fetch_veps,
-        {
-            "analyze_combined": "analyze_combined",
-            "scheduler": "scheduler",
-        }
-    )
+    # fetch_veps always goes back to scheduler (scheduler decides next action)
+    workflow.add_edge("fetch_veps", "scheduler")
     
     # wait node goes back to scheduler (creates continuous loop)
     workflow.add_edge("wait", "scheduler")
@@ -110,27 +127,15 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     return workflow.compile()
 
 
-def route_after_fetch_veps(state: VEPState) -> Literal["analyze_combined", "scheduler"]:
-    """Route after fetch_veps based on skip_monitoring flag.
-    
-    If skip_monitoring is enabled, route to analyze_combined to trigger alert_summary.
-    Otherwise, return to scheduler for normal flow.
-    """
-    skip_monitoring = state.get("skip_monitoring", False)
-    if skip_monitoring:
-        # Skip monitoring checks, go directly to analyze_combined which will trigger
-        # both update_sheets and alert_summary in parallel
-        return "analyze_combined"
-    return "scheduler"
-
-
-def route_scheduler(state: VEPState) -> Literal["fetch_veps", "run_monitoring", "update_sheets", "wait"]:
+def route_scheduler_operations(state: VEPState) -> Literal["fetch_veps", "run_monitoring", "update_sheets", "alert_summary", "wait"]:
     """Route based on scheduler's next_tasks.
     
-    Routes to the first task in the queue. The scheduler queues:
-    - "fetch_veps" (discovers VEPs from GitHub)
-    - "run_monitoring" (triggers all checks in parallel)
-    - "update_sheets" (when sheets need updating)
+    Routes to the first task in the queue. The scheduler can queue:
+    - "fetch_veps" (discovers/updates VEPs from GitHub)
+    - "run_monitoring" (triggers all checks in parallel) - only if not skip_monitoring
+    - "update_sheets" (updates Google Sheets)
+    - "alert_summary" (checks if alerts need to be sent)
+    - "wait" (wait until next round hour)
     """
     import os
     debug_mode = os.environ.get("DEBUG_MODE")
@@ -157,5 +162,17 @@ def route_scheduler(state: VEPState) -> Literal["fetch_veps", "run_monitoring", 
             return "wait"
     
     # Validate it's a known task, otherwise wait
-    valid_tasks = {"fetch_veps", "run_monitoring", "update_sheets"}
+    valid_tasks = {"fetch_veps", "run_monitoring", "update_sheets", "alert_summary", "wait"}
     return task if task in valid_tasks else "wait"
+
+
+def route_after_alert_summary(state: VEPState) -> Literal["send_email", "scheduler"]:
+    """Route after alert_summary based on whether email needs to be sent.
+    
+    If alert_summary determined that alerts need to be sent, route to send_email.
+    Otherwise, return to scheduler.
+    """
+    alerts = state.get("alerts", [])
+    if alerts:
+        return "send_email"
+    return "scheduler"

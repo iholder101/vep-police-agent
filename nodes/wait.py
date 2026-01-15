@@ -1,20 +1,22 @@
-"""Wait node - sleeps or waits for events before returning to scheduler."""
+"""Wait node - waits until next round hour before returning to scheduler."""
 
 import time
+from datetime import datetime, timedelta
 from typing import Any
 from state import VEPState
 from services.utils import log
 
-# Configurable wait time (in seconds)
-WAIT_INTERVAL = 60  # Default: 1 minute
+
+def _get_next_round_hour(now: datetime) -> datetime:
+    """Get the next round hour (e.g., if now is 13:45, return 14:00)."""
+    next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    return next_hour
 
 
 def wait_node(state: VEPState) -> Any:
-    """Wait for a period of time or for an event.
+    """Wait until the next round hour (e.g., 13:00, 14:00, 15:00).
     
-    Currently: Sleeps for WAIT_INTERVAL seconds
-    Future: Can listen for GitHub webhooks/events, polling, etc.
-    
+    Calculates time until next round hour and sleeps until then.
     After waiting, returns to scheduler which will check what needs to run.
     """
     # In one-cycle mode or test-sheets debug mode, if sheet update completed, exit immediately
@@ -30,22 +32,25 @@ def wait_node(state: VEPState) -> Any:
         import sys
         sys.exit(0)
     
+    now = datetime.now()
+    next_round_hour = _get_next_round_hour(now)
+    wait_seconds = (next_round_hour - now).total_seconds()
+    
     next_tasks = state.get("next_tasks", [])
     veps_count = len(state.get("veps", []))
     current_release = state.get("current_release", "unknown")
     sheets_need_update = state.get("sheets_need_update", False)
     
     log(
-        f"Waiting {WAIT_INTERVAL}s | Release: {current_release} | "
-        f"VEPs: {veps_count} | Pending tasks: {len(next_tasks)} | "
-        f"Sheets need update: {sheets_need_update}",
+        f"Waiting until {next_round_hour.strftime('%H:%M')} ({wait_seconds:.0f}s) | "
+        f"Release: {current_release} | VEPs: {veps_count} | "
+        f"Pending tasks: {len(next_tasks)} | Sheets need update: {sheets_need_update}",
         node="wait"
     )
     
-    # TODO: Later, implement event-driven waiting (GitHub webhooks, polling, etc.)
-    # For now: simple sleep with interruptible wait
+    # Sleep until next round hour (with interruptible wait)
     try:
-        time.sleep(WAIT_INTERVAL)
+        time.sleep(wait_seconds)
     except KeyboardInterrupt:
         log("Wait interrupted by user", node="wait", level="INFO")
         raise

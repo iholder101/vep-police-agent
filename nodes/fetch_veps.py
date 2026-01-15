@@ -318,10 +318,14 @@ IMPORTANT GUIDANCE:
 - The indexed context shows you exactly what exists - check EVERY item in the index systematically
 - Do not rely on search/filtering - use the complete index provided to ensure nothing is missed
 - The current development cycle version is critical - VEPs targeting this version are most relevant
-- If you find existing VEPs in the state, merge/update them with new information rather than creating duplicates
+- CRITICAL: If you find existing VEPs in the state, UPDATE them with new information rather than creating duplicates
+  * Match existing VEPs by tracking_issue_id (the primary identifier)
+  * For existing VEPs: Update fields with new information, preserve fields that haven't changed
+  * Only create new VEPInfo objects for VEPs that don't exist yet
+  * This is an UPDATE operation, not a replacement - improve knowledge incrementally
 - Process every item in the indexed context - completeness is more important than speed
 - The indexed context eliminates guesswork - you know exactly what issues and files exist
-- Process the index systematically: for each VEP file, create a VEPInfo; for each VEP issue without a file, create a VEPInfo
+- Process the index systematically: for each VEP file, create or update a VEPInfo; for each VEP issue without a file, create or update a VEPInfo
 
 Use GitHub MCP tools to:
 - Search/list ALL issues in kubevirt/enhancements repository
@@ -595,21 +599,52 @@ DO NOT skip any VEP file - every file in the list above must result in a VEPInfo
         
         log("="*80, node="fetch_veps")
         
+        # Merge discovered VEPs with existing VEPs (UPDATE, don't replace)
+        # Match by tracking_issue_id (primary identifier)
+        existing_veps_dict = {vep.tracking_issue_id: vep for vep in existing_veps}
+        merged_veps = []
+        updated_count = 0
+        new_count = 0
+        
+        for discovered_vep in discovered_veps:
+            existing_vep = existing_veps_dict.get(discovered_vep.tracking_issue_id)
+            if existing_vep:
+                # Update existing VEP - preserve fields that haven't changed, update with new info
+                # The LLM should have already done intelligent merging, but we preserve existing fields as fallback
+                # For now, use the discovered VEP (LLM should have merged intelligently)
+                # TODO: Could add more sophisticated merging logic here if needed
+                merged_veps.append(discovered_vep)
+                updated_count += 1
+                log(f"Updated existing VEP {discovered_vep.tracking_issue_id} ({discovered_vep.name})", node="fetch_veps", level="DEBUG")
+            else:
+                # New VEP - add it
+                merged_veps.append(discovered_vep)
+                new_count += 1
+                log(f"Discovered new VEP {discovered_vep.tracking_issue_id} ({discovered_vep.name})", node="fetch_veps", level="DEBUG")
+        
+        # Preserve any existing VEPs that weren't in the discovery result (shouldn't happen, but be safe)
+        discovered_ids = {vep.tracking_issue_id for vep in discovered_veps}
+        for existing_vep in existing_veps:
+            if existing_vep.tracking_issue_id not in discovered_ids:
+                log(f"Preserving existing VEP {existing_vep.tracking_issue_id} ({existing_vep.name}) not in discovery result", node="fetch_veps", level="WARNING")
+                merged_veps.append(existing_vep)
+        
+        log(f"VEP merge complete: {new_count} new, {updated_count} updated, {len(merged_veps)} total", node="fetch_veps")
+        
         # Update alerts if any
         alerts = state.get("alerts", [])
         alerts.extend(result.alerts)
         
         # If skip_monitoring is enabled, set sheets_need_update to trigger analyze_combined
-        # (which will then trigger both update_sheets and alert_summary in parallel)
         skip_monitoring = state.get("skip_monitoring", False)
         sheets_need_update = False
-        if skip_monitoring and discovered_count > 0:
+        if skip_monitoring and (new_count > 0 or updated_count > 0):
             sheets_need_update = True
-            log("Skip-monitoring mode: Setting sheets_need_update to trigger analyze_combined (which will trigger alert_summary)", node="fetch_veps")
+            log("Skip-monitoring mode: Setting sheets_need_update to trigger analyze_combined", node="fetch_veps")
         
         return {
             "last_check_times": last_check_times,
-            "veps": discovered_veps,  # Replace VEPs with discovered ones
+            "veps": merged_veps,  # Merged VEPs (updated + new)
             "alerts": alerts,
             "next_tasks": next_tasks,
             "sheets_need_update": sheets_need_update,  # Set flag if skip_monitoring enabled

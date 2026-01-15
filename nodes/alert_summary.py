@@ -168,14 +168,14 @@ Analyze each VEP and compose alerts for alert-worthy situations. Return all aler
     alerts_dicts = [alert.model_dump() for alert in result.alerts]
     
     if alerts_dicts:
-        log(f"Composed {len(alerts_dicts)} alert(s)", node="alert_summary")
+        log(f"Composed {len(alerts_dicts)} alert(s) - email will be sent", node="alert_summary")
         for alert in alerts_dicts:
             log(f"  - {alert['subject']} ({alert['severity']}): {alert['title']}", node="alert_summary", level="DEBUG")
     else:
-        log("No alerts to send", node="alert_summary")
+        log("No alerts to send - skipping email", node="alert_summary")
     
     return {
         "last_check_times": last_check_times,
-        "alerts": alerts_dicts,  # Add new alerts to state
+        "alerts": alerts_dicts,  # Add new alerts to state (empty list if no alerts)
         "alert_summary_text": result.summary_text,  # Store summary text for email
     }
