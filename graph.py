@@ -115,6 +115,15 @@ def route_scheduler(state: VEPState) -> Literal["fetch_veps", "run_monitoring", 
     # Return first task (scheduler should prioritize)
     task = next_tasks[0]
     
+    # If skip_monitoring is enabled, don't route to run_monitoring (shouldn't be in queue, but be safe)
+    skip_monitoring = state.get("skip_monitoring", False)
+    if skip_monitoring and task == "run_monitoring":
+        # Skip run_monitoring, try next task or wait
+        if len(next_tasks) > 1:
+            task = next_tasks[1]
+        else:
+            return "wait"
+    
     # Validate it's a known task, otherwise wait
     valid_tasks = {"fetch_veps", "run_monitoring", "update_sheets"}
     return task if task in valid_tasks else "wait"

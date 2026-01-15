@@ -67,9 +67,10 @@ def scheduler_node(state: VEPState) -> Any:
             if "fetch_veps" not in next_tasks:
                 next_tasks.append("fetch_veps")
     
-    # Check if run_monitoring is due (skip in test-sheets debug mode)
+    # Check if run_monitoring is due (skip in test-sheets debug mode or skip-monitoring mode)
     debug_mode = os.environ.get("DEBUG_MODE")
-    if debug_mode != "test-sheets":
+    skip_monitoring = state.get("skip_monitoring", False)
+    if debug_mode != "test-sheets" and not skip_monitoring:
         last_check = last_check_times.get("run_monitoring")
         interval = intervals["run_monitoring"]
         
@@ -84,7 +85,10 @@ def scheduler_node(state: VEPState) -> Any:
                 if "run_monitoring" not in next_tasks:
                     next_tasks.append("run_monitoring")
     else:
-        log("Debug mode 'test-sheets' enabled - skipping run_monitoring", node="scheduler", level="DEBUG")
+        if skip_monitoring:
+            log("Skip-monitoring mode enabled - skipping run_monitoring", node="scheduler")
+        elif debug_mode == "test-sheets":
+            log("Debug mode 'test-sheets' enabled - skipping run_monitoring", node="scheduler", level="DEBUG")
     
     # If next_tasks already has items from previous scheduler run, use those
     # (This handles cases where nodes might have queued tasks, though in current

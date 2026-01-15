@@ -584,11 +584,19 @@ DO NOT skip any VEP file - every file in the list above must result in a VEPInfo
         alerts = state.get("alerts", [])
         alerts.extend(result.alerts)
         
+        # If skip_monitoring is enabled, set sheets_need_update to go directly to update_sheets
+        skip_monitoring = state.get("skip_monitoring", False)
+        sheets_need_update = False
+        if skip_monitoring and discovered_count > 0:
+            sheets_need_update = True
+            log("Skip-monitoring mode: Setting sheets_need_update to go directly to update_sheets", node="fetch_veps")
+        
         return {
             "last_check_times": last_check_times,
             "veps": discovered_veps,  # Replace VEPs with discovered ones
             "alerts": alerts,
             "next_tasks": next_tasks,
+            "sheets_need_update": sheets_need_update,  # Set flag if skip_monitoring enabled
         }
         
     except Exception as e:

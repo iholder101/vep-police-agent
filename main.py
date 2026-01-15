@@ -15,7 +15,7 @@ from services.utils import log, invoke_agent
 _shutdown_requested = False
 
 
-def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False):
+def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False, skip_monitoring: bool = False):
     """Create initial state for the agent."""
     sheet_config = {
         "sheet_name": "VEP Status",  # Optional: name for the sheet/tab
@@ -44,6 +44,7 @@ def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int =
         "sheet_config": sheet_config,
         "index_cache_minutes": index_cache_minutes,  # Store cache timeout in state
         "one_cycle": one_cycle,  # Flag to exit after one cycle
+        "skip_monitoring": skip_monitoring,  # Flag to skip monitoring checks
     }
 
 
@@ -98,6 +99,11 @@ def parse_args():
         "--fastest-model",
         action="store_true",
         help="Force all nodes to use GEMINI_3_FLASH_PREVIEW (fastest model) regardless of node configuration"
+    )
+    parser.add_argument(
+        "--skip-monitoring",
+        action="store_true",
+        help="Skip all monitoring checks (deadlines, activity, compliance, exceptions). Useful for debugging VEP discovery and sheet updates. Goes straight from fetch_veps to update_sheets."
     )
     return parser.parse_args()
 
@@ -221,11 +227,13 @@ def main():
     log("Graph created successfully", node="main")
     
     # Initialize state
-    initial_state = get_initial_state(sheet_id=args.sheet_id, index_cache_minutes=index_cache_minutes, one_cycle=args.one_cycle)
+    initial_state = get_initial_state(sheet_id=args.sheet_id, index_cache_minutes=index_cache_minutes, one_cycle=args.one_cycle, skip_monitoring=args.skip_monitoring)
     log("Initial state prepared", node="main")
     log(f"Sheet config: {initial_state['sheet_config']}", node="main")
     if args.one_cycle:
         log("One-cycle mode: will exit after sheet update completes", node="main")
+    if args.skip_monitoring:
+        log("Skip-monitoring mode: monitoring checks (deadlines, activity, compliance, exceptions) will be skipped", node="main")
     
     # Run the agent
     try:
