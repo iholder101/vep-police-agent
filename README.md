@@ -75,6 +75,12 @@ cat path/to/service-account.json > GOOGLE_TOKEN
 echo "your-github-token" > GITHUB_TOKEN
 ```
 
+**RESEND_API_KEY** (optional, required for email alerts): Resend API key for sending emails
+```bash
+# Get free API key from https://resend.com/api-keys
+echo "re_..." > RESEND_API_KEY
+```
+
 ### 4. Build Container Image (Optional)
 
 If you want to run in a container:
@@ -132,12 +138,17 @@ podman run --rm --pull=newer \
 
 - `--api-key PATH`: Path to Google Gemini API key file
 - `--google-token PATH`: Path to Google Service Account JSON file
-- `--github-token PATH`: Path to GitHub Personal Access Token file
+- `--github-token PATH`: Path to GitHub Personal Access Token file (optional but recommended)
+- `--resend-api-key PATH`: Path to Resend API key file for email sending (get free key at https://resend.com/api-keys)
 - `--sheet-id ID`: Google Sheets document ID (from URL: `https://docs.google.com/spreadsheets/d/{ID}/edit`)
 - `--one-cycle`: Run one cycle and exit after sheet update completes
 - `--skip-monitoring`: Skip all monitoring checks (deadlines, activity, compliance, exceptions) for faster debugging
 - `--skip-sheets`: Skip Google Sheets updates (useful for testing email alerts)
+- `--skip-send-email`: Skip sending email alerts (useful for debugging without sending emails)
 - `--fastest-model`: Force all nodes to use `GEMINI_3_FLASH_PREVIEW` (fastest model)
+- `--mock-veps`: Use mock VEPs instead of fetching from GitHub (useful for testing without API calls)
+- `--mock-analyzed-combined`: Skip LLM call in analyze_combined node and use naive analysis (faster testing)
+- `--mock-alert-summary`: Skip LLM call in alert_summary node and create mocked alerts (faster testing)
 - `--debug MODE`: Enable debug mode (`discover-veps` or `test-sheets`)
 - `--index-cache-minutes MINUTES`: Maximum age of index cache in minutes (default: 60)
 - `--no-index-cache`: Disable index caching
@@ -188,11 +199,13 @@ Or set `EMAIL_RECIPIENTS` environment variable (comma-separated):
 export EMAIL_RECIPIENTS='user1@example.com,user2@example.com'
 ```
 
-**Gmail API Setup** (required for sending emails):
-1. Enable Gmail API in Google Cloud Console
-2. Enable domain-wide delegation for your service account
-3. Authorize the service account in Google Workspace Admin Console
-4. See: https://developers.google.com/identity/protocols/oauth2/service-account#delegatingauthority
+**Email Setup** (required for sending email alerts):
+
+The agent uses [Resend](https://resend.com) for email delivery (easiest setup):
+1. Sign up for a free account at https://resend.com
+2. Get your API key from https://resend.com/api-keys
+3. Create `RESEND_API_KEY` file with your API key: `echo "re_..." > RESEND_API_KEY`
+4. Free tier: 3,000 emails/month, no domain verification needed for basic sending
 
 **Alert Types**:
 - `deadline_approaching`: Deadlines (EF, CF) approaching or passed

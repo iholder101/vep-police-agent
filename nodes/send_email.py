@@ -94,6 +94,16 @@ def send_email_node(state: VEPState) -> Any:
     alerts = state.get("alerts", [])
     alert_summary_text = state.get("alert_summary_text", "")
     
+    # Check if email sending is disabled
+    skip_send_email = state.get("skip_send_email", False)
+    if skip_send_email:
+        log("Skip-send-email mode: email alerts are disabled, skipping", node="send_email")
+        last_check_times = state.get("last_check_times", {})
+        last_check_times["send_email"] = datetime.now()
+        return {
+            "last_check_times": last_check_times,
+        }
+    
     log(f"Sending email alerts for {len(alerts)} alert(s)", node="send_email")
     
     last_check_times = state.get("last_check_times", {})

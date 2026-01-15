@@ -15,7 +15,7 @@ from services.utils import log, invoke_agent
 _shutdown_requested = False
 
 
-def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False, skip_monitoring: bool = False, skip_sheets: bool = False, mock_veps: bool = False, mock_analyzed_combined: bool = False, mock_alert_summary: bool = False):
+def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False, skip_monitoring: bool = False, skip_sheets: bool = False, skip_send_email: bool = False, mock_veps: bool = False, mock_analyzed_combined: bool = False, mock_alert_summary: bool = False):
     """Create initial state for the agent."""
     sheet_config = {
         "sheet_name": "VEP Status",  # Optional: name for the sheet/tab
@@ -46,6 +46,7 @@ def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int =
         "one_cycle": one_cycle,  # Flag to exit after one cycle
         "skip_monitoring": skip_monitoring,  # Flag to skip monitoring checks
         "skip_sheets": skip_sheets,  # Flag to skip sheet updates
+        "skip_send_email": skip_send_email,  # Flag to skip sending email alerts
         "mock_veps": mock_veps,  # Flag to use mock VEPs instead of fetching from GitHub
         "mock_analyzed_combined": mock_analyzed_combined,  # Flag to skip LLM in analyze_combined
         "mock_alert_summary": mock_alert_summary,  # Flag to skip LLM in alert_summary
@@ -105,6 +106,8 @@ def log_startup_flags(args, index_cache_minutes: int) -> None:
         flags.append("  --skip-monitoring: enabled")
     if args.skip_sheets:
         flags.append("  --skip-sheets: enabled")
+    if args.skip_send_email:
+        flags.append("  --skip-send-email: enabled")
     if args.mock_veps:
         flags.append("  --mock-veps: enabled")
     if args.mock_analyzed_combined:
@@ -202,6 +205,11 @@ def parse_args():
         "--skip-sheets",
         action="store_true",
         help="Skip Google Sheets updates. Useful for debugging email alerts. When combined with --skip-monitoring, focuses on email notification only."
+    )
+    parser.add_argument(
+        "--skip-send-email",
+        action="store_true",
+        help="Skip sending email alerts. Useful for debugging without sending emails."
     )
     parser.add_argument(
         "--mock-veps",
