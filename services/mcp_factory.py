@@ -68,23 +68,14 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
         if custom_env:
             # Merge with parent environment - custom_env takes precedence
             env = {**os.environ, **custom_env}
-            # Debug: verify GITHUB_TOKEN is in merged env if it was in custom_env
-            if "GITHUB_TOKEN" in custom_env:
-                if "GITHUB_TOKEN" in env:
-                    token_preview = env["GITHUB_TOKEN"][:10] + "..." if len(env["GITHUB_TOKEN"]) > 10 else "***"
-                    log(f"GITHUB_TOKEN verified in merged environment (token: {token_preview})", node="mcp_factory", level="DEBUG")
         else:
             # No custom env vars, but still merge to ensure parent env vars (like GITHUB_TOKEN) are available
-            # Only use None if we explicitly want to inherit (but we want to ensure token is passed)
             env = os.environ.copy()
         
-        # Debug: Log environment info for GitHub MCP
+        # Only log if GITHUB_TOKEN is missing (error case)
         if config.get("name") == "github" and env:
             github_token_in_env = env.get("GITHUB_TOKEN")
-            if github_token_in_env:
-                token_preview = github_token_in_env[:10] + "..." if len(github_token_in_env) > 10 else "***"
-                log(f"GITHUB_TOKEN will be passed to MCP subprocess (token: {token_preview}, env keys: {len(env)})", node="mcp_factory", level="DEBUG")
-            else:
+            if not github_token_in_env:
                 log("WARNING: GITHUB_TOKEN not found in environment that will be passed to MCP subprocess", node="mcp_factory", level="WARNING")
         
         server_params = StdioServerParameters(
@@ -428,12 +419,6 @@ def get_mcp_tools_by_name(*mcp_names: str) -> List[Tool]:
                 # Set both for compatibility (GITHUB_PERSONAL_ACCESS_TOKEN is what the MCP server uses)
                 config["env"]["GITHUB_PERSONAL_ACCESS_TOKEN"] = github_token
                 config["env"]["GITHUB_TOKEN"] = github_token  # Also set for backward compatibility
-                # Log first 10 chars for verification (don't log full token for security)
-                token_preview = github_token[:10] + "..." if len(github_token) > 10 else "***"
-                log(f"GitHub token injected as GITHUB_PERSONAL_ACCESS_TOKEN (token: {token_preview})", node="mcp_factory", level="DEBUG")
-                # Verify token will be in final env
-                if config.get("env", {}).get("GITHUB_PERSONAL_ACCESS_TOKEN"):
-                    log("GitHub token verified in config.env as GITHUB_PERSONAL_ACCESS_TOKEN", node="mcp_factory", level="DEBUG")
             else:
                 log("GITHUB_TOKEN not found in environment - API rate limits may apply", node="mcp_factory", level="WARNING")
         

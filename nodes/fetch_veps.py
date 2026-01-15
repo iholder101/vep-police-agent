@@ -408,6 +408,42 @@ CRITICAL REQUIREMENTS:
         expected_min = max(vep_files_count, vep_issues_count)
         expected_target = vep_files_count + max(0, vep_issues_count - vep_files_count)  # All files + issues without files
         
+        # Extract VEP numbers from files and issues for comparison
+        vep_numbers_from_files = set()
+        for vep_file in vep_files_index:
+            vep_num = vep_file.get("vep_number")
+            if vep_num:
+                vep_numbers_from_files.add(vep_num.lower())
+            # Also try to extract from filename
+            filename = vep_file.get("filename", "")
+            import re
+            match = re.search(r'vep-?(\d+)', filename, re.IGNORECASE)
+            if match:
+                vep_numbers_from_files.add(f"vep-{int(match.group(1)):04d}".lower())
+        
+        vep_numbers_from_issues = set()
+        for issue in vep_related_issues:
+            # Extract VEP number from issue title/body
+            title = issue.get("title", "")
+            body = issue.get("body_preview", "")
+            import re
+            for text in [title, body]:
+                match = re.search(r'vep-?(\d+)', text, re.IGNORECASE)
+                if match:
+                    vep_numbers_from_issues.add(f"vep-{int(match.group(1)):04d}".lower())
+                    break
+        
+        # Extract VEP numbers from discovered VEPs
+        discovered_vep_numbers = set()
+        for vep in discovered_veps:
+            vep_name = getattr(vep, 'name', '')
+            if vep_name:
+                discovered_vep_numbers.add(vep_name.lower())
+        
+        # Find missing VEPs
+        missing_from_files = vep_numbers_from_files - discovered_vep_numbers
+        missing_from_issues = vep_numbers_from_issues - discovered_vep_numbers
+        
         # Count VEPs by status and SIG
         open_count = sum(1 for vep in discovered_veps if hasattr(vep, 'status') and vep.status and 'open' in str(vep.status).lower())
         closed_count = discovered_count - open_count
@@ -431,11 +467,17 @@ CRITICAL REQUIREMENTS:
                 sig_breakdown = ", ".join([f"{sig}: {count}" for sig, count in sorted(sig_counts.items())])
                 log(f"  - SIG breakdown: {sig_breakdown}", node="fetch_veps")
             
-            # Log sample VEP names
-            vep_names = [vep.name for vep in discovered_veps[:10]]  # First 10
-            log(f"  - Sample VEPs: {', '.join(vep_names)}{'...' if discovered_count > 10 else ''}", node="fetch_veps")
+            # Log all discovered VEP names
+            vep_names = [vep.name for vep in discovered_veps]
+            log(f"  - Discovered VEPs: {', '.join(sorted(vep_names))}", node="fetch_veps")
         else:
             log(f"  - WARNING: No VEPs discovered! Expected at least {expected_min} VEPs.", node="fetch_veps", level="WARNING")
+        
+        # Log missing VEPs for debugging
+        if missing_from_files:
+            log(f"  - MISSING VEPs from files ({len(missing_from_files)}): {', '.join(sorted(missing_from_files))}", node="fetch_veps", level="ERROR")
+        if missing_from_issues:
+            log(f"  - MISSING VEPs from issues ({len(missing_from_issues)}): {', '.join(sorted(missing_from_issues))}", node="fetch_veps", level="ERROR")
         
         if discovered_count < expected_min:
             log(f"  - ERROR: Discovered {discovered_count} VEPs but expected at least {expected_min} (missing {expected_min - discovered_count})", node="fetch_veps", level="ERROR")

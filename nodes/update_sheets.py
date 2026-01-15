@@ -223,8 +223,8 @@ Sync this VEP data to Google Sheets. Decide on the schema, read the current shee
         }
         
         # Check if one-cycle mode is enabled - exit after sheet update
-        if state.get("one_cycle", False):
-            log("One-cycle mode: Sheet update completed, exiting", node="update_sheets")
+        if state.get("config_cache", {}).get("one_cycle", False) and result.success:
+            log("One-cycle mode: Sheet update successful, setting exit flag", node="update_sheets")
             # Clear next_tasks to prevent further execution
             result["next_tasks"] = []
             # Set a flag to signal main loop to exit

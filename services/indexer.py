@@ -1430,12 +1430,15 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
     
     # Extract VEP numbers from files
     vep_numbers_from_files = set()
+    vep_numbers_from_files_formatted = []
     for vep_file in vep_files_index:
         vep_number = vep_file.get("vep_number", "")
         # Extract numeric part from vep_number (e.g., "vep-0176" -> 176)
         match = re.search(r'vep-(\d+)', vep_number, re.IGNORECASE)
         if match:
-            vep_numbers_from_files.add(int(match.group(1)))
+            vep_num = int(match.group(1))
+            vep_numbers_from_files.add(vep_num)
+            vep_numbers_from_files_formatted.append(f"vep-{vep_num:04d}")
     
     # Find VEPs that exist only as issues (no file)
     vep_numbers_only_in_issues = vep_numbers_from_issues - vep_numbers_from_files
@@ -1445,6 +1448,8 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
     log(f"  - VEP files without content (errors): {sum(1 for f in vep_files_index if not f.get('content'))}", node="indexer")
     log(f"  - Unique VEP numbers from issues: {len(vep_numbers_from_issues)}", node="indexer")
     log(f"  - Unique VEP numbers from files: {len(vep_numbers_from_files)}", node="indexer")
+    if vep_numbers_from_files_formatted:
+        log(f"  - VEP numbers found in files: {', '.join(sorted(vep_numbers_from_files_formatted))}", node="indexer")
     if vep_numbers_only_in_issues:
         log(f"  - VEPs only in issues (no file): {sorted(vep_numbers_only_in_issues)}", node="indexer")
     
