@@ -80,20 +80,21 @@ def _should_run_operation(
 def scheduler_node(state: VEPState) -> Any:
     """Determine which tasks need to run based on timing and state.
     
-    New flow:
-    1. First run: Always update sheet
-    2. After that:
-       - Fetch VEPs every configured interval (default 1 hour) on round hours
-       - Update sheet every configured interval (default 1 hour) on round hours
-       - Run alert_summary every configured interval (default 1 hour) on round hours
-       - alert_summary decides if email needed
+    Flow:
+    1. When VEPs are fetched, they MUST go through the analysis pipeline:
+       fetch_veps -> run_monitoring -> merge_vep_updates -> analyze_combined
+    2. After analyze_combined completes, scheduler can schedule:
+       - update_sheets (if needed)
+       - alert_summary (to check for alerts)
+    3. These can run in parallel after analysis is complete.
     
-    All operations run on round hours (13:00, 14:00, etc.).
+    The scheduler ensures the analysis pipeline runs before updating sheets or sending emails.
     """
     last_check_times = state.get("last_check_times", {})
     next_tasks: List[str] = []
     one_cycle = state.get("one_cycle", False)
     immediate_start = state.get("immediate_start", False)
+    skip_monitoring = state.get("skip_monitoring", False)
     now = datetime.now()
     
     # In one-cycle mode or test-sheets debug mode, if we just completed update_sheets, don't schedule more tasks
@@ -113,17 +114,33 @@ def scheduler_node(state: VEPState) -> Any:
     update_sheets_interval = config.UPDATE_SHEETS_INTERVAL_SECONDS
     alert_summary_interval = config.ALERT_SUMMARY_INTERVAL_SECONDS
     
-    # First run: Always update sheet
+    # Check if VEPs were just fetched (fetch_veps ran more recently than analyze_combined)
+    fetch_veps_time = last_check_times.get("fetch_veps")
+    analyze_combined_time = last_check_times.get("analyze_combined")
+    veps_need_analysis = False
+    if fetch_veps_time and analyze_combined_time:
+        # If fetch_veps ran after analyze_combined, VEPs need analysis
+        veps_need_analysis = fetch_veps_time > analyze_combined_time
+    elif fetch_veps_time and not analyze_combined_time:
+        # VEPs were fetched but never analyzed
+        veps_need_analysis = True
+    
+    # First run: Fetch VEPs, run monitoring, then update sheets and check alerts
     if is_first_run:
-        log("First run: Scheduling update_sheets", node="scheduler")
-        next_tasks.append("update_sheets")
-        # Also fetch VEPs if list is empty
         veps = state.get("veps", [])
         if not veps:
-            log("First run: VEPs list is empty, also scheduling fetch_veps", node="scheduler")
+            log("First run: VEPs list is empty, scheduling fetch_veps", node="scheduler")
             next_tasks.append("fetch_veps")
-        # Also schedule alert_summary on first run to check for alerts immediately
-        log("First run: Scheduling alert_summary", node="scheduler")
+        # After fetching, we need to run monitoring and analysis
+        if not veps or veps_need_analysis:
+            if not skip_monitoring:
+                log("First run: Scheduling run_monitoring to analyze VEPs", node="scheduler")
+                next_tasks.append("run_monitoring")
+            else:
+                log("First run: Skip-monitoring enabled, skipping analysis pipeline", node="scheduler")
+        # Schedule update_sheets and alert_summary after analysis (or immediately if skip_monitoring)
+        log("First run: Scheduling update_sheets and alert_summary", node="scheduler")
+        next_tasks.append("update_sheets")
         next_tasks.append("alert_summary")
     else:
         # If immediate_start is enabled, don't check for round hour - use interval-based timing
@@ -140,31 +157,61 @@ def scheduler_node(state: VEPState) -> Any:
         else:
             log(f"Immediate-start mode: Using interval-based timing (current time: {now.strftime('%H:%M:%S')})", node="scheduler")
         
-        # Check fetch_veps
-        if _should_run_operation("fetch_veps", last_check_times, fetch_veps_interval, now, immediate_start=immediate_start):
+        # Priority 1: Check if fetch_veps is due
+        should_fetch_veps = _should_run_operation("fetch_veps", last_check_times, fetch_veps_interval, now, immediate_start=immediate_start)
+        if should_fetch_veps:
             log(f"fetch_veps is due (interval: {fetch_veps_interval}s)", node="scheduler")
             next_tasks.append("fetch_veps")
+            # After fetching VEPs, we MUST run monitoring and analysis before updating sheets/emails
+            if not skip_monitoring:
+                log("Scheduling run_monitoring after fetch_veps to analyze VEPs", node="scheduler")
+                next_tasks.append("run_monitoring")
+            # Note: update_sheets and alert_summary will be scheduled after analyze_combined completes
         
-        # Check update_sheets
-        if _should_run_operation("update_sheets", last_check_times, update_sheets_interval, now, immediate_start=immediate_start):
-            log(f"update_sheets is due (interval: {update_sheets_interval}s)", node="scheduler")
-            next_tasks.append("update_sheets")
+        # Priority 2: Check if VEPs need analysis (were fetched but not analyzed)
+        elif veps_need_analysis and not skip_monitoring:
+            log("VEPs were fetched but not analyzed, scheduling run_monitoring", node="scheduler")
+            next_tasks.append("run_monitoring")
         
-        # Check alert_summary
-        if _should_run_operation("alert_summary", last_check_times, alert_summary_interval, now, immediate_start=immediate_start):
-            log(f"alert_summary is due (interval: {alert_summary_interval}s)", node="scheduler")
-            next_tasks.append("alert_summary")
+        # Priority 3: Check if update_sheets or alert_summary are due
+        # Only schedule these if VEPs have been analyzed (or if there are no VEPs to analyze)
+        elif not veps_need_analysis:
+            # Check update_sheets
+            should_update_sheets = _should_run_operation("update_sheets", last_check_times, update_sheets_interval, now, immediate_start=immediate_start)
+            if should_update_sheets:
+                log(f"update_sheets is due (interval: {update_sheets_interval}s)", node="scheduler")
+                next_tasks.append("update_sheets")
+            
+            # Check alert_summary
+            should_alert_summary = _should_run_operation("alert_summary", last_check_times, alert_summary_interval, now, immediate_start=immediate_start)
+            if should_alert_summary:
+                log(f"alert_summary is due (interval: {alert_summary_interval}s)", node="scheduler")
+                next_tasks.append("alert_summary")
     
     # Also check if sheets_need_update flag is set (from analyze_combined)
+    # Only add if VEPs have been analyzed (or if skip_monitoring is enabled)
     sheets_need_update = state.get("sheets_need_update", False)
     if sheets_need_update and "update_sheets" not in next_tasks:
-        log("sheets_need_update flag is set, adding update_sheets to queue", node="scheduler")
-        next_tasks.append("update_sheets")
+        if not veps_need_analysis or skip_monitoring:
+            log("sheets_need_update flag is set, adding update_sheets to queue", node="scheduler")
+            next_tasks.append("update_sheets")
+        else:
+            log("sheets_need_update flag is set, but VEPs need analysis first - will schedule after analyze_combined", node="scheduler")
     
-    # If skip_monitoring is enabled, don't schedule run_monitoring
-    skip_monitoring = state.get("skip_monitoring", False)
-    if skip_monitoring:
-        log("Skip-monitoring mode enabled - skipping run_monitoring", node="scheduler")
+    # After analyze_combined completes, it routes back to scheduler
+    # At that point, we should schedule both update_sheets and alert_summary in parallel
+    # Check if analyze_combined just completed (within last 5 seconds) and we haven't scheduled these yet
+    analyze_combined_time = last_check_times.get("analyze_combined")
+    if analyze_combined_time:
+        time_since_analyze = (now - analyze_combined_time).total_seconds()
+        # If analyze_combined just ran and we don't have update_sheets/alert_summary scheduled, add them
+        if time_since_analyze < 5:
+            if "update_sheets" not in next_tasks:
+                log("analyze_combined just completed, scheduling update_sheets", node="scheduler")
+                next_tasks.append("update_sheets")
+            if "alert_summary" not in next_tasks:
+                log("analyze_combined just completed, scheduling alert_summary", node="scheduler")
+                next_tasks.append("alert_summary")
     
     # Log scheduling decision
     if next_tasks:
