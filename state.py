@@ -205,3 +205,4 @@ class VEPState(TypedDict):
     mock_veps: bool  # Flag to use mock VEPs instead of fetching from GitHub
     mock_analyzed_combined: bool  # Flag to skip LLM in analyze_combined node
     mock_alert_summary: bool  # Flag to skip LLM in alert_summary node
+    immediate_start: bool  # Flag to start immediately without waiting for round hour

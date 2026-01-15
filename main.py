@@ -15,7 +15,7 @@ from services.utils import log, invoke_agent
 _shutdown_requested = False
 
 
-def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False, skip_monitoring: bool = False, skip_sheets: bool = False, skip_send_email: bool = False, mock_veps: bool = False, mock_analyzed_combined: bool = False, mock_alert_summary: bool = False):
+def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False, skip_monitoring: bool = False, skip_sheets: bool = False, skip_send_email: bool = False, mock_veps: bool = False, mock_analyzed_combined: bool = False, mock_alert_summary: bool = False, immediate_start: bool = False):
     """Create initial state for the agent."""
     sheet_config = {
         "sheet_name": "VEP Status",  # Optional: name for the sheet/tab
@@ -52,6 +52,7 @@ def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int =
         "mock_veps": mock_veps,  # Flag to use mock VEPs instead of fetching from GitHub
         "mock_analyzed_combined": mock_analyzed_combined,  # Flag to skip LLM in analyze_combined
         "mock_alert_summary": mock_alert_summary,  # Flag to skip LLM in alert_summary
+        "immediate_start": immediate_start,  # Flag to start immediately without waiting for round hour
     }
 
 
@@ -116,6 +117,8 @@ def log_startup_flags(args, index_cache_minutes: int) -> None:
         flags.append("  --mock-analyzed-combined: enabled")
     if args.mock_alert_summary:
         flags.append("  --mock-alert-summary: enabled")
+    if args.immediate_start:
+        flags.append("  --immediate-start: enabled")
     
     # Log all flags
     if flags:
@@ -139,6 +142,8 @@ def log_startup_flags(args, index_cache_minutes: int) -> None:
         log("Mock analyzed-combined mode: will skip LLM call and use naive analysis", node="main")
     if args.mock_alert_summary:
         log("Mock alert-summary mode: will skip LLM call and create mocked alerts", node="main")
+    if args.immediate_start:
+        log("Immediate-start mode: will run first cycle immediately and use current time + interval instead of round hours", node="main")
 
 
 def parse_args():
@@ -227,6 +232,11 @@ def parse_args():
         "--mock-alert-summary",
         action="store_true",
         help="Skip LLM call in alert_summary node and create mocked alerts instead. Useful for faster testing without LLM costs."
+    )
+    parser.add_argument(
+        "--immediate-start",
+        action="store_true",
+        help="Run the first cycle immediately without waiting for round hour. Subsequent cycles will use current time + interval instead of round hours."
     )
     return parser.parse_args()
 
@@ -323,7 +333,7 @@ def main():
     log("Graph created successfully", node="main")
     
     # Initialize state
-    initial_state = get_initial_state(sheet_id=args.sheet_id, index_cache_minutes=index_cache_minutes, one_cycle=args.one_cycle, skip_monitoring=args.skip_monitoring, skip_sheets=args.skip_sheets, skip_send_email=args.skip_send_email, mock_veps=args.mock_veps, mock_analyzed_combined=args.mock_analyzed_combined, mock_alert_summary=args.mock_alert_summary)
+    initial_state = get_initial_state(sheet_id=args.sheet_id, index_cache_minutes=index_cache_minutes, one_cycle=args.one_cycle, skip_monitoring=args.skip_monitoring, skip_sheets=args.skip_sheets, skip_send_email=args.skip_send_email, mock_veps=args.mock_veps, mock_analyzed_combined=args.mock_analyzed_combined, mock_alert_summary=args.mock_alert_summary, immediate_start=args.immediate_start)
     log("Initial state prepared", node="main")
     log(f"Sheet config: {initial_state['sheet_config']}", node="main")
     

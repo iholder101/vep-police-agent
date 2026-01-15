@@ -20,6 +20,7 @@ CMD_ARGS=(
     --mock-veps
     --mock-analyzed-combined
     --mock-alert-summary
+    --immediate-start
 )
 
 # Add GitHub token if file exists

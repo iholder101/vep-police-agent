@@ -40,7 +40,8 @@ def _should_run_operation(
     last_check_times: dict,
     interval_seconds: int,
     now: datetime,
-    is_first_run: bool = False
+    is_first_run: bool = False,
+    immediate_start: bool = False
 ) -> bool:
     """Check if an operation should run based on interval and round-hour timing.
     
@@ -50,6 +51,7 @@ def _should_run_operation(
         interval_seconds: Interval in seconds
         now: Current datetime
         is_first_run: If True, always return True (for first run)
+        immediate_start: If True, use current time + interval instead of round hours
         
     Returns:
         True if operation should run
@@ -59,16 +61,20 @@ def _should_run_operation(
     
     last_check = last_check_times.get(operation_name)
     if last_check is None:
-        # Never run before - check if we're at a round hour
-        return _is_round_hour(now)
+        # Never run before
+        if immediate_start:
+            return True  # Run immediately if immediate_start is enabled
+        return _is_round_hour(now)  # Otherwise wait for round hour
     
     # Check if enough time has passed
     time_since = (now - last_check).total_seconds()
     if time_since < interval_seconds:
         return False
     
-    # Enough time has passed - check if we're at a round hour
-    return _is_round_hour(now)
+    # Enough time has passed
+    if immediate_start:
+        return True  # Run immediately if immediate_start is enabled
+    return _is_round_hour(now)  # Otherwise check if we're at a round hour
 
 
 def scheduler_node(state: VEPState) -> Any:
@@ -87,6 +93,7 @@ def scheduler_node(state: VEPState) -> Any:
     last_check_times = state.get("last_check_times", {})
     next_tasks: List[str] = []
     one_cycle = state.get("one_cycle", False)
+    immediate_start = state.get("immediate_start", False)
     now = datetime.now()
     
     # In one-cycle mode or test-sheets debug mode, if we just completed update_sheets, don't schedule more tasks
@@ -116,30 +123,32 @@ def scheduler_node(state: VEPState) -> Any:
             log("First run: VEPs list is empty, also scheduling fetch_veps", node="scheduler")
             next_tasks.append("fetch_veps")
     else:
-        # Check if we're at a round hour
-        if not _is_round_hour(now):
-            next_round_hour = _get_next_round_hour(now)
-            wait_seconds = (next_round_hour - now).total_seconds()
-            log(f"Not at round hour. Next round hour: {next_round_hour.strftime('%H:%M')} (waiting {wait_seconds:.0f}s)", node="scheduler")
-            return {
-                "next_tasks": ["wait"],  # Wait until next round hour
-            }
-        
-        # We're at a round hour - check what needs to run
-        log(f"Round hour reached: {now.strftime('%H:%M')}", node="scheduler")
+        # If immediate_start is enabled, don't check for round hour - use interval-based timing
+        if not immediate_start:
+            # Check if we're at a round hour
+            if not _is_round_hour(now):
+                next_round_hour = _get_next_round_hour(now)
+                wait_seconds = (next_round_hour - now).total_seconds()
+                log(f"Not at round hour. Next round hour: {next_round_hour.strftime('%H:%M')} (waiting {wait_seconds:.0f}s)", node="scheduler")
+                return {
+                    "next_tasks": ["wait"],  # Wait until next round hour
+                }
+            log(f"Round hour reached: {now.strftime('%H:%M')}", node="scheduler")
+        else:
+            log(f"Immediate-start mode: Using interval-based timing (current time: {now.strftime('%H:%M:%S')})", node="scheduler")
         
         # Check fetch_veps
-        if _should_run_operation("fetch_veps", last_check_times, fetch_veps_interval, now):
+        if _should_run_operation("fetch_veps", last_check_times, fetch_veps_interval, now, immediate_start=immediate_start):
             log(f"fetch_veps is due (interval: {fetch_veps_interval}s)", node="scheduler")
             next_tasks.append("fetch_veps")
         
         # Check update_sheets
-        if _should_run_operation("update_sheets", last_check_times, update_sheets_interval, now):
+        if _should_run_operation("update_sheets", last_check_times, update_sheets_interval, now, immediate_start=immediate_start):
             log(f"update_sheets is due (interval: {update_sheets_interval}s)", node="scheduler")
             next_tasks.append("update_sheets")
         
         # Check alert_summary
-        if _should_run_operation("alert_summary", last_check_times, alert_summary_interval, now):
+        if _should_run_operation("alert_summary", last_check_times, alert_summary_interval, now, immediate_start=immediate_start):
             log(f"alert_summary is due (interval: {alert_summary_interval}s)", node="scheduler")
             next_tasks.append("alert_summary")
     

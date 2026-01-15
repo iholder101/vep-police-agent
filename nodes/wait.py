@@ -14,9 +14,10 @@ def _get_next_round_hour(now: datetime) -> datetime:
 
 
 def wait_node(state: VEPState) -> Any:
-    """Wait until the next round hour (e.g., 13:00, 14:00, 15:00).
+    """Wait until the next round hour (e.g., 13:00, 14:00, 15:00) or next interval.
     
-    Calculates time until next round hour and sleeps until then.
+    If immediate_start is enabled, waits until current time + minimum interval.
+    Otherwise, waits until next round hour.
     After waiting, returns to scheduler which will check what needs to run.
     """
     # In one-cycle mode or test-sheets debug mode, if sheet update completed, exit immediately
@@ -33,8 +34,19 @@ def wait_node(state: VEPState) -> Any:
         sys.exit(0)
     
     now = datetime.now()
-    next_round_hour = _get_next_round_hour(now)
-    wait_seconds = (next_round_hour - now).total_seconds()
+    immediate_start = state.get("immediate_start", False)
+    
+    if immediate_start:
+        # In immediate-start mode, wait until current time + minimum interval (1 hour)
+        # This ensures we check again after the interval has passed
+        wait_until = now + timedelta(hours=1)
+        wait_seconds = (wait_until - now).total_seconds()
+        wait_description = f"{wait_until.strftime('%H:%M:%S')} (current time + 1h)"
+    else:
+        # Normal mode: wait until next round hour
+        wait_until = _get_next_round_hour(now)
+        wait_seconds = (wait_until - now).total_seconds()
+        wait_description = f"{wait_until.strftime('%H:%M')} (next round hour)"
     
     next_tasks = state.get("next_tasks", [])
     veps_count = len(state.get("veps", []))
@@ -42,13 +54,13 @@ def wait_node(state: VEPState) -> Any:
     sheets_need_update = state.get("sheets_need_update", False)
     
     log(
-        f"Waiting until {next_round_hour.strftime('%H:%M')} ({wait_seconds:.0f}s) | "
+        f"Waiting until {wait_description} ({wait_seconds:.0f}s) | "
         f"Release: {current_release} | VEPs: {veps_count} | "
         f"Pending tasks: {len(next_tasks)} | Sheets need update: {sheets_need_update}",
         node="wait"
     )
     
-    # Sleep until next round hour (with interruptible wait)
+    # Sleep until target time (with interruptible wait)
     try:
         time.sleep(wait_seconds)
     except KeyboardInterrupt:

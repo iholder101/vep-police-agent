@@ -56,6 +56,9 @@ if [ "$ONE_CYCLE_IN_ARGS" = false ]; then
     CMD_ARGS+=(--one-cycle)
 fi
 
+# Add --immediate-start flag to run first cycle immediately
+CMD_ARGS+=(--immediate-start)
+
 # Execute the command
 podman run --rm --pull=newer \
     -v "$PROJECT_ROOT:/workspace:ro" \
