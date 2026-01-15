@@ -11,10 +11,59 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 UNIT_NAME="vep-police-agent"
 UNIT_FILE="/etc/systemd/system/${UNIT_NAME}.service"
 
+# Handle --delete flag
+if [ "$1" = "--delete" ]; then
+    # Check if running as root (needed to delete systemd unit)
+    if [ "$EUID" -ne 0 ]; then
+        echo "Error: This script must be run as root (sudo) to delete systemd unit files."
+        echo "Run: sudo $0 --delete"
+        exit 1
+    fi
+    
+    # Check if unit exists
+    if [ ! -f "$UNIT_FILE" ]; then
+        echo "Systemd unit does not exist: $UNIT_FILE"
+        echo "Nothing to delete."
+        exit 0
+    fi
+    
+    # Stop and disable the service if it's running
+    if systemctl is-active --quiet "$UNIT_NAME" 2>/dev/null; then
+        echo "Stopping service..."
+        systemctl stop "$UNIT_NAME"
+    fi
+    
+    if systemctl is-enabled --quiet "$UNIT_NAME" 2>/dev/null; then
+        echo "Disabling service..."
+        systemctl disable "$UNIT_NAME"
+    fi
+    
+    # Remove the unit file
+    echo "Removing systemd unit file: $UNIT_FILE"
+    rm -f "$UNIT_FILE"
+    
+    # Reload systemd to recognize the removal
+    systemctl daemon-reload
+    
+    echo ""
+    echo "✓ Systemd unit removed successfully"
+    echo ""
+    echo "Note: Logs are still available in journald (they are not deleted)."
+    echo "      To view old logs: journalctl -u ${UNIT_NAME}"
+    echo "      To clear old logs: sudo journalctl --vacuum-time=1d (clears logs older than 1 day)"
+    exit 0
+fi
+
 # Show help if requested
 if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
     cat <<EOF
-Usage: $0 [--help]
+Usage: $0 [--help|--delete]
+
+Creates or deletes a systemd unit for the VEP Police Agent.
+
+Options:
+  --help, -h    Show this help message
+  --delete      Remove the systemd unit and clean up (stops and disables service)
 
 Creates a systemd unit for the VEP Police Agent that runs continuously.
 
@@ -53,6 +102,9 @@ sudo systemctl restart ${UNIT_NAME}
 
 # Disable auto-start on boot
 sudo systemctl disable ${UNIT_NAME}
+
+# Delete the systemd unit
+sudo $0 --delete
 
 Note: Logs are automatically saved by systemd and can be viewed with journalctl.
       The script enables persistent journal by default - logs persist across reboots
