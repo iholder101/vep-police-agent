@@ -112,17 +112,7 @@ def send_email_node(state: VEPState) -> Any:
             "last_check_times": last_check_times,
         }
     
-    # Get Ethereal Email credentials (no registration needed!)
-    ethereal = _get_ethereal_credentials()
-    if not ethereal:
-        log("Failed to get Ethereal Email credentials, cannot send email", node="send_email", level="ERROR")
-        return {
-            "last_check_times": last_check_times,
-        }
-    
-    log(f"Using Ethereal Email: {ethereal['from_email']} (view at {ethereal['web_url']})", node="send_email", level="INFO")
-    
-    # Format email content
+    # Format email content first (before checking credentials, so we can log it if sending fails)
     subject = f"VEP Governance Alerts - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     
     # Group alerts by subject and severity
@@ -133,7 +123,7 @@ def send_email_node(state: VEPState) -> Any:
             alerts_by_subject[subject_key] = []
         alerts_by_subject[subject_key].append(alert)
     
-    # Build email body (HTML)
+    # Build email body (HTML) - without Ethereal URL for now
     html_body = f"""<html>
 <head><style>
   body {{ font-family: Arial, sans-serif; margin: 20px; }}
@@ -178,14 +168,6 @@ def send_email_node(state: VEPState) -> Any:
 </div>
 """
     
-    # Add note about Ethereal Email
-    html_body += f"""
-<div class="note">
-  <strong>Note:</strong> This email was sent via Ethereal Email (testing sandbox).
-  View all emails at: <a href="{ethereal['web_url']}">{ethereal['web_url']}</a>
-</div>
-"""
-    
     html_body += """
 </body>
 </html>
@@ -209,6 +191,37 @@ def send_email_node(state: VEPState) -> Any:
             text_body += f"  - VEP {vep_id} ({vep_name}): {title}\n    {message}\n"
         text_body += "\n"
     
+    # Get Ethereal Email credentials (no registration needed!)
+    ethereal = _get_ethereal_credentials()
+    if not ethereal:
+        # If Ethereal Email fails, log the email content so user can see what would have been sent
+        log("Failed to get Ethereal Email credentials, cannot send email", node="send_email", level="ERROR")
+        log("="*80, node="send_email", level="INFO")
+        log("EMAIL CONTENT (would have been sent):", node="send_email", level="INFO")
+        log("="*80, node="send_email", level="INFO")
+        log(f"To: {', '.join(recipients)}", node="send_email", level="INFO")
+        log(f"Subject: {subject}", node="send_email", level="INFO")
+        log("Body (text preview):", node="send_email", level="INFO")
+        # Log first 500 chars of text body
+        text_preview = text_body[:500] + ("..." if len(text_body) > 500 else "")
+        for line in text_preview.split("\n")[:20]:  # First 20 lines
+            log(f"  {line}", node="send_email", level="INFO")
+        if len(text_body) > 500:
+            log(f"  ... (truncated, total length: {len(text_body)} chars)", node="send_email", level="INFO")
+        log("="*80, node="send_email", level="INFO")
+        return {
+            "last_check_times": last_check_times,
+        }
+    
+    log(f"Using Ethereal Email: {ethereal['from_email']} (view at {ethereal['web_url']})", node="send_email", level="INFO")
+    
+    # Add Ethereal Email note to bodies now that we have credentials
+    html_body = html_body.replace("</body>", f"""
+<div class="note">
+  <strong>Note:</strong> This email was sent via Ethereal Email (testing sandbox).
+  View all emails at: <a href="{ethereal['web_url']}">{ethereal['web_url']}</a>
+</div>
+</body>""")
     text_body += f"\nNote: This email was sent via Ethereal Email (testing sandbox).\nView all emails at: {ethereal['web_url']}\n"
     
     # Create email message
