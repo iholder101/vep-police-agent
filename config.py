@@ -25,8 +25,8 @@ DEFAULT_MODEL = GEMINI_3_FLASH_PREVIEW
 # Nodes that require deeper reasoning can use more powerful models
 NODE_MODELS: Dict[str, str] = {
     # Deep reasoning nodes - consider more powerful models
-    "analyze_combined": GEMINI_2_5_PRO,  # Holistic analysis with cross-check reasoning
-    "merge_vep_updates": GEMINI_2_5_PRO,  # Intelligent merging of parallel updates
+    "analyze_combined": GEMINI_3_PRO_PREVIEW,  # Holistic analysis with cross-check reasoning
+    "merge_vep_updates": GEMINI_3_PRO_PREVIEW,  # Intelligent merging of parallel updates
     "fetch_veps": DEFAULT_MODEL,  # Complex VEP discovery and extraction
     
     # Standard check nodes - use fast model
@@ -36,7 +36,7 @@ NODE_MODELS: Dict[str, str] = {
     "check_exceptions": DEFAULT_MODEL,
     
     # Sheet operations - use fast model
-    "update_sheets": DEFAULT_MODEL,
+    "update_sheets": GEMINI_3_PRO_PREVIEW,
     
     # Other nodes - use default
     "scheduler": DEFAULT_MODEL,
