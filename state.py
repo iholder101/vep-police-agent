@@ -202,3 +202,4 @@ class VEPState(TypedDict):
     skip_sheets: bool  # Flag to skip sheet updates for faster debugging
     mock_veps: bool  # Flag to use mock VEPs instead of fetching from GitHub
     mock_analyzed_combined: bool  # Flag to skip LLM in analyze_combined node
+    mock_alert_summary: bool  # Flag to skip LLM in alert_summary node

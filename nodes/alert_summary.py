@@ -54,6 +54,44 @@ def alert_summary_node(state: VEPState) -> Any:
             "alerts": [],
         }
     
+    # Check if mock mode is enabled - skip LLM and create mocked alerts
+    mock_mode = state.get("mock_alert_summary", False)
+    if mock_mode:
+        log("Mock alert-summary mode: Skipping LLM call, creating mocked alerts", node="alert_summary")
+        
+        # Create mocked alerts for first few VEPs
+        mocked_alerts = []
+        for i, vep in enumerate(veps[:3]):  # Create alerts for first 3 VEPs
+            alert_types = [
+                ("deadline_approaching", "high", f"VEP {vep.tracking_issue_id}: Deadline approaching in {i+2} days"),
+                ("low_activity", "medium", f"VEP {vep.tracking_issue_id}: Low activity detected ({i+5} days since update)"),
+                ("compliance_issue", "high", f"VEP {vep.tracking_issue_id}: Missing SIG sign-off"),
+            ]
+            
+            subject, severity, title = alert_types[i % len(alert_types)]
+            mocked_alerts.append({
+                "subject": subject,
+                "severity": severity,
+                "vep_id": vep.tracking_issue_id,
+                "vep_name": vep.name,
+                "title": title,
+                "message": f"Mock alert for {vep.name}: {title}",
+                "metadata": {"mock": True, "vep_title": vep.title},
+            })
+        
+        summary_text = f"Mock Alert Summary:\n\n"
+        summary_text += f"Generated {len(mocked_alerts)} mock alert(s) for testing.\n\n"
+        for alert in mocked_alerts:
+            summary_text += f"- [{alert['severity'].upper()}] {alert['title']}\n"
+        
+        log(f"Created {len(mocked_alerts)} mocked alert(s)", node="alert_summary")
+        
+        return {
+            "last_check_times": last_check_times,
+            "alerts": mocked_alerts,
+            "alert_summary_text": summary_text,
+        }
+    
     # Build system prompt
     system_prompt = """You are a VEP governance agent composing alerts from VEP analysis.
 

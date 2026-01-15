@@ -15,7 +15,7 @@ from services.utils import log, invoke_agent
 _shutdown_requested = False
 
 
-def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False, skip_monitoring: bool = False, skip_sheets: bool = False, mock_veps: bool = False, mock_analyzed_combined: bool = False):
+def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False, skip_monitoring: bool = False, skip_sheets: bool = False, mock_veps: bool = False, mock_analyzed_combined: bool = False, mock_alert_summary: bool = False):
     """Create initial state for the agent."""
     sheet_config = {
         "sheet_name": "VEP Status",  # Optional: name for the sheet/tab
@@ -48,6 +48,7 @@ def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int =
         "skip_sheets": skip_sheets,  # Flag to skip sheet updates
         "mock_veps": mock_veps,  # Flag to use mock VEPs instead of fetching from GitHub
         "mock_analyzed_combined": mock_analyzed_combined,  # Flag to skip LLM in analyze_combined
+        "mock_alert_summary": mock_alert_summary,  # Flag to skip LLM in alert_summary
     }
 
 
@@ -122,6 +123,11 @@ def parse_args():
         "--mock-analyzed-combined",
         action="store_true",
         help="Skip LLM call in analyze_combined node and use naive analysis instead. Useful for faster testing without LLM costs."
+    )
+    parser.add_argument(
+        "--mock-alert-summary",
+        action="store_true",
+        help="Skip LLM call in alert_summary node and create mocked alerts instead. Useful for faster testing without LLM costs."
     )
     return parser.parse_args()
 
@@ -240,6 +246,8 @@ def main():
         flags.append("  --mock-veps: enabled")
     if args.mock_analyzed_combined:
         flags.append("  --mock-analyzed-combined: enabled")
+    if args.mock_alert_summary:
+        flags.append("  --mock-alert-summary: enabled")
     
     if flags:
         for flag in flags:
@@ -253,7 +261,7 @@ def main():
     log("Graph created successfully", node="main")
     
     # Initialize state
-    initial_state = get_initial_state(sheet_id=args.sheet_id, index_cache_minutes=index_cache_minutes, one_cycle=args.one_cycle, skip_monitoring=args.skip_monitoring, skip_sheets=args.skip_sheets, mock_veps=args.mock_veps, mock_analyzed_combined=args.mock_analyzed_combined)
+    initial_state = get_initial_state(sheet_id=args.sheet_id, index_cache_minutes=index_cache_minutes, one_cycle=args.one_cycle, skip_monitoring=args.skip_monitoring, skip_sheets=args.skip_sheets, mock_veps=args.mock_veps, mock_analyzed_combined=args.mock_analyzed_combined, mock_alert_summary=args.mock_alert_summary)
     log("Initial state prepared", node="main")
     log(f"Sheet config: {initial_state['sheet_config']}", node="main")
     if args.one_cycle:
@@ -266,6 +274,8 @@ def main():
         log("Mock VEPs mode: will use mock VEPs instead of fetching from GitHub", node="main")
     if args.mock_analyzed_combined:
         log("Mock analyzed-combined mode: will skip LLM call and use naive analysis", node="main")
+    if args.mock_alert_summary:
+        log("Mock alert-summary mode: will skip LLM call and create mocked alerts", node="main")
     
     # Run the agent
     try:
