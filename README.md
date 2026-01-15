@@ -103,6 +103,26 @@ The easiest way is to use the provided scripts:
 ./scripts/run-latest-agent.sh
 ```
 
+**Raw Container Run** (using podman/docker directly):
+
+```bash
+# From the project root directory
+podman run --rm --pull=newer \
+    -v "$(pwd):/workspace:ro" \
+    -w /workspace \
+    quay.io/mabekitzur/vep-police-agent:latest \
+    --api-key /workspace/API_KEY \
+    --google-token /workspace/GOOGLE_TOKEN \
+    --github-token /workspace/GITHUB_TOKEN \
+    --sheet-id YOUR_SHEET_ID \
+    --one-cycle
+```
+
+**Note**: 
+- `-v "$(pwd):/workspace:ro"` mounts your project directory (where API_KEY, GOOGLE_TOKEN files are) into the container as read-only
+- `-w /workspace` sets the working directory so `/workspace/API_KEY` paths work correctly
+- Run this from the project root directory where your credential files are located
+
 ### Command Line Options
 
 - `--api-key PATH`: Path to Google Gemini API key file
@@ -215,73 +235,6 @@ graph TD
 4. **Merge & Analyze**: All parallel checks converge to `merge_vep_updates`, then `analyze_combined` for holistic analysis
 5. **Sheet Updates**: When sheets need updating, routes to `update_sheets`
 6. **Wait Loop**: If no tasks, waits before returning to scheduler (continuous operation)
-
-### Core Nodes
-
-- **fetch_veps**: Discovers VEPs from GitHub issues and documentation
-- **run_monitoring**: Triggers parallel monitoring checks
-- **check_activity**: Monitors VEP activity and flags inactive ones
-- **check_compliance**: Verifies VEP process compliance
-- **check_deadlines**: Tracks deadlines and sends alerts
-- **check_exceptions**: Monitors for exceptions and post-freeze work
-- **merge_vep_updates**: Merges updates from parallel checks
-- **analyze_combined**: Performs holistic analysis across all VEPs
-- **update_sheets**: Updates Google Sheets with VEP status
-- **scheduler**: Determines which nodes to run next
-- **wait**: Waits between cycles
-
-### Services
-
-- **indexer.py**: Pre-fetches and indexes GitHub data (issues, PRs, VEP files, release schedules)
-- **llm_helper.py**: Utilities for invoking LLMs with tools and structured output
-- **mcp_factory.py**: Manages Model Context Protocol (MCP) tools for GitHub and Google Sheets
-- **utils.py**: General utilities (logging, API key management)
-
-### State Management
-
-State is managed through LangGraph's state graph, containing:
-- VEP list and metadata
-- Alerts and compliance flags
-- Last check times
-- Sheet configuration
-- Task scheduling
-
-## Development
-
-### Project Structure
-
-```
-vep-police-agent/
-├── main.py              # Entry point
-├── graph.py             # LangGraph definition
-├── state.py             # State models (Pydantic)
-├── config.py            # Configuration (models, settings)
-├── agent.md             # Detailed agent requirements
-├── nodes/               # Agent nodes (one per file)
-├── services/            # Core services
-├── scripts/             # Helper scripts
-└── container/           # Container build files
-```
-
-### Adding a New Node
-
-1. Create a new file in `nodes/`
-2. Define a function that takes `VEPState` and returns updated state
-3. Add the node to `graph.py`
-4. Configure model selection in `config.py` if needed
-
-### Testing
-
-Use debug modes for testing:
-- `--debug discover-veps`: Test VEP discovery and indexing
-- `--debug test-sheets`: Test Google Sheets integration
-
-### Logging
-
-The agent uses structured logging with timestamps and node names:
-```
-[2026-01-15 09:00:00] [INFO ] [fetch_veps     ] Fetching VEPs from GitHub
-```
 
 ## Troubleshooting
 
