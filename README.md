@@ -189,11 +189,17 @@ graph TD
     
     Scheduler -->|Loop continues| Scheduler
     
-    style Scheduler fill:#e1f5ff
-    style RunMonitoring fill:#fff4e1
-    style MergeUpdates fill:#e8f5e9
-    style AnalyzeCombined fill:#f3e5f5
-    style UpdateSheets fill:#ffebee
+    style Scheduler fill:#2196F3,stroke:#1976D2,stroke-width:2px,color:#fff
+    style RunMonitoring fill:#FF9800,stroke:#F57C00,stroke-width:2px,color:#fff
+    style MergeUpdates fill:#4CAF50,stroke:#388E3C,stroke-width:2px,color:#fff
+    style AnalyzeCombined fill:#9C27B0,stroke:#7B1FA2,stroke-width:2px,color:#fff
+    style UpdateSheets fill:#F44336,stroke:#D32F2F,stroke-width:2px,color:#fff
+    style FetchVEPs fill:#00BCD4,stroke:#0097A7,stroke-width:2px,color:#fff
+    style CheckDeadlines fill:#795548,stroke:#5D4037,stroke-width:2px,color:#fff
+    style CheckActivity fill:#607D8B,stroke:#455A64,stroke-width:2px,color:#fff
+    style CheckCompliance fill:#9E9E9E,stroke:#616161,stroke-width:2px,color:#fff
+    style CheckExceptions fill:#FFC107,stroke:#F57C00,stroke-width:2px,color:#000
+    style Wait fill:#9E9E9E,stroke:#616161,stroke-width:2px,color:#fff
 ```
 
 **Flow Description:**
