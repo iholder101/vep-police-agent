@@ -54,6 +54,31 @@ AVAILABLE_MODELS = [
     GEMINI_2_0_FLASH_LITE,   # Very fast, lightweight
 ]
 
+# Global flag to force all nodes to use the fastest model
+_USE_FASTEST_MODEL = False
+
+
+def set_fastest_model(enabled: bool = True) -> None:
+    """Enable or disable fastest model mode.
+    
+    When enabled, all nodes will use GEMINI_3_FLASH_PREVIEW regardless of their
+    configured model in NODE_MODELS.
+    
+    Args:
+        enabled: If True, force all nodes to use fastest model
+    """
+    global _USE_FASTEST_MODEL
+    _USE_FASTEST_MODEL = enabled
+
+
+def is_fastest_model_enabled() -> bool:
+    """Check if fastest model mode is enabled.
+    
+    Returns:
+        True if fastest model mode is enabled
+    """
+    return _USE_FASTEST_MODEL
+
 
 def get_model_for_node(node_name: str) -> str:
     """Get the model name for a specific node.
@@ -62,8 +87,11 @@ def get_model_for_node(node_name: str) -> str:
         node_name: Name of the node (e.g., "analyze_combined", "check_activity")
     
     Returns:
-        Model name to use for this node
+        Model name to use for this node. If fastest model mode is enabled,
+        always returns GEMINI_3_FLASH_PREVIEW.
     """
+    if _USE_FASTEST_MODEL:
+        return GEMINI_3_FLASH_PREVIEW
     return NODE_MODELS.get(node_name, DEFAULT_MODEL)
 
 

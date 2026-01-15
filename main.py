@@ -94,6 +94,11 @@ def parse_args():
         action="store_true",
         help="Run one cycle and exit after sheet update completes"
     )
+    parser.add_argument(
+        "--fastest-model",
+        action="store_true",
+        help="Force all nodes to use GEMINI_3_FLASH_PREVIEW (fastest model) regardless of node configuration"
+    )
     return parser.parse_args()
 
 
@@ -144,6 +149,11 @@ def setup_credentials(args):
     if args.debug:
         os.environ["DEBUG_MODE"] = args.debug
         log(f"Debug mode enabled: {args.debug}", node="main")
+    
+    if args.fastest_model:
+        import config
+        config.set_fastest_model(True)
+        log("Fastest model mode enabled: all nodes will use GEMINI_3_FLASH_PREVIEW", node="main")
 
 
 def main():
