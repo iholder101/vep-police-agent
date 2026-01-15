@@ -176,6 +176,7 @@ def scheduler_node(state: VEPState) -> Any:
         
         # Priority 3: Check if update_sheets or alert_summary are due
         # Only schedule these if VEPs have been analyzed (or if there are no VEPs to analyze)
+        # Both can be scheduled and will run sequentially (but quickly) for near-parallel execution
         elif not veps_need_analysis:
             # Check update_sheets
             should_update_sheets = _should_run_operation("update_sheets", last_check_times, update_sheets_interval, now, immediate_start=immediate_start)
@@ -199,8 +200,21 @@ def scheduler_node(state: VEPState) -> Any:
         else:
             log("sheets_need_update flag is set, but VEPs need analysis first - will schedule after analyze_combined", node="scheduler")
     
-    # Note: analyze_combined now routes directly to both update_sheets and alert_summary in parallel
-    # So we don't need to schedule them here - they run automatically after analyze_combined
+    # After analyze_combined completes, it routes back to scheduler
+    # Check if analyze_combined just completed (within last 5 seconds)
+    # If so, schedule both update_sheets and alert_summary to run (they'll run sequentially but quickly)
+    # This allows the scheduler to maintain control over scheduling while enabling near-parallel execution
+    analyze_combined_time = last_check_times.get("analyze_combined")
+    if analyze_combined_time:
+        time_since_analyze = (now - analyze_combined_time).total_seconds()
+        # If analyze_combined just ran, schedule both update_sheets and alert_summary
+        if time_since_analyze < 5:
+            if "update_sheets" not in next_tasks:
+                log("analyze_combined just completed, scheduling update_sheets", node="scheduler")
+                next_tasks.append("update_sheets")
+            if "alert_summary" not in next_tasks:
+                log("analyze_combined just completed, scheduling alert_summary", node="scheduler")
+                next_tasks.append("alert_summary")
     
     # Log scheduling decision
     if next_tasks:

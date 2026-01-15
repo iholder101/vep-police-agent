@@ -264,6 +264,8 @@ graph TD
     
     Scheduler -->|Periodic| FetchVEPs[fetch_veps]
     Scheduler -->|Need analysis| FetchVEPs
+    Scheduler -->|Sheets due| UpdateSheets[update_sheets]
+    Scheduler -->|Alerts due| AlertSummary[alert_summary]
     Scheduler -->|No tasks| Wait[wait]
     
     FetchVEPs --> RunMonitoring[run_monitoring]
@@ -279,8 +281,7 @@ graph TD
     CheckExceptions --> MergeUpdates
     
     MergeUpdates --> AnalyzeCombined[analyze_combined]
-    AnalyzeCombined --> UpdateSheets[update_sheets]
-    AnalyzeCombined --> AlertSummary[alert_summary]
+    AnalyzeCombined --> Scheduler
     
     AlertSummary -->|Alerts| SendEmail[send_email]
     AlertSummary -->|No alerts| Scheduler
