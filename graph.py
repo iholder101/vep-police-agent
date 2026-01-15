@@ -94,13 +94,34 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     workflow.add_edge("update_sheets", "scheduler")
     workflow.add_edge("send_email", "scheduler")
     
-    # fetch_veps goes back to scheduler
-    workflow.add_edge("fetch_veps", "scheduler")
+    # fetch_veps routes conditionally: if skip_monitoring, go to analyze_combined; otherwise scheduler
+    workflow.add_conditional_edges(
+        "fetch_veps",
+        route_after_fetch_veps,
+        {
+            "analyze_combined": "analyze_combined",
+            "scheduler": "scheduler",
+        }
+    )
     
     # wait node goes back to scheduler (creates continuous loop)
     workflow.add_edge("wait", "scheduler")
     
     return workflow.compile()
+
+
+def route_after_fetch_veps(state: VEPState) -> Literal["analyze_combined", "scheduler"]:
+    """Route after fetch_veps based on skip_monitoring flag.
+    
+    If skip_monitoring is enabled, route to analyze_combined to trigger alert_summary.
+    Otherwise, return to scheduler for normal flow.
+    """
+    skip_monitoring = state.get("skip_monitoring", False)
+    if skip_monitoring:
+        # Skip monitoring checks, go directly to analyze_combined which will trigger
+        # both update_sheets and alert_summary in parallel
+        return "analyze_combined"
+    return "scheduler"
 
 
 def route_scheduler(state: VEPState) -> Literal["fetch_veps", "run_monitoring", "update_sheets", "wait"]:

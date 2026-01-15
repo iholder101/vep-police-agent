@@ -111,12 +111,18 @@ Analyze the combined results from all monitoring checks. Merge insights and gene
         log(f"Info: LLM returned {len(updated_veps)} VEP(s), expected {len(veps)}. Using all returned VEPs.", node="analyze_combined", level="INFO")
     
     # Use LLM's decision on whether sheets need updating
-    sheets_need_update = result.sheets_need_update
+    # But if skip_monitoring is enabled, always set sheets_need_update to trigger alert_summary
+    skip_monitoring = state.get("skip_monitoring", False)
+    if skip_monitoring:
+        sheets_need_update = True  # Always trigger alert_summary when skip_monitoring is enabled
+        log("Skip-monitoring mode: Setting sheets_need_update=True to ensure alert_summary runs", node="analyze_combined")
+    else:
+        sheets_need_update = result.sheets_need_update
     
     if alerts:
         log(f"Generated {len(result.alerts)} additional alert(s) from combined analysis", node="analyze_combined")
     
-    log(f"Sheets update needed: {sheets_need_update} (decided by LLM)", node="analyze_combined")
+    log(f"Sheets update needed: {sheets_need_update} (decided by LLM{' or skip_monitoring mode' if skip_monitoring else ''})", node="analyze_combined")
     
     return {
         "last_check_times": last_check_times,
