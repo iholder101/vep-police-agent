@@ -11,6 +11,55 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 UNIT_NAME="vep-police-agent"
 UNIT_FILE="/etc/systemd/system/${UNIT_NAME}.service"
 
+# Show help if requested
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    cat <<EOF
+Usage: $0 [--help]
+
+Creates a systemd unit for the VEP Police Agent that runs continuously.
+
+The script will:
+- Create a systemd unit at /etc/systemd/system/${UNIT_NAME}.service
+- Use the run-latest-agent.sh script to run the agent
+- Configure automatic restart on failure
+- Set up logging via systemd journald
+
+Prerequisites:
+- Must be run as root (sudo)
+- The run-latest-agent.sh script must exist in the scripts directory
+
+After creating the unit:
+
+# Start the service
+sudo systemctl start ${UNIT_NAME}
+
+# Enable auto-start on boot
+sudo systemctl enable ${UNIT_NAME}
+
+# View status
+systemctl status ${UNIT_NAME}
+
+# View logs (follow mode)
+journalctl -u ${UNIT_NAME} -f
+
+# View recent logs
+journalctl -u ${UNIT_NAME} -n 100
+
+# Stop the service
+sudo systemctl stop ${UNIT_NAME}
+
+# Restart the service
+sudo systemctl restart ${UNIT_NAME}
+
+# Disable auto-start on boot
+sudo systemctl disable ${UNIT_NAME}
+
+Note: Logs are automatically saved by systemd and can be viewed with journalctl.
+      Logs persist across reboots (configurable in journald.conf).
+EOF
+    exit 0
+fi
+
 # Check if unit already exists
 if [ -f "$UNIT_FILE" ]; then
     echo "Systemd unit already exists: $UNIT_FILE"
