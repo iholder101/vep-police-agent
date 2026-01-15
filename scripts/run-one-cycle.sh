@@ -40,14 +40,20 @@ if [ "$SHEET_ID_IN_ARGS" = false ]; then
     CMD_ARGS+=(--sheet-id "$DEFAULT_SHEET_ID")
 fi
 
-# Add --one-cycle flag
-CMD_ARGS+=(--one-cycle)
-
 # Pass through any additional arguments/flags (e.g., --no-index-cache, --index-cache-minutes)
-if [ $# -gt 0 ]; then
-    for arg in "$@"; do
+# Filter out --one-cycle if user passed it (we'll add it explicitly)
+ONE_CYCLE_IN_ARGS=false
+for arg in "$@"; do
+    if [[ "$arg" == --one-cycle ]]; then
+        ONE_CYCLE_IN_ARGS=true
+    else
         CMD_ARGS+=("$arg")
-    done
+    fi
+done
+
+# Add --one-cycle flag (only if not already in user args)
+if [ "$ONE_CYCLE_IN_ARGS" = false ]; then
+    CMD_ARGS+=(--one-cycle)
 fi
 
 # Execute the command
