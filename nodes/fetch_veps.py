@@ -269,23 +269,38 @@ Step 5: Create VEPInfo Objects for ALL Discovered VEPs
 - activity: Initial activity data (can be minimal, monitoring checks will fill in)
 - target_release: Target release version (from file if available, or issue)
 
-CRITICAL REQUIREMENTS - YOU MUST FIND ALL VEPs:
-- THE TRACKING ISSUE IS THE PRIMARY SOURCE OF TRUTH - process issues FIRST
-- For EACH VEP-related issue in indexed_context["issues_index"], you MUST:
-  1. Create a VEPInfo object (THE ISSUE IS THE VEP)
-  2. Extract VEP number from issue title/body/labels
-  3. Use issue number as tracking_issue_id (REQUIRED)
-  4. Extract all metadata from the issue
-  5. Then match to VEP file (if exists) to enrich with file content
-- For EACH VEP file in indexed_context["vep_files_index"], you MUST:
-  1. Extract the VEP number (e.g., vep-0176, vep-0168, etc.)
-  2. Find the corresponding tracking issue (from Step 2)
-  3. If issue exists: Enrich the VEPInfo with file content
-  4. If NO issue exists (edge case): Create VEPInfo from file (note this is wrong but happens)
+CRITICAL REQUIREMENTS - YOU MUST FIND ALL VEPs (NO EXCEPTIONS):
+================================================================================
+MANDATORY PROCESSING REQUIREMENTS:
+1. THE TRACKING ISSUE IS THE PRIMARY SOURCE OF TRUTH - process issues FIRST
+2. For EACH VEP-related issue in indexed_context["issues_index"], you MUST:
+   a. Create a VEPInfo object (THE ISSUE IS THE VEP) - MANDATORY, NO SKIPPING
+   b. Extract VEP number from issue title/body/labels
+   c. Use issue number as tracking_issue_id (REQUIRED)
+   d. Extract all metadata from the issue
+   e. Then match to VEP file (if exists) to enrich with file content
+3. For EACH VEP file in indexed_context["vep_files_index"], you MUST:
+   a. Extract the VEP number (e.g., vep-0176, vep-0168, etc.)
+   b. Find the corresponding tracking issue (from Step 2)
+   c. If issue exists: Enrich the VEPInfo with file content
+   d. If NO issue exists (edge case): Create VEPInfo from file (note this is wrong but happens)
+4. COUNT VERIFICATION: After processing, count your VEPInfo objects:
+   - You MUST have at least one VEPInfo per VEP-related issue
+   - You MUST have accounted for every VEP file (either enriched existing or created new)
+   - If your count is less than the number of issues or files provided, you FAILED
+   - GO BACK and process ALL items systematically - do not return until count is correct
+
+ABSOLUTE PROHIBITIONS:
 - DO NOT SKIP ANY ISSUES - every VEP-related issue MUST become a VEPInfo object
 - DO NOT SKIP ANY FILES - match them to issues or handle edge case
-- The indexed context is your source of truth - it lists everything that exists
-- PRIORITY: Issues first (they define VEPs), then files (they document VEPs)
+- DO NOT FILTER - process everything provided
+- DO NOT EXCLUDE - every item must be accounted for
+- DO NOT RETURN until you have processed ALL items
+
+The indexed context is your source of truth - it lists everything that exists.
+PRIORITY: Issues first (they define VEPs), then files (they document VEPs).
+If you return fewer VEPs than the number of issues or files provided, you have FAILED.
+================================================================================
 
 IMPORTANT GUIDANCE:
 - You will receive INDEXED CONTEXT that pre-lists all issues and VEP files - USE THIS COMPREHENSIVE LIST
@@ -360,14 +375,22 @@ Return ALL discovered VEPs as a list of VEPInfo objects."""
     
     user_prompt = f"""Discover ALL VEPs from the kubevirt/enhancements repository.
 
-The indexed context contains a complete list of VEP files and VEP-related issues.
-You MUST process EVERY item in the indexed context systematically.
-Do not skip any VEP files or VEP-related issues - work through the entire index methodically.
+================================================================================
+CRITICAL: YOU MUST PROCESS EVERY SINGLE ITEM - NO EXCEPTIONS
+================================================================================
+You have been provided with:
+- {len(vep_related_issues)} VEP-related ISSUES (these are THE VEPs - primary source)
+- {len(vep_files_index)} VEP FILES (these document the VEPs - secondary source)
+
+YOU MUST CREATE A VEPInfo OBJECT FOR EVERY SINGLE ONE OF THESE {len(vep_related_issues) + len(vep_files_index)} ITEMS.
+DO NOT SKIP ANY. DO NOT FILTER. DO NOT EXCLUDE ANYTHING.
+If you return fewer than {max(len(vep_related_issues), len(vep_files_index))} VEPs, you have FAILED.
+================================================================================
 
 CURRENT STATE:
 {json.dumps({k: v for k, v in context.items() if k != "indexed_context"}, indent=2, default=str)}
 
-INDEXED INFORMATION (pre-fetched - USE THIS DATA DIRECTLY, DO NOT RE-READ FILES):
+INDEXED INFORMATION (pre-fetched - USE THIS DATA DIRECTLY):
 - Release Info: {json.dumps(indexed_context.get("release_info"), indent=2, default=str) if indexed_context.get("release_info") else "Not available"}
 - Enhancements README: {json.dumps(indexed_context.get("enhancements_readme"), indent=2, default=str) if indexed_context.get("enhancements_readme") else "Not available"}
 - Issues Index: Found {len(issues_index)} total issues, {len(vep_related_issues)} VEP-related issues
@@ -395,43 +418,71 @@ VEP Lifecycle:
 PRIORITY: Issues FIRST (they define VEPs), Files SECOND (they document VEPs)
 ================================================================================
 
-WORKFLOW (MUST FOLLOW ALL STEPS):
-1. Read enhancements_readme above to understand VEP process and labels
+MANDATORY WORKFLOW (FOLLOW EXACTLY - NO SHORTCUTS):
 
-2. CRITICAL FIRST: Process ALL {len(vep_related_issues)} VEP-related ISSUES (THE ISSUES ARE THE VEPs):
-   - For EACH VEP-related issue in the list above:
-     * Extract VEP number from issue title/body/labels (look for patterns like "vep-1234", "VEP-1234", "vep1234")
-     * Use issue number as tracking_issue_id (REQUIRED - this is the primary identifier)
-     * Use issue title as VEP title
-     * Use issue creator/assignee as owner
-     * Extract SIG from issue labels (sig/compute, sig/network, sig/storage)
-     * Use issue state as status (open = active VEP, closed = completed)
-     * Use issue timestamps for created_at and last_updated
-     * Create a VEPInfo object for THIS ISSUE - THE ISSUE IS THE VEP
-   - PRIORITIZE OPEN ISSUES: Open issues are active VEPs (feature not yet GA)
-   - EVERY VEP-related issue MUST become a VEPInfo object - do not skip any
+Step 1: Read enhancements_readme above to understand VEP process and labels
 
-3. SECONDARY: Match VEP files to issues (files document the VEPs):
-   - For each VEP file listed above ({len(vep_files_index)} files):
-     * Extract VEP number, title, owner, target_release, SIG from the content_preview
-     * Find the corresponding tracking issue (from step 2) by matching VEP number
-     * If issue exists: Enrich the VEPInfo with file content (update title, owner, target_release if more detailed)
-     * If NO issue exists (edge case - wrong but happens): Create VEPInfo from file, note this is an edge case
-   - Files may not exist yet for new VEPs - that's OK, the issue is still the VEP
+Step 2: Process ALL {len(vep_related_issues)} VEP-related ISSUES (PRIMARY - THE ISSUES ARE THE VEPs):
+   CRITICAL: You MUST process EVERY SINGLE ONE of the {len(vep_related_issues)} issues listed above.
+   For EACH issue in the list:
+     a. Extract VEP number from issue title/body/labels (patterns: "vep-1234", "VEP-1234", "vep1234", "VEP 1234", "VEP #1234")
+     b. Use issue number as tracking_issue_id (REQUIRED - this is the primary identifier)
+     c. Use issue title as VEP title
+     d. Use issue creator/assignee as owner
+     e. Extract SIG from issue labels (sig/compute, sig/network, sig/storage)
+     f. Use issue state as status (open = active VEP, closed = completed)
+     g. Use issue timestamps for created_at and last_updated
+     h. Create a VEPInfo object for THIS ISSUE - THE ISSUE IS THE VEP
+   
+   VERIFICATION: After processing, you MUST have created {len(vep_related_issues)} VEPInfo objects from issues.
+   Count them. If you have fewer, you missed some - go back and process ALL issues.
 
-4. Cross-reference with PRs to link VEP PRs and implementation PRs
+Step 3: Match VEP files to issues (SECONDARY - FILES DOCUMENT THE VEPs):
+   CRITICAL: You MUST process EVERY SINGLE ONE of the {len(vep_files_index)} files listed above.
+   For EACH file in the list:
+     a. Extract VEP number, title, owner, target_release, SIG from the content_preview
+     b. Find the corresponding tracking issue (from step 2) by matching VEP number
+     c. If issue exists: Enrich the VEPInfo with file content (update title, owner, target_release if more detailed)
+     d. If NO issue exists (edge case - wrong but happens): Create VEPInfo from file, note this is an edge case
+   
+   VERIFICATION: After processing, every file must either:
+     - Enriched an existing VEPInfo (from step 2), OR
+     - Created a new VEPInfo (if no matching issue)
+   Count them. Every file must be accounted for.
 
-CRITICAL REQUIREMENTS:
-- You have {len(vep_files_index)} VEP files with content already - you MUST process ALL {len(vep_files_index)} of them systematically
-- You have {len(vep_related_issues)} VEP-related issues - you MUST create a VEPInfo for EACH one
-- MINIMUM EXPECTED: You MUST return at least {max(len(vep_files_index), len(vep_related_issues))} VEPs (the larger of files or issues count)
-- TARGET: You should return {len(vep_files_index) + max(0, len(vep_related_issues) - len(vep_files_index))} VEPs (all files + issues without files)
-- COUNT VERIFICATION: After creating VEPInfo objects, count them. You must have at least one VEPInfo for each VEP file listed above, and one for each VEP-related issue.
-- If you return fewer VEPs than the number of files or issues provided, you are MISSING some - go back and check ALL issues and files again
-- The indexed context above eliminates the need for most tool calls - use the data directly
-- DO NOT skip any VEP-related issue - every issue marked as VEP-related must become a VEPInfo object
-- DO NOT skip any VEP file - every file in the list above must result in a VEPInfo object
-- The number of VEPs you discover should match or exceed the number of VEP files and VEP-related issues provided in the indexed context"""
+Step 4: Cross-reference with PRs to link VEP PRs and implementation PRs
+
+FINAL VERIFICATION REQUIREMENTS:
+================================================================================
+BEFORE RETURNING YOUR RESPONSE, YOU MUST VERIFY:
+
+1. COUNT CHECK: You must return AT LEAST {max(len(vep_related_issues), len(vep_files_index))} VEPs
+   - Minimum: {max(len(vep_related_issues), len(vep_files_index))} (one per issue OR one per file, whichever is larger)
+   - Target: {len(vep_related_issues) + len(vep_files_index)} (all issues + all files, accounting for overlaps)
+   - If you have fewer, you FAILED - go back and process ALL items
+
+2. ISSUE COVERAGE: Every one of the {len(vep_related_issues)} VEP-related issues MUST have a corresponding VEPInfo
+   - Check: For each issue number in the list above, verify you created a VEPInfo with that tracking_issue_id
+   - Missing any? You FAILED - go back and process ALL issues
+
+3. FILE COVERAGE: Every one of the {len(vep_files_index)} VEP files MUST be accounted for
+   - Check: For each file in the list above, verify you either:
+     * Enriched an existing VEPInfo (matched to an issue), OR
+     * Created a new VEPInfo (no matching issue - edge case)
+   - Missing any? You FAILED - go back and process ALL files
+
+4. SYSTEMATIC PROCESSING: Work through the lists methodically:
+   - Process issues in order: issue 1, issue 2, issue 3, ... issue {len(vep_related_issues)}
+   - Process files in order: file 1, file 2, file 3, ... file {len(vep_files_index)}
+   - Do not skip. Do not filter. Process EVERY item.
+
+IF YOUR FINAL COUNT IS LESS THAN {max(len(vep_related_issues), len(vep_files_index))} VEPs, YOU HAVE FAILED.
+GO BACK AND PROCESS ALL ITEMS SYSTEMATICALLY.
+================================================================================
+
+The indexed context above eliminates the need for most tool calls - use the data directly.
+DO NOT skip any VEP-related issue - every issue marked as VEP-related must become a VEPInfo object.
+DO NOT skip any VEP file - every file in the list above must result in a VEPInfo object."""
     
     # Invoke LLM with structured output
     try:
