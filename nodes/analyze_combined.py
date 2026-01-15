@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, List
 from state import VEPState
 from services.utils import log
 from services.llm_helper import invoke_llm_check
@@ -12,7 +12,7 @@ from services.response_models import CheckResponse
 class AnalyzeCombinedResponse(CheckResponse):
     """Response model for combined analysis."""
     sheets_need_update: bool = False  # Whether Google Sheets needs to be synced with these changes
-    general_insights: Optional[str] = None  # General insights and patterns across all VEPs (overall release health, trends, cross-VEP patterns)
+    general_insights: List[str] = []  # General insights and patterns across all VEPs (overall release health, trends, cross-VEP patterns) - each insight as a separate string
 
 
 def analyze_combined_node(state: VEPState) -> Any:
@@ -41,7 +41,7 @@ def analyze_combined_node(state: VEPState) -> Any:
         return {
             "last_check_times": last_check_times,
             "alerts": [],
-            "general_insights": None,
+            "general_insights": [],
             "sheets_need_update": False,
         }
     
@@ -74,7 +74,7 @@ def analyze_combined_node(state: VEPState) -> Any:
             "last_check_times": last_check_times,
             "veps": updated_veps,
             "alerts": alerts,
-            "general_insights": "Mock analysis: All checks completed. Status reviewed.",
+            "general_insights": ["Mock analysis: All checks completed. Status reviewed."],
             "sheets_need_update": sheets_need_update,
         }
     
@@ -98,11 +98,12 @@ Your task:
    - Priority level
    - Recommended actions
    - Cross-check patterns identified
-4. Generate general_insights (free-form text) covering:
+4. Generate general_insights (list of strings, each insight as a separate item) covering:
    - Overall release health assessment (e.g., "5 of 20 VEPs are at risk this release cycle")
    - Cross-VEP patterns and trends (e.g., "Most VEPs are behind schedule", "Compliance issues are concentrated in network SIG")
    - Release-wide recommendations (e.g., "Consider extending Enhancement Freeze deadline", "Focus SIG review efforts on network VEPs")
    - High-level observations that don't fit into individual VEP analysis
+   - Return as a list of strings, where each string is a separate insight/observation
 5. Generate additional alerts based on combined reasoning
 6. Determine if Google Sheets needs to be updated:
    - Set sheets_need_update to True if there are meaningful changes that should be reflected in the sheets
@@ -163,10 +164,13 @@ Analyze the combined results from all monitoring checks. Merge insights and gene
         log(f"Generated {len(result.alerts)} additional alert(s) from combined analysis", node="analyze_combined")
     
     if result.general_insights:
-        log(f"General insights generated: {len(result.general_insights)} characters", node="analyze_combined", level="DEBUG")
-        # Log first 200 chars as preview
-        preview = result.general_insights[:200] + ("..." if len(result.general_insights) > 200 else "")
-        log(f"General insights preview: {preview}", node="analyze_combined", level="DEBUG")
+        log(f"General insights generated: {len(result.general_insights)} insight(s)", node="analyze_combined", level="DEBUG")
+        # Log first 3 insights as preview
+        for i, insight in enumerate(result.general_insights[:3], 1):
+            preview = insight[:150] + ("..." if len(insight) > 150 else "")
+            log(f"  Insight {i}: {preview}", node="analyze_combined", level="DEBUG")
+        if len(result.general_insights) > 3:
+            log(f"  ... and {len(result.general_insights) - 3} more insight(s)", node="analyze_combined", level="DEBUG")
     
     log(f"Sheets update needed: {sheets_need_update} (decided by LLM{' or skip_monitoring mode' if skip_monitoring else ''})", node="analyze_combined")
     
