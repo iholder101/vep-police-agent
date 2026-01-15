@@ -170,9 +170,23 @@ def scheduler_node(state: VEPState) -> Any:
         
         # Priority 2: Check if VEPs need analysis (were fetched but not analyzed)
         elif veps_need_analysis and not skip_monitoring:
-            log("VEPs were fetched but not analyzed, scheduling fetch_veps to refresh and then analyze", node="scheduler")
-            next_tasks.append("fetch_veps")
-            # After fetching, run_monitoring will be automatically scheduled
+            # Check if fetch_veps just completed (within last 5 seconds)
+            # If so, schedule run_monitoring directly. Otherwise, schedule fetch_veps first.
+            if fetch_veps_time:
+                time_since_fetch = (now - fetch_veps_time).total_seconds()
+                if time_since_fetch < 5:
+                    # fetch_veps just completed, schedule run_monitoring directly
+                    log("VEPs were just fetched, scheduling run_monitoring to analyze them", node="scheduler")
+                    next_tasks.append("run_monitoring")
+                else:
+                    # fetch_veps ran earlier but VEPs weren't analyzed, refresh first
+                    log("VEPs were fetched but not analyzed, scheduling fetch_veps to refresh and then analyze", node="scheduler")
+                    next_tasks.append("fetch_veps")
+                    # After fetching, run_monitoring will be automatically scheduled
+            else:
+                # No fetch_veps time recorded, schedule fetch_veps first
+                log("VEPs need analysis but fetch_veps hasn't run, scheduling fetch_veps first", node="scheduler")
+                next_tasks.append("fetch_veps")
         
         # Priority 3: Check if update_sheets or alert_summary are due
         # Only schedule these if:
