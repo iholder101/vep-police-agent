@@ -199,20 +199,8 @@ def scheduler_node(state: VEPState) -> Any:
         else:
             log("sheets_need_update flag is set, but VEPs need analysis first - will schedule after analyze_combined", node="scheduler")
     
-    # After analyze_combined completes, it routes back to scheduler
-    # At that point, we should schedule both update_sheets and alert_summary in parallel
-    # Check if analyze_combined just completed (within last 5 seconds) and we haven't scheduled these yet
-    analyze_combined_time = last_check_times.get("analyze_combined")
-    if analyze_combined_time:
-        time_since_analyze = (now - analyze_combined_time).total_seconds()
-        # If analyze_combined just ran and we don't have update_sheets/alert_summary scheduled, add them
-        if time_since_analyze < 5:
-            if "update_sheets" not in next_tasks:
-                log("analyze_combined just completed, scheduling update_sheets", node="scheduler")
-                next_tasks.append("update_sheets")
-            if "alert_summary" not in next_tasks:
-                log("analyze_combined just completed, scheduling alert_summary", node="scheduler")
-                next_tasks.append("alert_summary")
+    # Note: analyze_combined now routes directly to both update_sheets and alert_summary in parallel
+    # So we don't need to schedule them here - they run automatically after analyze_combined
     
     # Log scheduling decision
     if next_tasks:

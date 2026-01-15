@@ -262,18 +262,16 @@ The agent's execution flow is orchestrated by a central scheduler that routes to
 graph TD
     Start([Start]) --> Scheduler[scheduler]
     
-    Scheduler -->|No VEPs or periodic refresh| FetchVEPs[fetch_veps]
-    Scheduler -->|VEPs need analysis| FetchVEPs
-    Scheduler -->|After analysis| UpdateSheets[update_sheets]
-    Scheduler -->|After analysis| AlertSummary[alert_summary]
+    Scheduler -->|Periodic| FetchVEPs[fetch_veps]
+    Scheduler -->|Need analysis| FetchVEPs
     Scheduler -->|No tasks| Wait[wait]
     
-    FetchVEPs -->|Auto-schedule| RunMonitoring[run_monitoring]
+    FetchVEPs --> RunMonitoring[run_monitoring]
     
-    RunMonitoring -->|Parallel| CheckDeadlines[check_deadlines]
-    RunMonitoring -->|Parallel| CheckActivity[check_activity]
-    RunMonitoring -->|Parallel| CheckCompliance[check_compliance]
-    RunMonitoring -->|Parallel| CheckExceptions[check_exceptions]
+    RunMonitoring --> CheckDeadlines[check_deadlines]
+    RunMonitoring --> CheckActivity[check_activity]
+    RunMonitoring --> CheckCompliance[check_compliance]
+    RunMonitoring --> CheckExceptions[check_exceptions]
     
     CheckDeadlines --> MergeUpdates[merge_vep_updates]
     CheckActivity --> MergeUpdates
@@ -281,16 +279,17 @@ graph TD
     CheckExceptions --> MergeUpdates
     
     MergeUpdates --> AnalyzeCombined[analyze_combined]
-    AnalyzeCombined -->|Routes back| Scheduler
+    AnalyzeCombined --> UpdateSheets[update_sheets]
+    AnalyzeCombined --> AlertSummary[alert_summary]
     
-    AlertSummary -->|If alerts exist| SendEmail[send_email]
+    AlertSummary -->|Alerts| SendEmail[send_email]
     AlertSummary -->|No alerts| Scheduler
     
     UpdateSheets --> Scheduler
     SendEmail --> Scheduler
     Wait --> Scheduler
     
-    Scheduler -->|Loop continues| Scheduler
+    Scheduler -.->|Loop| Scheduler
     
     style Scheduler fill:#2196F3,stroke:#1976D2,stroke-width:2px,color:#fff
     style RunMonitoring fill:#FF9800,stroke:#F57C00,stroke-width:2px,color:#fff

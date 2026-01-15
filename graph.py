@@ -87,8 +87,10 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     # After merging, analyze combined results
     workflow.add_edge("merge_vep_updates", "analyze_combined")
     
-    # Analysis completes, return to scheduler (scheduler decides what to do next)
-    workflow.add_edge("analyze_combined", "scheduler")
+    # Analysis completes, route to both update_sheets and alert_summary in parallel
+    # This allows them to run simultaneously for better performance
+    workflow.add_edge("analyze_combined", "update_sheets")
+    workflow.add_edge("analyze_combined", "alert_summary")
     
     # Alert summary decides if email needed, then routes to send_email or scheduler
     workflow.add_conditional_edges(
