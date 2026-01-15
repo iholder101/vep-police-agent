@@ -109,20 +109,57 @@ Your task:
    - If you get "Requested entity was not found" for get_spreadsheet: The service account doesn't have access to the spreadsheet. Return an error.
    - If you get "Drive storage quota exceeded": Cannot create new spreadsheets. Use existing shared spreadsheet.
    - Do NOT try to create a new spreadsheet if sheet_id is provided - use the existing one or return an error
-3. CRITICAL: After writing data, you MUST create a proper Google Sheets table with these steps (in order):
-   Step A: Write all data to the sheet (use write_range with all rows including header)
-   Step B: Format the header row (row 1):
-     - Use format_cells or update_cells to make header row bold
-     - Set background color for header row (e.g., {"backgroundColor": {"red": 0.9, "green": 0.9, "blue": 0.9}} for light gray)
-     - Range should be "Sheet1!A1:Z1" (adjust Z to match your column count)
-   Step C: Freeze the header row:
-     - Use freeze_rows tool with rows=1 to keep header visible when scrolling
-   Step D: Create filters on the header row:
-     - Use create_filter tool with range "Sheet1!A1:Z" (where Z is your last column)
-     - This enables filter dropdowns on the header row
-   Step E: (Optional) Apply alternating row colors:
-     - Use format_cells to set background colors for even/odd rows if desired
-   IMPORTANT: You MUST complete ALL steps (A through D) to create a proper table. Do not skip any step.
+3. CRITICAL: After writing data, you MUST create a proper Google Sheets table. A "proper table" means:
+   - Data is written (Step A)
+   - Header row is formatted (bold + background color) (Step B)
+   - Header row is frozen (Step C)
+   - Filters are enabled on the header row (Step D)
+   
+   WITHOUT ALL FOUR STEPS, IT IS NOT A PROPER TABLE. You MUST complete ALL steps in this exact order:
+   
+   Step A: Write all data to the sheet
+     - Use write_range(spreadsheetId, range, values) with all rows including header
+     - First row is header: ["VEP ID", "Name", "Title", ...]
+     - Each subsequent row is one VEP: [tracking_issue_id, name, title, ...]
+     - Range should be "Sheet1!A1:Z{N}" where N is number of rows (header + {vep_count} data rows)
+     - IMPORTANT: Write ALL {vep_count} VEPs - every VEP must be a row
+     - IMPORTANT: Column A (first column) MUST be "VEP ID" containing tracking_issue_id
+   
+   Step B: Format the header row (row 1) - MANDATORY
+     - Use format_cells tool with:
+       * spreadsheetId: the spreadsheet ID
+       * range: "Sheet1!A1:N1" (adjust N to match your last column, e.g., if you have 14 columns use N, if 20 use T)
+       * format: a JSON object with:
+         {
+           "textFormat": {"bold": true},
+           "backgroundColor": {"red": 0.9, "green": 0.9, "blue": 0.9}
+         }
+     - This makes the header row bold with light gray background
+     - DO NOT SKIP THIS STEP - header must be bold and have background color
+   
+   Step C: Freeze the header row - MANDATORY
+     - Use freeze_rows(spreadsheetId, frozenRowCount=1)
+     - This keeps row 1 visible when scrolling down
+     - DO NOT SKIP THIS STEP - header must be frozen
+   
+   Step D: Create filters on the header row - MANDATORY
+     - Use create_filter(spreadsheetId, range="Sheet1!A1:Z")
+     - Range should include header row AND all data rows (e.g., "Sheet1!A1:N77" for 76 VEPs + 1 header)
+     - Adjust the column (Z or N) to match your actual last column
+     - This enables filter dropdown arrows in the header row
+     - DO NOT SKIP THIS STEP - filters must be enabled
+   
+   Step E: (Optional) Apply alternating row colors for better readability
+     - Use format_cells with conditional formatting if desired
+     - This is optional but improves readability
+   
+   VERIFICATION CHECKLIST - Before returning success, verify:
+   □ Data is written (Step A completed)
+   □ Header row is bold and has background color (Step B completed - check with read_range)
+   □ Header row is frozen (Step C completed - you should see frozen line below row 1)
+   □ Filters are enabled (Step D completed - you should see filter icons in header row)
+   
+   IF ANY OF STEPS B, C, OR D ARE MISSING, THE TABLE IS INCOMPLETE. You MUST complete them all.
 4. Handle the sheet configuration:
    - sheet_id: The Google Sheets document ID (from URL: https://docs.google.com/spreadsheets/d/{sheet_id}/edit)
    - create_new: If True, create a new sheet; if False, update existing
@@ -163,12 +200,45 @@ WORKFLOW:
 2. If sheet_id is NOT provided and create_new is True:
    - Try to create a new spreadsheet (may fail if quota exceeded)
    
-3. After writing data:
-   - Format header row (bold, background color)
-   - Freeze header row
-   - Create filters on header row
+3. After writing data, you MUST create a proper table by completing these MANDATORY steps in order:
    
-CRITICAL: Column A MUST be "VEP ID" with tracking_issue_id values. Every VEP must be exactly one row."""
+   Step B: Format header row (MANDATORY - do not skip)
+     - Use format_cells tool with:
+       * spreadsheetId: the spreadsheet ID
+       * range: "Sheet1!A1:N1" (adjust N to your last column, e.g., N for 14 columns, T for 20 columns)
+       * format: {{"textFormat": {{"bold": true}}, "backgroundColor": {{"red": 0.9, "green": 0.9, "blue": 0.9}}}}
+     - This makes the header bold with gray background
+     - YOU MUST CALL THIS TOOL - do not skip formatting
+   
+   Step C: Freeze header row (MANDATORY - do not skip)
+     - Use freeze_rows tool with:
+       * spreadsheetId: the spreadsheet ID
+       * frozenRowCount: 1
+     - This keeps row 1 visible when scrolling
+     - YOU MUST CALL THIS TOOL - do not skip freezing
+   
+   Step D: Create filters (MANDATORY - do not skip)
+     - Use create_filter tool with:
+       * spreadsheetId: the spreadsheet ID
+       * range: "Sheet1!A1:N77" (adjust N to your last column and 77 to your total row count: 1 header + {vep_count} data rows)
+     - This enables filter dropdowns in the header row
+     - YOU MUST CALL THIS TOOL - do not skip filters
+   
+   ALL THREE STEPS (B, C, D) ARE MANDATORY. Without them, it's not a proper table.
+   After completing all steps, verify the table has: bold header, frozen row 1, and filter icons.
+   If you return success without completing Steps B, C, and D, you have FAILED.
+   
+CRITICAL: Column A MUST be "VEP ID" with tracking_issue_id values. Every VEP must be exactly one row.
+
+FINAL VERIFICATION BEFORE RETURNING SUCCESS:
+Before you return success=True, you MUST verify:
+1. All {vep_count} VEPs were written to the sheet (check row count: should be 1 header + {vep_count} data rows = {vep_count + 1} total rows)
+2. Step B completed: Header row (row 1) is formatted (bold text + gray background) - verify by reading the range and checking format
+3. Step C completed: Header row is frozen - verify by checking if row 1 stays visible when scrolling
+4. Step D completed: Filters are enabled on header row - verify by checking if filter icons appear in row 1
+
+If ANY of these are missing, the table is INCOMPLETE. You MUST complete Steps B, C, and D before returning success.
+Do not return success until you have verified all formatting steps are complete."""
     
     # Invoke LLM with Google Sheets MCP tools
     # Note: If Google Sheets MCP is not available, this will fail gracefully
