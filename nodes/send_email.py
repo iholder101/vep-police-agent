@@ -1,71 +1,12 @@
-"""Send email node - sends alerts via Resend (easiest), system mail, or Ethereal Email (fallback)."""
+"""Send email node - sends alerts via Resend API (easiest email service for real inbox delivery)."""
 
 import json
-import smtplib
-import subprocess
 import requests
 from datetime import datetime
-from typing import Any, List, Dict, Optional
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+from typing import Any, List
 from state import VEPState
 from services.utils import log
 import config
-
-
-def _get_ethereal_credentials() -> Optional[Dict[str, str]]:
-    """Get temporary SMTP credentials from Ethereal Email API.
-    
-    Ethereal Email provides temporary SMTP credentials via API - no registration needed.
-    Emails sent to these addresses are captured and can be viewed at https://ethereal.email
-    
-    Returns:
-        Dictionary with SMTP credentials (host, port, user, pass, web_url) or None if failed
-    """
-    try:
-        # Try the Ethereal Email API endpoint
-        # Note: The API may be rate-limited or require specific headers
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "User-Agent": "VEP-Police-Agent/1.0",
-        }
-        
-        # Try POST to create account with required parameters
-        response = requests.post(
-            "https://api.nodemailer.com/user",
-            headers=headers,
-            json={
-                "requestor": "vep-police-agent",
-                "version": "1.0"
-            },
-            timeout=10
-        )
-        
-        response.raise_for_status()
-        data = response.json()
-        
-        user = data.get("user")
-        password = data.get("pass")
-        
-        if not user or not password:
-            log("Ethereal Email API returned invalid credentials", node="send_email", level="ERROR")
-            return None
-        
-        return {
-            "host": "smtp.ethereal.email",
-            "port": 587,
-            "user": user,
-            "pass": password,
-            "from_email": user,  # Use the generated email as from address
-            "web_url": f"https://ethereal.email/message/{user}",
-        }
-    except Exception as e:
-        log(f"Failed to get Ethereal Email credentials: {e}", node="send_email", level="ERROR")
-        log("Ethereal Email API may be temporarily unavailable. Email will not be sent.", node="send_email", level="WARNING")
-        import traceback
-        log(f"Traceback: {traceback.format_exc()}", node="send_email", level="DEBUG")
-        return None
 
 
 def _send_via_resend(recipients: List[str], subject: str, html_body: str, text_body: str) -> bool:
@@ -114,101 +55,41 @@ def _send_via_resend(recipients: List[str], subject: str, html_body: str, text_b
         return True
         
     except requests.exceptions.HTTPError as e:
-        log(f"Resend API error: {e}", node="send_email", level="DEBUG")
+        log(f"Resend API error: {e}", node="send_email", level="ERROR")
         if e.response is not None:
             try:
                 error_data = e.response.json()
-                log(f"Resend error details: {error_data}", node="send_email", level="DEBUG")
+                log(f"Resend error details: {error_data}", node="send_email", level="ERROR")
             except:
-                log(f"Resend error response: {e.response.text}", node="send_email", level="DEBUG")
+                log(f"Resend error response: {e.response.text}", node="send_email", level="ERROR")
         return False
     except Exception as e:
-        log(f"Error sending via Resend: {e}", node="send_email", level="DEBUG")
-        return False
-
-
-def _send_via_system_mail(recipients: List[str], subject: str, text_body: str) -> bool:
-    """Try to send email using system's mail command (sends to real inboxes).
-    
-    This uses the local mail server (sendmail/postfix) if available.
-    No configuration needed - uses system defaults.
-    
-    Returns:
-        True if email was sent successfully, False otherwise
-    """
-    try:
-        # Try sendmail first (more reliable)
-        try:
-            for recipient in recipients:
-                process = subprocess.Popen(
-                    ['sendmail', '-t', '-i'],
-                    stdin=subprocess.PIPE,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    text=True
-                )
-                email_content = f"To: {recipient}\nSubject: {subject}\n\n{text_body}"
-                stdout, stderr = process.communicate(input=email_content, timeout=10)
-                
-                if process.returncode == 0:
-                    log(f"Email sent via sendmail to {recipient}", node="send_email", level="DEBUG")
-                else:
-                    log(f"sendmail failed for {recipient}: {stderr}", node="send_email", level="DEBUG")
-                    return False
-            
-            return True
-        except FileNotFoundError:
-            # sendmail not available, try mail command
-            pass
-        
-        # Fallback to mail command
-        for recipient in recipients:
-            process = subprocess.Popen(
-                ['mail', '-s', subject, recipient],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            stdout, stderr = process.communicate(input=text_body, timeout=10)
-            
-            if process.returncode == 0:
-                log(f"Email sent via mail command to {recipient}", node="send_email", level="DEBUG")
-            else:
-                log(f"mail command failed for {recipient}: {stderr}", node="send_email", level="DEBUG")
-                return False
-        
-        return True
-    except FileNotFoundError:
-        # Neither mail command available
-        return False
-    except Exception as e:
-        log(f"Error using system mail: {e}", node="send_email", level="DEBUG")
+        log(f"Error sending via Resend: {e}", node="send_email", level="ERROR")
+        import traceback
+        log(f"Traceback: {traceback.format_exc()}", node="send_email", level="DEBUG")
         return False
 
 
 def send_email_node(state: VEPState) -> Any:
-    """Send alerts via email using Resend (easiest), system mail, or Ethereal Email (fallback).
+    """Send alerts via email using Resend API.
     
     This node:
     1. Reads alerts from state (composed by alert_summary)
     2. Formats email content (HTML or plain text)
-    3. Tries Resend first (easiest - just needs RESEND_API_KEY env var, sends to real inboxes!)
-    4. Falls back to system mail if Resend not configured (delivers to real inboxes if configured)
-    5. Falls back to Ethereal Email if both unavailable (testing sandbox - NOT real inboxes)
-    6. Handles errors gracefully (logs but doesn't fail the workflow)
+    3. Sends via Resend API (requires RESEND_API_KEY env var)
+    4. Handles errors gracefully (logs but doesn't fail the workflow)
     
     Email configuration:
     - Recipients: From EMAIL_RECIPIENTS env var (comma-separated) or config
     - Resend API Key: Set RESEND_API_KEY env var (get free key at https://resend.com/api-keys)
-    - From: Resend default domain (Resend) or System default (system mail) or Ethereal (fallback)
+    - From: Resend default domain (onboarding@resend.dev)
     - Subject: "VEP Governance Alerts - [date]"
     - Body: Formatted alert summary
     
-    Priority order:
-    1. Resend (easiest - 3,000 emails/month free, no domain verification needed!)
-    2. System mail (works if sendmail/postfix configured)
-    3. Ethereal Email (testing sandbox - emails don't reach real inboxes)
+    Setup:
+    - Sign up at https://resend.com (free)
+    - Get API key from https://resend.com/api-keys
+    - Set: export RESEND_API_KEY='re_...'
     """
     alerts = state.get("alerts", [])
     alert_summary_text = state.get("alert_summary_text", "")
@@ -232,7 +113,37 @@ def send_email_node(state: VEPState) -> Any:
             "last_check_times": last_check_times,
         }
     
-    # Format email content first (before checking credentials, so we can log it if sending fails)
+    # Check if Resend API key is configured
+    api_key = config.get_resend_api_key()
+    if not api_key:
+        log("RESEND_API_KEY not configured - cannot send email", node="send_email", level="ERROR")
+        log("To send emails:", node="send_email", level="INFO")
+        log("  1. Sign up at https://resend.com (free)", node="send_email", level="INFO")
+        log("  2. Get API key from https://resend.com/api-keys", node="send_email", level="INFO")
+        log("  3. Set: export RESEND_API_KEY='re_...'", node="send_email", level="INFO")
+        
+        # Log email content as fallback so user can see what would have been sent
+        log("="*80, node="send_email", level="INFO")
+        log("EMAIL CONTENT (would have been sent if RESEND_API_KEY was configured):", node="send_email", level="INFO")
+        log("="*80, node="send_email", level="INFO")
+        log(f"To: {', '.join(recipients)}", node="send_email", level="INFO")
+        log(f"Subject: VEP Governance Alerts - {datetime.now().strftime('%Y-%m-%d %H:%M')}", node="send_email", level="INFO")
+        log(f"Body: {len(alerts)} alert(s) would have been sent", node="send_email", level="INFO")
+        log("="*80, node="send_email", level="INFO")
+        
+        # In one-cycle mode, exit even if email sending failed
+        if state.get("one_cycle", False):
+            log("One-cycle mode: Email sending failed (no API key), but exiting anyway", node="send_email")
+            return {
+                "last_check_times": last_check_times,
+                "_exit_after_sheets": True,
+            }
+        
+        return {
+            "last_check_times": last_check_times,
+        }
+    
+    # Format email content
     subject = f"VEP Governance Alerts - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     
     # Group alerts by subject and severity
@@ -243,7 +154,7 @@ def send_email_node(state: VEPState) -> Any:
             alerts_by_subject[subject_key] = []
         alerts_by_subject[subject_key].append(alert)
     
-    # Build email body (HTML) - without Ethereal URL for now
+    # Build email body (HTML)
     html_body = f"""<html>
 <head><style>
   body {{ font-family: Arial, sans-serif; margin: 20px; }}
@@ -256,7 +167,6 @@ def send_email_node(state: VEPState) -> Any:
   .low {{ border-left-color: #388e3c; background-color: #e8f5e9; }}
   .vep-id {{ font-weight: bold; color: #1976d2; }}
   .metadata {{ font-size: 0.9em; color: #666; margin-top: 5px; }}
-  .note {{ margin-top: 20px; padding: 10px; background-color: #e3f2fd; border-left: 4px solid #2196f3; }}
 </style></head>
 <body>
 <h1>VEP Governance Alerts</h1>
@@ -311,8 +221,8 @@ def send_email_node(state: VEPState) -> Any:
             text_body += f"  - VEP {vep_id} ({vep_name}): {title}\n    {message}\n"
         text_body += "\n"
     
-    # Try Resend first (easiest - sends to real inboxes, just needs RESEND_API_KEY env var)
-    log("Attempting to send email via Resend (real inbox delivery)...", node="send_email", level="INFO")
+    # Send via Resend
+    log("Sending email via Resend...", node="send_email", level="INFO")
     if _send_via_resend(recipients, subject, html_body, text_body):
         log(f"✅ Email sent successfully via Resend to {len(recipients)} recipient(s) - check your inbox!", node="send_email")
         
@@ -327,41 +237,11 @@ def send_email_node(state: VEPState) -> Any:
         return {
             "last_check_times": last_check_times,
         }
-    
-    # Try system mail second (sends to real inboxes if sendmail/postfix is configured)
-    log("Resend not configured, attempting system mail (real inbox delivery)...", node="send_email", level="INFO")
-    if _send_via_system_mail(recipients, subject, text_body):
-        log(f"✅ Email sent successfully via system mail to {len(recipients)} recipient(s) - check your inbox!", node="send_email")
-        
-        # Check if one-cycle mode is enabled - exit after email is sent
-        if state.get("one_cycle", False):
-            log("One-cycle mode: Email sent successfully, setting exit flag", node="send_email")
-            return {
-                "last_check_times": last_check_times,
-                "_exit_after_sheets": True,
-            }
-        
-        return {
-            "last_check_times": last_check_times,
-        }
-    
-    # System mail not available - fall back to Ethereal Email (testing sandbox)
-    log("⚠️  Resend and system mail not available", node="send_email", level="WARNING")
-    log("⚠️  Falling back to Ethereal Email (testing sandbox - emails will NOT arrive in your real inbox!)", node="send_email", level="WARNING")
-    log("💡 To receive emails in your real inbox:", node="send_email", level="INFO")
-    log("   EASIEST: Set RESEND_API_KEY env var (get free key at https://resend.com/api-keys)", node="send_email", level="INFO")
-    log("   - Resend: 3,000 emails/month free, no domain verification needed!", node="send_email", level="INFO")
-    log("   - Just sign up, get API key, set: export RESEND_API_KEY='re_...'", node="send_email", level="INFO")
-    log("   Alternative: Install/configure sendmail/postfix (e.g., 'sudo dnf install postfix')", node="send_email", level="INFO")
-    log("   For now, view emails at the Ethereal URL below", node="send_email", level="INFO")
-    
-    # Get Ethereal Email credentials (no registration needed!)
-    ethereal = _get_ethereal_credentials()
-    if not ethereal:
-        # If Ethereal Email fails, log the email content so user can see what would have been sent
-        log("Failed to get Ethereal Email credentials, cannot send email", node="send_email", level="ERROR")
+    else:
+        # Resend failed - log email content as fallback
+        log("Failed to send email via Resend", node="send_email", level="ERROR")
         log("="*80, node="send_email", level="INFO")
-        log("EMAIL CONTENT (would have been sent):", node="send_email", level="INFO")
+        log("EMAIL CONTENT (failed to send, but here's what would have been sent):", node="send_email", level="INFO")
         log("="*80, node="send_email", level="INFO")
         log(f"To: {', '.join(recipients)}", node="send_email", level="INFO")
         log(f"Subject: {subject}", node="send_email", level="INFO")
@@ -385,85 +265,3 @@ def send_email_node(state: VEPState) -> Any:
         return {
             "last_check_times": last_check_times,
         }
-    
-    log(f"Using Ethereal Email: {ethereal['from_email']} (view at {ethereal['web_url']})", node="send_email", level="INFO")
-    log("⚠️  WARNING: Ethereal Email is a testing sandbox - emails will NOT arrive in your real inbox!", node="send_email", level="WARNING")
-    log("⚠️  View emails at: " + ethereal['web_url'], node="send_email", level="WARNING")
-    
-    # Add Ethereal Email note to bodies now that we have credentials
-    html_body = html_body.replace("</body>", f"""
-<div class="note" style="background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin-top: 20px;">
-  <strong>⚠️ IMPORTANT:</strong> This email was sent via Ethereal Email (testing sandbox).
-  <br><strong>This email will NOT appear in your real inbox!</strong>
-  <br>View this email at: <a href="{ethereal['web_url']}">{ethereal['web_url']}</a>
-  <br><br>To receive emails in your real inbox, configure sendmail/postfix on your system.
-</div>
-</body>""")
-    text_body += f"\n\n{'='*60}\n"
-    text_body += f"⚠️  IMPORTANT: This email was sent via Ethereal Email (testing sandbox).\n"
-    text_body += f"⚠️  This email will NOT appear in your real inbox!\n"
-    text_body += f"View this email at: {ethereal['web_url']}\n"
-    text_body += f"To receive emails in your real inbox, configure sendmail/postfix on your system.\n"
-    text_body += f"{'='*60}\n"
-    
-    # Create email message
-    message = MIMEMultipart("alternative")
-    message["From"] = ethereal["from_email"]
-    message["To"] = ", ".join(recipients)
-    message["Subject"] = subject
-    
-    # Add both plain text and HTML parts
-    text_part = MIMEText(text_body, "plain")
-    html_part = MIMEText(html_body, "html")
-    message.attach(text_part)
-    message.attach(html_part)
-    
-    # Send via SMTP using Ethereal Email credentials
-    try:
-        log(f"Connecting to {ethereal['host']}:{ethereal['port']}", node="send_email", level="DEBUG")
-        
-        # Create SMTP connection with TLS
-        server = smtplib.SMTP(ethereal["host"], ethereal["port"])
-        server.starttls()  # Enable TLS
-        
-        # Login
-        server.login(ethereal["user"], ethereal["pass"])
-        
-        # Send email
-        server.send_message(message)
-        server.quit()
-        
-        log(f"Email sent successfully via Ethereal Email to {len(recipients)} recipient(s)", node="send_email")
-        log(f"View email at: {ethereal['web_url']}", node="send_email", level="INFO")
-        
-        # Check if one-cycle mode is enabled - exit after email is sent
-        if state.get("one_cycle", False):
-            log("One-cycle mode: Email sent successfully, setting exit flag", node="send_email")
-            return {
-                "last_check_times": last_check_times,
-                "_exit_after_sheets": True,
-            }
-        
-    except Exception as e:
-        log(f"Error sending email via Ethereal Email: {e}", node="send_email", level="ERROR")
-        import traceback
-        log(f"Traceback: {traceback.format_exc()}", node="send_email", level="ERROR")
-        
-        # Log email content as fallback so user can see what would have been sent
-        log("="*80, node="send_email", level="INFO")
-        log("EMAIL CONTENT (failed to send, but here's what would have been sent):", node="send_email", level="INFO")
-        log("="*80, node="send_email", level="INFO")
-        log(f"To: {', '.join(recipients)}", node="send_email", level="INFO")
-        log(f"Subject: {subject}", node="send_email", level="INFO")
-        log("Body (text preview):", node="send_email", level="INFO")
-        # Log first 500 chars of text body
-        text_preview = text_body[:500] + ("..." if len(text_body) > 500 else "")
-        for line in text_preview.split("\n")[:20]:  # First 20 lines
-            log(f"  {line}", node="send_email", level="INFO")
-        if len(text_body) > 500:
-            log(f"  ... (truncated, total length: {len(text_body)} chars)", node="send_email", level="INFO")
-        log("="*80, node="send_email", level="INFO")
-    
-    return {
-        "last_check_times": last_check_times,
-    }
