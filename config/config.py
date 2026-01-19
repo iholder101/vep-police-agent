@@ -40,6 +40,7 @@ NODE_MODELS: Dict[str, str] = {
 # Email notification configuration
 EMAIL_RECIPIENTS: List[str] = [
     "iholder@redhat.com",
+    "vromanso@redhat.com",
 ]
 
 # Agent operation interval (in seconds)
