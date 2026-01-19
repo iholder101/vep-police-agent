@@ -46,13 +46,14 @@ if [ "$1" = "--delete" ]; then
     
     # Reload systemd to recognize the removal
     systemctl daemon-reload
-    
+
+    # Delete all logs for this unit
+    echo "Deleting all logs for ${UNIT_NAME}..."
+    journalctl --rotate
+    journalctl --vacuum-time=1s --unit="${UNIT_NAME}" 2>/dev/null || true
+
     echo ""
-    echo "✓ Systemd unit removed successfully"
-    echo ""
-    echo "Note: Logs are still available in journald (they are not deleted)."
-    echo "      To view old logs: journalctl -u ${UNIT_NAME}"
-    echo "      To clear old logs: sudo journalctl --vacuum-time=1d (clears logs older than 1 day)"
+    echo "✓ Systemd unit and logs removed successfully"
     exit 0
 fi
 
