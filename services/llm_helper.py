@@ -89,6 +89,12 @@ def invoke_llm_with_tools(
             except Exception:
                 # If model requires fields, try with empty defaults
                 return response_model(**{})
+
+        # Log tool schemas for debugging parameter issues
+        for tool in tools:
+            if hasattr(tool, 'args_schema') and tool.args_schema:
+                schema_info = tool.args_schema.schema() if hasattr(tool.args_schema, 'schema') else str(tool.args_schema)
+                log(f"Tool {tool.name} schema: {json.dumps(schema_info, default=str)}", node=operation_type, level="DEBUG")
         
         # Get model for this operation type (node)
         import config
@@ -147,8 +153,8 @@ def invoke_llm_with_tools(
                 # Track tool call for summary
                 tool_call_counts[tool_name] = tool_call_counts.get(tool_name, 0) + 1
 
-                # Log tool call details (truncated to reduce verbosity)
-                log(f"Executing tool: {tool_name} with args: {json.dumps(tool_args, default=str)[:40]}...", node=operation_type, level="DEBUG")
+                # Log tool call details (full args for debugging parameter issues)
+                log(f"Executing tool: {tool_name} with args: {json.dumps(tool_args, default=str)}", node=operation_type, level="DEBUG")
                 
                 # Find and execute the tool
                 tool_result = None
