@@ -69,6 +69,7 @@ fi
 # Collect extra flags to pass to the agent (any args that aren't script-specific)
 EXTRA_FLAGS=()
 SHOW_HELP=false
+START_NOW=false
 for arg in "$@"; do
     case "$arg" in
         --help|-h)
@@ -76,6 +77,9 @@ for arg in "$@"; do
             ;;
         --delete)
             # Already handled above
+            ;;
+        --start)
+            START_NOW=true
             ;;
         *)
             EXTRA_FLAGS+=("$arg")
@@ -86,13 +90,14 @@ done
 # Show help if requested
 if [ "$SHOW_HELP" = true ]; then
     cat <<EOF
-Usage: $0 [--help|--delete] [AGENT_FLAGS...]
+Usage: $0 [--help|--delete|--start] [AGENT_FLAGS...]
 
 Creates or deletes a systemd unit for the VEP Police Agent.
 
 Options:
   --help, -h    Show this help message
   --delete      Remove the systemd unit and clean up (stops and disables service)
+  --start       Start the service immediately after creating the unit
 
 Agent Flags (passed to run-latest-agent.sh):
   Any additional flags are embedded in the systemd unit and passed to the agent.
@@ -222,8 +227,23 @@ systemctl daemon-reload
 
 echo "Systemd unit created successfully: $UNIT_FILE"
 echo ""
-echo "To start the service:"
-echo "  sudo systemctl start $UNIT_NAME"
+
+# Start the service if --start flag was provided
+if [ "$START_NOW" = true ]; then
+    echo "Starting service..."
+    systemctl start "$UNIT_NAME"
+    echo "✓ Service started"
+    echo ""
+    echo "View logs with:"
+    echo "  journalctl -u $UNIT_NAME -f -o cat"
+else
+    echo "To start the service:"
+    echo "  sudo systemctl start $UNIT_NAME"
+    echo ""
+    echo "To view logs (follow mode):"
+    echo "  journalctl -u $UNIT_NAME -f -o cat"
+fi
+
 echo ""
 echo "To enable auto-start on boot:"
 echo "  sudo systemctl enable $UNIT_NAME"
@@ -231,18 +251,5 @@ echo ""
 echo "To view status:"
 echo "  systemctl status $UNIT_NAME"
 echo ""
-echo "To view logs (follow mode):"
-echo "  journalctl -u $UNIT_NAME -f"
-echo ""
-echo "To view recent logs:"
-echo "  journalctl -u $UNIT_NAME -n 100"
-echo ""
 echo "To stop the service:"
 echo "  sudo systemctl stop $UNIT_NAME"
-echo ""
-echo "Note: Logs are automatically saved by systemd and can be viewed with journalctl."
-echo "      Persistent journal is enabled - logs will persist across reboots and after service stops."
-echo ""
-echo "To view logs from a stopped service (e.g., yesterday):"
-echo "  journalctl -u ${UNIT_NAME} --since yesterday"
-echo "  journalctl -u ${UNIT_NAME} --since '2024-01-15' --until '2024-01-16'"
