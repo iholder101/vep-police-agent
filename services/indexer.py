@@ -1644,6 +1644,47 @@ def _save_cached_index(cache_file: Path, indexed_context: Dict[str, Any]) -> Non
         # Don't fail if cache save fails - indexing still succeeded
 
 
+def compute_veps_missing_prs(
+    project_board_items: Dict[int, Dict[str, Any]],
+    vep_to_pr_mappings: Dict[str, List[Dict[str, Any]]]
+) -> List[Dict[str, Any]]:
+    """Find tracked VEPs that have no implementation PRs.
+
+    VEPs with status "Tracked" or "At risk" should have implementation PRs.
+    This function identifies VEPs on the project board that are missing PRs.
+
+    Args:
+        project_board_items: Dict mapping issue number to board item data
+        vep_to_pr_mappings: Dict mapping VEP number (string) to list of PRs
+
+    Returns:
+        List of VEPs that are tracked but have no implementation PRs
+    """
+    missing = []
+    for issue_num, item in project_board_items.items():
+        if not isinstance(item, dict):
+            continue
+
+        fields = item.get("fields", {})
+        status = fields.get("Status", "")
+
+        # Only check VEPs that are actively tracked
+        if status in ["Tracked", "At risk"]:
+            # VEP number in mappings is stored as string
+            vep_num = str(issue_num)
+            if vep_num not in vep_to_pr_mappings or len(vep_to_pr_mappings[vep_num]) == 0:
+                missing.append({
+                    "issue_number": issue_num,
+                    "title": item.get("title"),
+                    "status": status,
+                    "url": item.get("url"),
+                    "priority": fields.get("Priority"),
+                })
+
+    log(f"Found {len(missing)} tracked VEPs without implementation PRs", node="indexer")
+    return missing
+
+
 def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes: int = 60) -> Dict[str, Any]:
     """Create a comprehensive indexed context for VEP discovery.
     
@@ -1688,18 +1729,24 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
     # Fetch PRs once and reuse for mappings
     prs_index = index_kubevirt_prs(days_back=days_back)
 
+    # Fetch project board items and VEP-to-PR mappings (needed for compute_veps_missing_prs)
+    project_board_items = index_project_board_items(version=release_version)
+    vep_to_pr_mappings = index_vep_pr_mappings(prs_index=prs_index)
+
     indexed_context = {
         "release_info": release_info,
         "enhancements_readme": index_enhancements_readme(),
         "issues_index": index_enhancements_issues(days_back=days_back),
         "prs_index": prs_index,
         "vep_files_index": index_vep_files(),
-        # New: Project board items with all field metadata
-        "project_board_items": index_project_board_items(version=release_version),
-        # New: Pre-computed VEP-to-PR mappings
-        "vep_to_pr_mappings": index_vep_pr_mappings(prs_index=prs_index),
-        # New: PRs with approved-vep label
+        # Project board items with all field metadata
+        "project_board_items": project_board_items,
+        # Pre-computed VEP-to-PR mappings
+        "vep_to_pr_mappings": vep_to_pr_mappings,
+        # PRs with approved-vep label
         "approved_vep_prs": index_approved_vep_prs(prs_index=prs_index),
+        # VEPs that are tracked but have no implementation PRs
+        "veps_missing_prs": compute_veps_missing_prs(project_board_items, vep_to_pr_mappings),
         "indexed_at": datetime.now().isoformat(),
         "days_back": days_back,
     }
@@ -1713,9 +1760,10 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
     board_items_count = len(indexed_context["project_board_items"])
     vep_pr_mappings_count = len(indexed_context["vep_to_pr_mappings"])
     approved_vep_prs_count = len(indexed_context["approved_vep_prs"])
+    veps_missing_prs_count = len(indexed_context["veps_missing_prs"])
 
     log(f"Indexed context created: release={release}, readme={readme_available}, issues={issues_count}, prs={prs_count}, vep_files={vep_files_count}", node="indexer")
-    log(f"  - Project board items: {board_items_count}, VEP-to-PR mappings: {vep_pr_mappings_count}, approved-vep PRs: {approved_vep_prs_count}", node="indexer")
+    log(f"  - Project board items: {board_items_count}, VEP-to-PR mappings: {vep_pr_mappings_count}, approved-vep PRs: {approved_vep_prs_count}, VEPs missing PRs: {veps_missing_prs_count}", node="indexer")
     
     # Save to cache
     _save_cached_index(CACHE_FILE, indexed_context)
