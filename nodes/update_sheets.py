@@ -95,32 +95,22 @@ def update_sheets_node(state: VEPState) -> Any:
     # Build system prompt
     system_prompt = """You are a VEP governance agent syncing VEP data to Google Sheets.
 
-CRITICAL: You MUST use the provided Google Sheets tools to write data. Do NOT skip tool calls.
+CRITICAL: You MUST use the provided Google Sheets tools to write data.
 
-AVAILABLE TOOLS:
-- list_spreadsheets: List all spreadsheets
-- get_sheet_data(spreadsheet_id, range): Read data from sheet
-- update_cells(spreadsheet_id, range, values): Write data to sheet - THIS IS THE MAIN TOOL
-- batch_update_cells(spreadsheet_id, data): Batch write operations
-- list_sheets(spreadsheet_id): List sheets in a spreadsheet
-- create_sheet(spreadsheet_id, title): Create new sheet tab
-- create_spreadsheet(title): Create new spreadsheet
-- share_spreadsheet(spreadsheet_id, email, role): Share spreadsheet
+TOOL CALL FORMAT - Use keyword arguments:
+- update_cells(spreadsheet_id="...", range="Sheet1!A1", values=[[...]])
+- get_sheet_data(spreadsheet_id="...", range="Sheet1!A1:Z100")
 
 REQUIREMENTS:
 1. ONE ROW PER VEP - no skipping, filtering, or excluding
 2. Column A = "VEP ID" containing tracking_issue_id (GitHub issue number)
 3. Row count (excluding header) must equal VEP count
 
-SCHEMA: Design columns for stakeholders - include VEP ID, name, title, owner, status, compliance, activity, deadlines.
+COLUMNS: VEP ID, Name, Title, Owner, SIG, Status, Target Release, Days Inactive, Milestone Status
 
-WORKFLOW (you MUST execute these steps using tools):
-1. Read existing: get_sheet_data(spreadsheet_id, "Sheet1!A1:Z100")
-2. Write all data: update_cells(spreadsheet_id, "Sheet1!A1", [[header_row], [row1], [row2], ...]) - THIS IS REQUIRED
-
-ERROR HANDLING:
-- "Requested entity was not found" → spreadsheet not shared with service account
-- "Unable to parse range" → ensure range format is "Sheet1!A1:Z100" or "Sheet1!A1"
+WORKFLOW:
+1. Call update_cells with spreadsheet_id, range="Sheet1!A1", and values as 2D array
+2. First row = header, remaining rows = VEP data
 
 Return: table_schema, sheet_id, rows_updated, rows_added."""
     
@@ -158,19 +148,24 @@ Return: table_schema, sheet_id, rows_updated, rows_added."""
     vep_count = len(veps)
     sheet_id = sheet_config.get('sheet_id', 'NOT PROVIDED')
 
-    user_prompt = f"""SPREADSHEET ID: {sheet_id}
-VEP COUNT: {vep_count}
+    user_prompt = f"""Call update_cells NOW with these EXACT arguments:
+- spreadsheet_id: "{sheet_id}"
+- range: "VEP Information!A1"
+- values: 2D array with header row + {vep_count} data rows
 
-ACTION REQUIRED: Call update_cells to write this data to the sheet.
-
-VEP DATA TO WRITE:
+VEP DATA:
 {json.dumps(simplified_veps, indent=2, default=str)}
 
-EXECUTE THESE TOOL CALLS IN ORDER:
-1. get_sheet_data(spreadsheet_id="{sheet_id}", range="Sheet1!A1:Z100") - read current data
-2. update_cells(spreadsheet_id="{sheet_id}", range="Sheet1!A1", values=[[header], [row1], [row2], ...]) - write all {vep_count} VEPs
-
-START BY CALLING get_sheet_data NOW."""
+EXAMPLE TOOL CALL (use this exact format):
+update_cells(
+  spreadsheet_id="{sheet_id}",
+  range="VEP Information!A1",
+  values=[
+    ["VEP ID", "Name", "Title", "Owner", "SIG", "Status", "Target Release", "Days Inactive", "Milestone"],
+    [181, "vep-0181", "Example Title", "owner1", "compute", "Tracked", "v1.5", 5, "Complete"],
+    ...
+  ]
+)"""
     
     # Invoke LLM with Google Sheets MCP tools
     # Note: If Google Sheets MCP is not available, this will fail gracefully
