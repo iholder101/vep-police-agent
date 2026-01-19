@@ -18,6 +18,26 @@ from services.mcp_factory import get_mcp_tools_by_name
 CACHE_FILE = Path(__file__).parent.parent / ".vep_index_cache.json"
 
 
+def _get_api_delay() -> float:
+    """Get appropriate API delay based on authentication status.
+
+    With GITHUB_TOKEN: 5000 requests/hour limit -> 0.1s delay is safe
+    Without token: 60 requests/hour limit -> 2.0s delay needed
+
+    Returns:
+        Delay in seconds between API calls
+    """
+    github_token = os.environ.get("GITHUB_TOKEN")
+    if github_token:
+        return 0.1  # 100ms delay with token (safe for 5000/hour)
+    else:
+        return 2.0  # 2s delay without token (conservative for 60/hour)
+
+
+# Dynamic API delay based on authentication
+API_DELAY = _get_api_delay()
+
+
 def _call_with_retry(tool_func, max_retries=3, delay=5, **kwargs):
     """Call a tool function with retry logic for rate limit errors.
 
@@ -1137,9 +1157,9 @@ def index_vep_files() -> List[Dict[str, Any]]:
             log(f"Found {len(subdirectories)} subdirectories to search: {subdirectories[:5]}{'...' if len(subdirectories) > 5 else ''}", node="indexer", level="DEBUG")
             
             for i, subdir in enumerate(subdirectories):
-                # Add delay between requests to avoid rate limits (IP-based: 60/hour)
+                # Add delay between requests to avoid rate limits
                 if i > 0:
-                    time.sleep(2)  # 2s delay between subdirectory requests to stay under 60/hour
+                    time.sleep(API_DELAY)  # Dynamic delay based on auth status
 
                 try:
                     log(f"Reading subdirectory {subdir} ({i+1}/{len(subdirectories)})", node="indexer", level="DEBUG")
@@ -1263,9 +1283,9 @@ def index_vep_files() -> List[Dict[str, Any]]:
             # Read each VEP file and include its content
             vep_data = []
             for i, vep_file_path in enumerate(vep_files):
-                # Add delay between requests to avoid rate limits (IP-based: 60/hour)
+                # Add delay between requests to avoid rate limits
                 if i > 0:
-                    time.sleep(1)  # 1s delay between file reads to stay under 60/hour
+                    time.sleep(API_DELAY)  # Dynamic delay based on auth status
                 
                 try:
                     # vep_file_path is already a full path like "veps/sig-compute/vep-0176.md"

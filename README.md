@@ -26,6 +26,8 @@ The agent uses Large Language Models (LLMs) via Google's Gemini API to intellige
 - 📧 **Email Alerts**: Sends structured email notifications for deadlines, compliance issues, low activity, and risks
 - 💬 **Slack Alerts**: Sends color-coded Slack notifications via Incoming Webhooks (parallel with email)
 - 🔍 **Comprehensive VEP Discovery**: Finds VEPs from GitHub issues, PRs, and documentation files
+- 📋 **GitHub Project V2 Integration**: Fetches VEP status and metadata directly from kubevirt project boards
+- 🔗 **Implementation PR Tracking**: Pre-computes VEP-to-PR mappings from kubevirt/kubevirt repository
 - ⏰ **Deadline Monitoring**: Tracks Enhancement Freeze (EF) and Code Freeze (CF) dates from release schedules
 - ✅ **Compliance Checking**: Verifies SIG sign-offs, template completeness, and process adherence
 - 📈 **Activity Monitoring**: Flags inactive VEPs and tracks review lag times
@@ -400,6 +402,8 @@ If VEP discovery seems stale:
 ## Credits
 
 This project was developed with **heavy use of Cursor**, an AI-powered code editor. Cursor's advanced code generation, refactoring, and debugging capabilities were instrumental in implementing the complex agent logic, MCP integrations, and LangGraph orchestration. The iterative development process, prompt-driven code generation, and intelligent code completion provided by Cursor significantly accelerated the development of this agent.
+
+The **GitHub Project V2 integration** and **implementation PR tracking** features were inspired by [vladikr/vepMonitoring](https://github.com/vladikr/vepMonitoring), which pioneered the use of GraphQL queries for project board data and VEP-to-PR mapping patterns.
 
 ## License
 
