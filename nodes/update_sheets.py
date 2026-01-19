@@ -95,7 +95,17 @@ def update_sheets_node(state: VEPState) -> Any:
     # Build system prompt
     system_prompt = """You are a VEP governance agent syncing VEP data to Google Sheets.
 
-CRITICAL: You MUST use the provided Google Sheets tools to write data. Do NOT skip tool calls or assume the sheet is already updated. You MUST call write_range to write the data.
+CRITICAL: You MUST use the provided Google Sheets tools to write data. Do NOT skip tool calls.
+
+AVAILABLE TOOLS:
+- list_spreadsheets: List all spreadsheets
+- get_sheet_data(spreadsheet_id, range): Read data from sheet
+- update_cells(spreadsheet_id, range, values): Write data to sheet - THIS IS THE MAIN TOOL
+- batch_update_cells(spreadsheet_id, data): Batch write operations
+- list_sheets(spreadsheet_id): List sheets in a spreadsheet
+- create_sheet(spreadsheet_id, title): Create new sheet tab
+- create_spreadsheet(title): Create new spreadsheet
+- share_spreadsheet(spreadsheet_id, email, role): Share spreadsheet
 
 REQUIREMENTS:
 1. ONE ROW PER VEP - no skipping, filtering, or excluding
@@ -104,18 +114,13 @@ REQUIREMENTS:
 
 SCHEMA: Design columns for stakeholders - include VEP ID, name, title, owner, status, compliance, activity, deadlines.
 
-WORKFLOW (you MUST execute all these steps using tools):
-1. Verify access: get_spreadsheet(spreadsheetId) - if "not found", return error (needs sharing)
-2. Read existing: get_sheet_data or read_range
-3. Write all data: write_range with header row + all VEP rows - THIS IS REQUIRED
-4. Format as proper table:
-   - format_cells: header bold + gray background (range "Sheet1!A1:N1", format: {"textFormat":{"bold":true},"backgroundColor":{"red":0.9,"green":0.9,"blue":0.9}})
-   - freeze_rows: frozenRowCount=1
-   - create_filter: range covering header + all data rows
+WORKFLOW (you MUST execute these steps using tools):
+1. Read existing: get_sheet_data(spreadsheet_id, "Sheet1!A1:Z100")
+2. Write all data: update_cells(spreadsheet_id, "Sheet1!A1", [[header_row], [row1], [row2], ...]) - THIS IS REQUIRED
 
 ERROR HANDLING:
 - "Requested entity was not found" → spreadsheet not shared with service account
-- "Drive storage quota exceeded" → use existing spreadsheet
+- "Unable to parse range" → ensure range format is "Sheet1!A1:Z100" or "Sheet1!A1"
 
 Return: table_schema, sheet_id, rows_updated, rows_added."""
     
@@ -153,22 +158,19 @@ Return: table_schema, sheet_id, rows_updated, rows_added."""
     vep_count = len(veps)
     sheet_id = sheet_config.get('sheet_id', 'NOT PROVIDED')
 
-    user_prompt = f"""SHEET ID: {sheet_id}
+    user_prompt = f"""SPREADSHEET ID: {sheet_id}
 VEP COUNT: {vep_count}
 
-ACTION REQUIRED: Call the write_range tool NOW to write this data to the sheet.
+ACTION REQUIRED: Call update_cells to write this data to the sheet.
 
 VEP DATA TO WRITE:
 {json.dumps(simplified_veps, indent=2, default=str)}
 
 EXECUTE THESE TOOL CALLS IN ORDER:
-1. get_spreadsheet(spreadsheetId="{sheet_id}") - verify access
-2. write_range(spreadsheetId="{sheet_id}", range="Sheet1!A1", values=[header_row, ...data_rows...]) - write all {vep_count} VEPs
-3. format_cells - make header bold with gray background
-4. freeze_rows - freeze header row
-5. create_filter - add filters
+1. get_sheet_data(spreadsheet_id="{sheet_id}", range="Sheet1!A1:Z100") - read current data
+2. update_cells(spreadsheet_id="{sheet_id}", range="Sheet1!A1", values=[[header], [row1], [row2], ...]) - write all {vep_count} VEPs
 
-START BY CALLING get_spreadsheet NOW."""
+START BY CALLING get_sheet_data NOW."""
     
     # Invoke LLM with Google Sheets MCP tools
     # Note: If Google Sheets MCP is not available, this will fail gracefully
