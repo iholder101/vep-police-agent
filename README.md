@@ -114,7 +114,7 @@ graph TD
    - `check_compliance`: Verifies process compliance
    - `check_exceptions`: Monitors exceptions
 5. **Merge & Analyze**: All parallel checks converge to `merge_vep_updates`, then `analyze_combined` for holistic analysis
-6. **State Cache**: After `analyze_combined`, `save_state_cache` saves state to `.vep_state_cache.json` for fast debug cycles with `--use-state-cache`
+6. **State Cache**: After `analyze_combined`, `save_state_cache` saves state to `cache/state_cache.json` for fast debug cycles with `--use-state-cache`
 7. **Post-Analysis Actions**: After caching, routes back to `scheduler`, which automatically schedules both `update_sheets` and `alert_summary` in parallel:
    - `update_sheets`: Updates Google Sheets with VEP status
    - `alert_summary`: Composes structured alerts from VEP analysis
@@ -233,6 +233,7 @@ sudo ./scripts/create-systemd-unit.sh --delete
 # From the project root directory
 podman run --rm --pull=newer \
     -v "$(pwd):/workspace:ro" \
+    -v "$(pwd)/cache:/workspace/cache:rw" \
     -w /workspace \
     quay.io/mabekitzur/vep-police-agent:latest \
     --api-key /workspace/API_KEY \
@@ -242,8 +243,9 @@ podman run --rm --pull=newer \
     --one-cycle
 ```
 
-**Note**: 
-- `-v "$(pwd):/workspace:ro"` mounts your project directory (where API_KEY, GOOGLE_TOKEN files are) into the container as read-only
+**Note**:
+- `-v "$(pwd):/workspace:ro"` mounts your project directory as read-only (credentials stay secure)
+- `-v "$(pwd)/cache:/workspace/cache:rw"` mounts cache directory as read-write for persistence
 - `-w /workspace` sets the working directory so `/workspace/API_KEY` paths work correctly
 - Run this from the project root directory where your credential files are located
 
@@ -371,13 +373,15 @@ The agent runs operations on configurable intervals. By default, all operations 
 
 **Round-Hour Scheduling**: By default, operations wait until the next round hour (e.g., if it's 13:45, operations wait until 14:00). Use `--immediate-start` to run the first cycle immediately and use interval-based timing (current time + interval) instead of round hours.
 
-### Index Caching
+### Caching
 
-The agent caches indexed VEP data to avoid redundant API calls:
-- Cache file: `.vep_index_cache.json` (added to `.gitignore`)
+The agent caches data in the `cache/` directory to avoid redundant API calls:
+- `cache/index_cache.json`: Indexed VEP data from GitHub
+- `cache/state_cache.json`: State snapshot for `--use-state-cache`
 - Default cache age: 60 minutes
-- Use `--no-index-cache` to disable caching
+- Use `--no-index-cache` to disable index caching
 - Use `--index-cache-minutes` to adjust cache duration
+- Cache directory is mounted read-write in container while workspace stays read-only
 
 ## Troubleshooting
 
@@ -396,11 +400,11 @@ GitHub API rate limits:
 
 The agent includes retry logic with exponential backoff for rate limit errors.
 
-### Index Cache Issues
+### Cache Issues
 
 If VEP discovery seems stale:
 - Use `--no-index-cache` to force fresh indexing
-- Delete `.vep_index_cache.json` manually
+- Delete `cache/index_cache.json` manually
 - Adjust `--index-cache-minutes` for your needs
 
 ## Credits

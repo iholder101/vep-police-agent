@@ -15,7 +15,7 @@ from services.utils import log
 from services.mcp_factory import get_mcp_tools_by_name
 
 # Cache file path (relative to project root)
-CACHE_FILE = Path(__file__).parent.parent / ".vep_index_cache.json"
+CACHE_FILE = Path(__file__).parent.parent / "cache" / "index_cache.json"
 
 
 def _get_api_delay() -> float:

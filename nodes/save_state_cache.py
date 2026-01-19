@@ -8,7 +8,7 @@ from state import VEPState
 from services.utils import log
 
 # Cache file location (in project root)
-CACHE_FILE = Path(__file__).parent.parent / ".vep_state_cache.json"
+CACHE_FILE = Path(__file__).parent.parent / "cache" / "state_cache.json"
 
 
 def save_state_cache_node(state: VEPState) -> Any:

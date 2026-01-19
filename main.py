@@ -15,7 +15,7 @@ from services.utils import log, invoke_agent
 from state import VEPInfo, ReleaseSchedule
 
 # State cache file location
-STATE_CACHE_FILE = Path(__file__).parent / ".vep_state_cache.json"
+STATE_CACHE_FILE = Path(__file__).parent / "cache" / "state_cache.json"
 
 # Global flag for graceful shutdown
 _shutdown_requested = False

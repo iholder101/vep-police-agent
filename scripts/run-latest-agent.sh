@@ -51,9 +51,11 @@ fi
 
 # Execute the command
 # Set PYTHONUNBUFFERED=1 to ensure logs are flushed immediately (important for real-time log viewing)
+# Mount workspace as read-only, but cache directory as read-write for persistence
 podman run --rm --pull=newer \
     -e PYTHONUNBUFFERED=1 \
     -v "$PROJECT_ROOT:/workspace:ro" \
+    -v "$PROJECT_ROOT/cache:/workspace/cache:rw" \
     -w /workspace \
     quay.io/mabekitzur/vep-police-agent:latest \
     "${CMD_ARGS[@]}"

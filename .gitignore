@@ -4,5 +4,5 @@ GITHUB_TOKEN
 RESEND_API_KEY
 SLACK_WEBHOOK_URL
 **/__pycache__/
-.vep_index_cache.json
-.vep_state_cache.json
+cache/*
+!cache/.gitkeep
