@@ -133,6 +133,8 @@ graph TD
 - Google Gemini API key
 - Google Service Account credentials (for Google Sheets access)
 - GitHub Personal Access Token (optional, but recommended for higher rate limits)
+- Resend API key (optional, required for email alerts)
+- Slack Incoming Webhook URL (optional, required for Slack alerts)
 
 ## Installation
 
