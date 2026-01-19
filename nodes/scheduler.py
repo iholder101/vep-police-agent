@@ -134,8 +134,13 @@ def scheduler_node(state: VEPState) -> Any:
             if not state.get("skip_sheets", False):
                 next_tasks.append("update_sheets")
             next_tasks.append("alert_summary")
+            # Set last_check_times for fetch_veps so the interval check doesn't
+            # immediately schedule fetch_veps on the next scheduler call
+            last_check_times["fetch_veps"] = now
+            last_check_times["analyze_combined"] = now
             return {
                 "next_tasks": next_tasks,
+                "last_check_times": last_check_times,
                 "_state_cache_used": True,  # Mark cache as used
             }
         else:
