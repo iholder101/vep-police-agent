@@ -10,9 +10,11 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field, create_model, WithJsonSchema
 from services.utils import log
 
-# Custom type for arrays that produces Gemini-compatible schema but accepts any input
-# This solves the issue where Gemini requires items.type but we need to accept nested arrays
+# Custom types for arrays that produce Gemini-compatible schema but accept any input
+# FlexibleArray: for simple arrays (recipients, etc.)
 FlexibleArray = Annotated[Any, WithJsonSchema({'type': 'array', 'items': {'type': 'string'}})]
+# Flexible2DArray: for 2D arrays like spreadsheet data (array of rows, each row is array of cells)
+Flexible2DArray = Annotated[Any, WithJsonSchema({'type': 'array', 'items': {'type': 'array', 'items': {'type': 'string'}}})]
 
 
 def _fix_schema_for_gemini(schema: Dict[str, Any]) -> Dict[str, Any]:
@@ -80,8 +82,17 @@ def _create_args_schema_from_json_schema(tool_name: str, json_schema: Dict[str, 
         elif param_type == 'boolean':
             python_type = bool
         elif param_type == 'array':
-            # Use FlexibleArray - produces valid Gemini schema but accepts any input
-            python_type = FlexibleArray
+            # Check if this is a 2D array (array of arrays) by inspecting nested items
+            # Common 2D array fields: data, values (used by Google Sheets for spreadsheet data)
+            items_schema = param_schema.get('items', {})
+            items_type = items_schema.get('type', '') if isinstance(items_schema, dict) else ''
+
+            # Use Flexible2DArray for nested arrays or known 2D array fields
+            if items_type == 'array' or param_name in ('data', 'values'):
+                python_type = Flexible2DArray
+            else:
+                # Use FlexibleArray for simple 1D arrays
+                python_type = FlexibleArray
         elif param_type == 'object':
             python_type = Dict[str, Any]
         else:
