@@ -6,7 +6,6 @@ from .config import (
     EMAIL_RECIPIENTS,
     FETCH_VEPS_INTERVAL_SECONDS,
     VERSION_PROJECT_BOARDS,
-    get_project_board_for_version,
 )
 
 # Re-export constants
@@ -20,6 +19,8 @@ from .util import (
     GEMINI_2_0_FLASH_LITE,
     DEFAULT_MODEL,
     AVAILABLE_MODELS,
+    FAST_MODEL,
+    HEAVY_MODEL,
 )
 
 # Re-export helpers
@@ -30,4 +31,5 @@ from .util import (
     set_node_model,
     get_all_node_models,
     get_email_recipients,
+    get_project_board_for_version,
 )

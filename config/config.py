@@ -1,7 +1,7 @@
 """Configuration values for VEP governance agent."""
 
-from typing import Dict, List, Optional
-from .util import GEMINI_3_PRO_PREVIEW, GEMINI_3_FLASH_PREVIEW, DEFAULT_MODEL
+from typing import Dict, List
+from .util import FAST_MODEL, HEAVY_MODEL
 
 # Project board numbers by release version
 # Each kubevirt release has its own GitHub Project V2 board
@@ -11,45 +11,30 @@ VERSION_PROJECT_BOARDS: Dict[str, int] = {
     "1.8": 19,
 }
 
-
-def get_project_board_for_version(version: Optional[str]) -> Optional[int]:
-    """Get project board number for a version string like 'v1.8' or '1.8'.
-
-    Args:
-        version: Version string (e.g., "v1.8", "1.8", or None)
-
-    Returns:
-        Project board number if found, None otherwise
-    """
-    if not version:
-        return None
-    v = version.lstrip("v")
-    return VERSION_PROJECT_BOARDS.get(v)
-
 # Model configuration per node type
 # Architecture: fetch nodes use lightweight LLM to gather data, analysis nodes use powerful LLM to reason
 NODE_MODELS: Dict[str, str] = {
     # Deep reasoning nodes - use powerful model for analysis
-    "analyze_combined": GEMINI_3_PRO_PREVIEW,  # Single node that does ALL analysis with full context
-    "update_sheets": GEMINI_3_PRO_PREVIEW,
-    "alert_summary": GEMINI_3_PRO_PREVIEW,  # Generates summary-style notifications
+    "analyze_combined": HEAVY_MODEL,  # Single node that does ALL analysis with full context
+    "update_sheets": HEAVY_MODEL,
+    "alert_summary": HEAVY_MODEL,  # Generates summary-style notifications
 
     # Context fetch nodes - use fast model (Flash) to fetch data via GitHub MCP
     # These nodes ONLY fetch raw data, NO analysis - analysis is done by analyze_combined
-    "fetch_veps": GEMINI_3_FLASH_PREVIEW,
-    "check_activity": GEMINI_3_FLASH_PREVIEW,
-    "check_compliance": GEMINI_3_FLASH_PREVIEW,
-    "check_deadlines": GEMINI_3_FLASH_PREVIEW,
-    "check_exceptions": GEMINI_3_FLASH_PREVIEW,
-    "merge_vep_updates": GEMINI_3_FLASH_PREVIEW,  # Simple context merge, no deep reasoning
+    "fetch_veps": FAST_MODEL,
+    "check_activity": FAST_MODEL,
+    "check_compliance": FAST_MODEL,
+    "check_deadlines": FAST_MODEL,
+    "check_exceptions": FAST_MODEL,
+    "merge_vep_updates": FAST_MODEL,  # Simple context merge, no deep reasoning
 
     # Utility nodes
-    "send_email": GEMINI_3_FLASH_PREVIEW,
-    "send_slack": GEMINI_3_FLASH_PREVIEW,
-    "send_notifications": GEMINI_3_FLASH_PREVIEW,
-    "save_state_cache": GEMINI_3_FLASH_PREVIEW,
-    "scheduler": GEMINI_3_FLASH_PREVIEW,
-    "run_monitoring": GEMINI_3_FLASH_PREVIEW,
+    "send_email": FAST_MODEL,
+    "send_slack": FAST_MODEL,
+    "send_notifications": FAST_MODEL,
+    "save_state_cache": FAST_MODEL,
+    "scheduler": FAST_MODEL,
+    "run_monitoring": FAST_MODEL,
 }
 
 # Email notification configuration
