@@ -1,14 +1,108 @@
 """MCP (Model Context Protocol) tools integration for agents."""
 
-from typing import List, Any, Dict, Optional
+from typing import List, Any, Dict, Optional, Annotated
 import asyncio
 import os
 import json
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from langchain_core.tools import Tool
-from pydantic import BaseModel
+from langchain_core.tools import StructuredTool
+from pydantic import BaseModel, Field, create_model, WithJsonSchema
 from services.utils import log
+
+# Custom type for arrays that produces Gemini-compatible schema but accepts any input
+# This solves the issue where Gemini requires items.type but we need to accept nested arrays
+FlexibleArray = Annotated[Any, WithJsonSchema({'type': 'array', 'items': {'type': 'string'}})]
+
+
+def _fix_schema_for_gemini(schema: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Recursively fix JSON schema to be compatible with Gemini.
+
+    Gemini requires array types to have items with a type field.
+    This function replaces empty `items: {}` with `items: {"type": "string"}`.
+    """
+    if not isinstance(schema, dict):
+        return schema
+
+    result = {}
+    for key, value in schema.items():
+        if key == 'items' and isinstance(value, dict) and not value:
+            # Empty items - replace with string type
+            result[key] = {"type": "string"}
+        elif key == 'items' and isinstance(value, dict) and 'type' not in value:
+            # items exists but has no type - add string type
+            fixed_items = _fix_schema_for_gemini(value)
+            if 'type' not in fixed_items:
+                fixed_items['type'] = 'string'
+            result[key] = fixed_items
+        elif isinstance(value, dict):
+            result[key] = _fix_schema_for_gemini(value)
+        elif isinstance(value, list):
+            result[key] = [_fix_schema_for_gemini(item) if isinstance(item, dict) else item for item in value]
+        else:
+            result[key] = value
+
+    return result
+
+
+def _create_args_schema_from_json_schema(tool_name: str, json_schema: Dict[str, Any]) -> Optional[type]:
+    """
+    Create a Pydantic model from a JSON schema for use as args_schema.
+
+    This ensures proper type information is available for Gemini's function calling.
+    """
+    if not json_schema or 'properties' not in json_schema:
+        return None
+
+    # Fix the schema for Gemini compatibility
+    fixed_schema = _fix_schema_for_gemini(json_schema)
+
+    properties = fixed_schema.get('properties', {})
+    required = set(fixed_schema.get('required', []))
+
+    # Build field definitions for create_model
+    field_definitions = {}
+
+    for param_name, param_schema in properties.items():
+        param_type = param_schema.get('type', 'string')
+        param_desc = param_schema.get('description', '')
+        is_required = param_name in required
+
+        # Map JSON schema types to Python types
+        # Use Any for complex types to avoid schema validation issues
+        if param_type == 'string':
+            python_type = str
+        elif param_type == 'integer':
+            python_type = int
+        elif param_type == 'number':
+            python_type = float
+        elif param_type == 'boolean':
+            python_type = bool
+        elif param_type == 'array':
+            # Use FlexibleArray - produces valid Gemini schema but accepts any input
+            python_type = FlexibleArray
+        elif param_type == 'object':
+            python_type = Dict[str, Any]
+        else:
+            python_type = Any
+
+        # Create field with default or required
+        if is_required:
+            field_definitions[param_name] = (python_type, Field(description=param_desc))
+        else:
+            field_definitions[param_name] = (Optional[python_type], Field(default=None, description=param_desc))
+
+    if not field_definitions:
+        return None
+
+    # Create model with a unique name based on tool name
+    model_name = f"{tool_name}_args"
+    try:
+        return create_model(model_name, **field_definitions)
+    except Exception as e:
+        log(f"Failed to create args_schema for {tool_name}: {e}", node="mcp_factory", level="DEBUG")
+        return None
 
 # ExceptionGroup is available in Python 3.11+ as a built-in
 # For Python < 3.11, we'll use hasattr checks instead
@@ -45,7 +139,7 @@ MCP_CONFIGS = {
     },
 }
 
-async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
+async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[StructuredTool]:
     """
     Retrieve tools from one or more MCP servers (async version).
     
@@ -204,6 +298,8 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
                     if tool_docs:
                         description += "\n\n" + tool_docs
                     
+                    # Create Pydantic args_schema for proper Gemini compatibility
+                    args_schema = None
                     if input_schema and 'properties' in input_schema:
                         param_info = []
                         properties = input_schema['properties']
@@ -215,11 +311,16 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
                             param_info.append(f"- {param_name} ({param_type}){required_marker}: {param_desc}")
                         if param_info:
                             description += "\n\nParameters:\n" + "\n".join(param_info)
-                    
-                    langchain_tool = Tool(
+
+                        # Create args_schema for Gemini compatibility
+                        args_schema = _create_args_schema_from_json_schema(mcp_tool.name, input_schema)
+
+                    # Use StructuredTool for proper schema handling with Gemini
+                    langchain_tool = StructuredTool.from_function(
+                        func=tool_func,
                         name=mcp_tool.name,
                         description=description,
-                        func=tool_func,
+                        args_schema=args_schema,
                     )
                     all_tools.append(langchain_tool)
                 
@@ -350,7 +451,7 @@ def _extract_error_messages(exc: Exception) -> list:
     return error_messages
 
 
-def get_mcp_tools_by_config(*mcp_configs: Dict[str, Any]) -> List[Tool]:
+def get_mcp_tools_by_config(*mcp_configs: Dict[str, Any]) -> List[StructuredTool]:
     """
     Retrieve tools from one or more MCP servers using configuration dictionaries.
     
@@ -385,7 +486,7 @@ def get_mcp_tools_by_config(*mcp_configs: Dict[str, Any]) -> List[Tool]:
         raise
 
 
-def get_mcp_tools_by_name(*mcp_names: str) -> List[Tool]:
+def get_mcp_tools_by_name(*mcp_names: str) -> List[StructuredTool]:
     """
     Retrieve tools from one or more MCP servers by name.
     
@@ -470,6 +571,6 @@ def get_mcp_tools_by_name(*mcp_names: str) -> List[Tool]:
     
     return get_mcp_tools_by_config(*configs)
 
-def get_all_tools() -> List[Tool]:
+def get_all_tools() -> List[StructuredTool]:
     """Get tools from all configured MCP servers."""
     return get_mcp_tools_by_name(*MCP_CONFIGS.keys())
