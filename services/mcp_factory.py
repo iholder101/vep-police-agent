@@ -6,7 +6,7 @@ import os
 import json
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from langchain_core.tools import Tool
+from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, create_model
 from services.utils import log
 
@@ -264,10 +264,10 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
                             except Exception as e:
                                 log(f"Failed to create args_schema for {mcp_tool.name}: {e}", node="mcp_factory", level="DEBUG")
 
-                    langchain_tool = Tool(
+                    langchain_tool = StructuredTool.from_function(
+                        func=tool_func,
                         name=mcp_tool.name,
                         description=description,
-                        func=tool_func,
                         args_schema=args_schema,
                     )
                     all_tools.append(langchain_tool)
