@@ -1,13 +1,46 @@
 """Helper functions for creating LLM agents with MCP tools."""
 
 import json
+import time
 from typing import Dict, Any, Type, TypeVar
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from services.utils import get_model, log
 from services.mcp_factory import get_mcp_tools_by_name
+from config.config import LLM_MAX_RETRIES, LLM_INITIAL_DELAY, LLM_MAX_TIMEOUT
 
 T = TypeVar('T', bound=BaseModel)
+
+
+def _invoke_with_retry(llm, messages, operation_type: str):
+    """Invoke LLM with exponential backoff on rate limit errors.
+
+    Returns the LLM response or raises if max retries/timeout exceeded.
+    """
+    start_time = time.time()
+    delay = LLM_INITIAL_DELAY
+
+    for attempt in range(LLM_MAX_RETRIES + 1):
+        try:
+            return llm.invoke(messages)
+        except Exception as e:
+            error_str = str(e)
+            # Check if it's a rate limit error
+            if "RESOURCE_EXHAUSTED" not in error_str and "429" not in error_str:
+                raise  # Not a rate limit error, re-raise immediately
+
+            elapsed = time.time() - start_time
+            if elapsed + delay > LLM_MAX_TIMEOUT:
+                log(f"Rate limit retry would exceed max timeout ({LLM_MAX_TIMEOUT}s), aborting",
+                    node=operation_type, level="ERROR")
+                raise
+
+            log(f"Rate limited, retrying in {delay}s (attempt {attempt+1}/{LLM_MAX_RETRIES})",
+                node=operation_type, level="WARNING")
+            time.sleep(delay)
+            delay = min(delay * 2, 60)  # Cap at 60s per retry
+
+    raise Exception(f"Max retries ({LLM_MAX_RETRIES}) exceeded for {operation_type}")
 
 
 def invoke_llm_with_tools(
@@ -69,29 +102,29 @@ def invoke_llm_with_tools(
             # Increased for fetch_veps which may need to read many issue details
             max_iterations = 30 if operation_type == "fetch_veps" else 10
         iteration = 0
+        tool_call_counts = {}  # Track tool calls for summary
         while iteration < max_iterations:
             iteration += 1
             log(f"Invoking LLM for {operation_type} (iteration {iteration}/{max_iterations})...", node=operation_type)
-            try:
-                response = llm_with_tools.invoke(messages)
-                log(f"LLM invocation completed for {operation_type} (iteration {iteration})", node=operation_type, level="DEBUG")
-            except Exception as e:
-                log(f"LLM invocation failed for {operation_type} (iteration {iteration}): {e}", node=operation_type, level="ERROR")
-                raise
-            
+            response = _invoke_with_retry(llm_with_tools, messages, operation_type)
+            log(f"LLM invocation completed for {operation_type} (iteration {iteration})", node=operation_type, level="DEBUG")
+
             # Check if response has tool calls
             if not (hasattr(response, 'tool_calls') and response.tool_calls):
                 # No more tool calls, break and get structured output
                 break
-            
+
             log(f"LLM made {len(response.tool_calls)} tool call(s), iteration {iteration}", node=operation_type)
-            
+
             # Execute tool calls
             tool_messages = []
             for tool_call in response.tool_calls:
                 tool_name = tool_call.get("name", "")
                 tool_args = tool_call.get("args", {})
-                
+
+                # Track tool call for summary
+                tool_call_counts[tool_name] = tool_call_counts.get(tool_name, 0) + 1
+
                 # Log tool call details (truncated to reduce verbosity)
                 log(f"Executing tool: {tool_name} with args: {json.dumps(tool_args, default=str)[:40]}...", node=operation_type, level="DEBUG")
                 
@@ -134,11 +167,17 @@ def invoke_llm_with_tools(
         # Use structured output - LLM will return validated Pydantic model
         log(f"Requesting structured output for {operation_type}...", node=operation_type, level="DEBUG")
         structured_llm = llm_with_tools.with_structured_output(response_model)
-        result = structured_llm.invoke(messages)
+        result = _invoke_with_retry(structured_llm, messages, operation_type)
         log(f"Structured output received for {operation_type}", node=operation_type, level="DEBUG")
         
         # Response is already a validated Pydantic model!
         log(f"Successfully received structured response for {operation_type}", node=operation_type)
+
+        # Log tool call summary (helpful for debugging sheets updates, etc.)
+        if tool_call_counts:
+            summary = ", ".join(f"{name}: {count}" for name, count in sorted(tool_call_counts.items()))
+            log(f"Tool calls summary: {summary}", node=operation_type)
+
         return result
         
     except Exception as e:

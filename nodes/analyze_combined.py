@@ -127,7 +127,8 @@ YOUR ANALYSIS TASKS:
 IMPORTANT: Generate alerts in the `alerts` field for issues needing attention. Each alert should have:
 - subject: brief title
 - severity: "low", "medium", "high", "critical"
-- vep_name: which VEP (or "general" for release-wide)
+- vep_id: the tracking_issue_id (GitHub issue number, e.g. 181)
+- vep_name: which VEP identifier (e.g. "vep-0181")
 - message: what's the issue and recommended action"""
 
     # Serialize VEPs with full context for LLM

@@ -1922,7 +1922,18 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
 
     log(f"Indexed context created: release={release}, phase={release_phase}, readme={readme_available}, issues={issues_count}, prs={prs_count}, vep_files={vep_files_count}", node="indexer")
     log(f"  - Project board items: {board_items_count}, VEP-to-PR mappings: {vep_pr_mappings_count}, approved-vep PRs: {approved_vep_prs_count}, VEPs missing PRs: {veps_missing_prs_count}", node="indexer")
-    
+
+    # Diagnostic: log issues excluded as non-VEP related
+    all_issues = indexed_context["issues_index"]
+    vep_related_count = sum(1 for i in all_issues if i.get("is_vep_related", False))
+    non_vep_count = issues_count - vep_related_count
+    log(f"  - VEP-related issues: {vep_related_count}, excluded as non-VEP: {non_vep_count}", node="indexer")
+
+    if non_vep_count > 0:
+        excluded_issues = [i for i in all_issues if not i.get("is_vep_related", False)]
+        excluded_titles = [f"#{i.get('number')}: {i.get('title', 'untitled')[:50]}" for i in excluded_issues[:10]]
+        log(f"  - Excluded issues (first 10): {', '.join(excluded_titles)}", node="indexer", level="DEBUG")
+
     # Save to cache
     _save_cached_index(CACHE_FILE, indexed_context)
     

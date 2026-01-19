@@ -179,7 +179,6 @@ Keep alerts concise. Limit to the top {MAX_ALERTS} by severity."""
 
     output = {
         "last_check_times": last_check_times,
-        "alerts": formatted_alerts,
         "alert_summary_text": result.summary_text or _build_fallback_summary(formatted_alerts, veps, general_insights),
         "executive_summary": result.executive_summary,
         "changes_since_last": result.changes_since_last,
