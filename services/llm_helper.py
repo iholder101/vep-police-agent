@@ -43,16 +43,22 @@ def _invoke_with_retry(llm, messages, operation_type: str):
     raise Exception(f"Max retries ({LLM_MAX_RETRIES}) exceeded for {operation_type}")
 
 
+class NoToolsCalledException(Exception):
+    """Raised when LLM completes without calling any tools but tools were required."""
+    pass
+
+
 def invoke_llm_with_tools(
     operation_type: str,
     state_context: Dict[str, Any],
     system_prompt: str,
     user_prompt: str,
     response_model: Type[T],
-    mcp_names: tuple = ("github",)
+    mcp_names: tuple = ("github",),
+    require_tools: bool = False
 ) -> T:
     """Invoke LLM with MCP tools using structured output.
-    
+
     Args:
         operation_type: Type of operation (for logging)
         state_context: Current state context
@@ -60,9 +66,13 @@ def invoke_llm_with_tools(
         user_prompt: User prompt with specific instructions
         response_model: Pydantic model for structured output
         mcp_names: Tuple of MCP server names to load tools from (default: ("github",))
-    
+        require_tools: If True, raises NoToolsCalledException if LLM doesn't call any tools
+
     Returns:
         Validated Pydantic model instance
+
+    Raises:
+        NoToolsCalledException: If require_tools=True and no tools were called
     """
     try:
         # Get MCP tools
@@ -177,6 +187,11 @@ def invoke_llm_with_tools(
         if tool_call_counts:
             summary = ", ".join(f"{name}: {count}" for name, count in sorted(tool_call_counts.items()))
             log(f"Tool calls summary: {summary}", node=operation_type)
+        else:
+            # No tools were called - this is often a sign of LLM hallucination
+            log(f"WARNING: LLM completed {operation_type} without calling any tools!", node=operation_type, level="WARNING")
+            if require_tools:
+                raise NoToolsCalledException(f"LLM completed {operation_type} without calling any tools")
 
         return result
         

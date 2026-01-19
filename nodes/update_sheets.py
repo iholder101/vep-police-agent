@@ -6,7 +6,7 @@ from typing import Any, List, Dict, Optional
 from pydantic import BaseModel
 from state import VEPState
 from services.utils import log
-from services.llm_helper import invoke_llm_with_tools
+from services.llm_helper import invoke_llm_with_tools, NoToolsCalledException
 
 
 class UpdateSheetsResponse(BaseModel):
@@ -95,6 +95,8 @@ def update_sheets_node(state: VEPState) -> Any:
     # Build system prompt
     system_prompt = """You are a VEP governance agent syncing VEP data to Google Sheets.
 
+CRITICAL: You MUST use the provided Google Sheets tools to write data. Do NOT skip tool calls or assume the sheet is already updated. You MUST call write_range to write the data.
+
 REQUIREMENTS:
 1. ONE ROW PER VEP - no skipping, filtering, or excluding
 2. Column A = "VEP ID" containing tracking_issue_id (GitHub issue number)
@@ -102,10 +104,10 @@ REQUIREMENTS:
 
 SCHEMA: Design columns for stakeholders - include VEP ID, name, title, owner, status, compliance, activity, deadlines.
 
-WORKFLOW:
+WORKFLOW (you MUST execute all these steps using tools):
 1. Verify access: get_spreadsheet(spreadsheetId) - if "not found", return error (needs sharing)
 2. Read existing: get_sheet_data or read_range
-3. Write all data: write_range with header row + all VEP rows
+3. Write all data: write_range with header row + all VEP rows - THIS IS REQUIRED
 4. Format as proper table:
    - format_cells: header bold + gray background (range "Sheet1!A1:N1", format: {"textFormat":{"bold":true},"backgroundColor":{"red":0.9,"green":0.9,"blue":0.9}})
    - freeze_rows: frozenRowCount=1
@@ -153,7 +155,8 @@ Column A must be "VEP ID" with tracking_issue_id. Verify row count before return
             system_prompt,
             user_prompt,
             UpdateSheetsResponse,
-            mcp_names=("google-sheets",)
+            mcp_names=("google-sheets",),
+            require_tools=True
         )
         
         # Check if result is valid (not an error response)
@@ -263,21 +266,41 @@ Column A must be "VEP ID" with tracking_issue_id. Verify row count before return
             result["_exit_after_sheets"] = True
         
         return result
-        
+
+    except NoToolsCalledException as e:
+        # LLM didn't call any tools - this means the sheet wasn't actually updated
+        log(f"Sheet update failed: LLM did not call any tools (likely hallucination)", node="update_sheets", level="ERROR")
+
+        errors = state.get("errors", [])
+        errors.append({
+            "node": "update_sheets",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat(),
+        })
+
+        # Keep sheets_need_update=True to retry on next cycle
+        return {
+            "last_check_times": last_check_times,
+            "sheets_need_update": True,
+            "_force_sheets_update": False,
+            "next_tasks": next_tasks,
+            "errors": errors,
+        }
+
     except Exception as e:
         log(f"Error updating Google Sheets: {e}", node="update_sheets", level="ERROR")
         import traceback
         log(f"Traceback: {traceback.format_exc()}", node="update_sheets", level="ERROR")
-        
+
         # Check if this is a known MCP package issue
         error_str = str(e).lower()
         is_mcp_unavailable = (
-            "404" in error_str or 
-            "not found" in error_str or 
+            "404" in error_str or
+            "not found" in error_str or
             "connection closed" in error_str or
             "@modelcontextprotocol/server-google-sheets" in error_str
         )
-        
+
         # Log error to state
         errors = state.get("errors", [])
         errors.append({
@@ -285,7 +308,7 @@ Column A must be "VEP ID" with tracking_issue_id. Verify row count before return
             "error": str(e),
             "timestamp": datetime.now().isoformat(),
         })
-        
+
         # If MCP is unavailable, clear the flag to prevent infinite retries
         # Otherwise, keep flag set for transient errors
         return {
