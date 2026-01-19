@@ -230,17 +230,27 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
                             param_desc = param_schema.get('description', '')
 
                             # Map JSON schema types to Python types
-                            # For arrays, use List[str] to ensure items type is defined
-                            # (Gemini requires items type for arrays)
-                            type_mapping = {
-                                'string': str,
-                                'integer': int,
-                                'number': float,
-                                'boolean': bool,
-                                'array': List[str],  # Use List[str] instead of list to satisfy Gemini
-                                'object': Dict[str, Any],  # Use Dict[str, Any] for proper schema
-                            }
-                            python_type = type_mapping.get(param_type, str)
+                            # Gemini requires items type for arrays - empty items:{} is rejected
+                            python_type: type = str  # default
+                            if param_type == 'string':
+                                python_type = str
+                            elif param_type == 'integer':
+                                python_type = int
+                            elif param_type == 'number':
+                                python_type = float
+                            elif param_type == 'boolean':
+                                python_type = bool
+                            elif param_type == 'object':
+                                python_type = Dict[str, Any]
+                            elif param_type == 'array':
+                                # Check if it's a nested array (2D array like spreadsheet values)
+                                items_schema = param_schema.get('items', {})
+                                if items_schema.get('type') == 'array':
+                                    # Nested array: List[List[str]] for 2D arrays
+                                    python_type = List[List[str]]
+                                else:
+                                    # Simple array: List[str]
+                                    python_type = List[str]
 
                             # Use Optional for non-required fields
                             if param_name in required:
