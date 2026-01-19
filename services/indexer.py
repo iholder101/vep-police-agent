@@ -1418,6 +1418,59 @@ def index_project_board_items(version: Optional[str] = None) -> Dict[int, Dict[s
         return {}
 
 
+def index_vep_pr_mappings(prs_index: Optional[List[Dict[str, Any]]] = None) -> Dict[str, List[Dict[str, Any]]]:
+    """Pre-compute VEP number to PR mappings from kubevirt/kubevirt PRs.
+
+    Searches PR titles and bodies for VEP references using patterns:
+    - vep-{number}, VEP-{number}
+    - vep {number}, VEP {number}
+    - vep#{number}, VEP#{number}
+
+    Args:
+        prs_index: Optional pre-fetched PRs list. If None, will be fetched.
+
+    Returns:
+        Dict mapping vep_number (e.g., "176") -> [list of matching PRs]
+    """
+    log("Computing VEP-to-PR mappings from kubevirt/kubevirt", node="indexer")
+
+    if prs_index is None:
+        prs_index = index_kubevirt_prs()
+
+    vep_pattern = re.compile(r'vep[-\s#]?(\d+)', re.IGNORECASE)
+    mappings: Dict[str, List[Dict[str, Any]]] = {}
+
+    for pr in prs_index:
+        if not isinstance(pr, dict):
+            continue
+        # Skip raw_data entries
+        if "raw_data" in pr:
+            continue
+
+        # Search in title and body
+        title = pr.get("title", "") or ""
+        body = pr.get("body_preview", "") or pr.get("body", "") or ""
+        content = f"{title} {body}"
+
+        matches = vep_pattern.findall(content)
+        for vep_num in set(matches):  # Dedupe matches in same PR
+            if vep_num not in mappings:
+                mappings[vep_num] = []
+            mappings[vep_num].append({
+                "number": pr.get("number"),
+                "title": pr.get("title"),
+                "state": pr.get("state"),
+                "merged": pr.get("merged", False),
+                "url": pr.get("url"),
+                "labels": pr.get("labels", []),
+                "updated_at": pr.get("updated_at"),
+            })
+
+    total_prs = sum(len(prs) for prs in mappings.values())
+    log(f"Mapped {total_prs} PRs to {len(mappings)} VEPs", node="indexer")
+    return mappings
+
+
 def _load_cached_index(cache_file: Path, max_age_minutes: int = 60) -> Optional[Dict[str, Any]]:
     """Load cached indexed context if it exists and is fresh.
     
