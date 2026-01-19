@@ -170,6 +170,7 @@ podman run --rm --pull=newer \
 - `--mock-veps`: Use mock VEPs instead of fetching from GitHub (useful for testing without API calls)
 - `--mock-analyzed-combined`: Skip LLM call in analyze_combined node and use naive analysis (faster testing)
 - `--mock-alert-summary`: Skip LLM call in alert_summary node and create mocked alerts (faster testing)
+- `--use-state-cache`: Use cached state from previous run on first cycle (skips fetch/analyze). Cache is created after each full analysis run. Useful for fast debug/test cycles.
 - `--debug MODE`: Enable debug mode (`discover-veps` or `test-sheets`)
 - `--index-cache-minutes MINUTES`: Maximum age of index cache in minutes (default: 60)
 - `--no-index-cache`: Disable index caching
@@ -314,7 +315,8 @@ graph TD
     CheckExceptions --> MergeUpdates
 
     MergeUpdates --> AnalyzeCombined[analyze_combined]
-    AnalyzeCombined --> Scheduler
+    AnalyzeCombined --> SaveStateCache[save_state_cache]
+    SaveStateCache --> Scheduler
 
     AlertSummary -->|Alerts| SendNotifications[send_notifications]
     AlertSummary -->|No alerts| Scheduler
@@ -333,6 +335,7 @@ graph TD
     style RunMonitoring fill:#FF9800,stroke:#F57C00,stroke-width:2px,color:#fff
     style MergeUpdates fill:#4CAF50,stroke:#388E3C,stroke-width:2px,color:#fff
     style AnalyzeCombined fill:#9C27B0,stroke:#7B1FA2,stroke-width:2px,color:#fff
+    style SaveStateCache fill:#673AB7,stroke:#512DA8,stroke-width:2px,color:#fff
     style UpdateSheets fill:#F44336,stroke:#D32F2F,stroke-width:2px,color:#fff
     style FetchVEPs fill:#00BCD4,stroke:#0097A7,stroke-width:2px,color:#fff
     style CheckDeadlines fill:#795548,stroke:#5D4037,stroke-width:2px,color:#fff
@@ -358,11 +361,12 @@ graph TD
    - `check_compliance`: Verifies process compliance
    - `check_exceptions`: Monitors exceptions
 5. **Merge & Analyze**: All parallel checks converge to `merge_vep_updates`, then `analyze_combined` for holistic analysis
-6. **Post-Analysis Actions**: After `analyze_combined` completes, it routes back to `scheduler`, which automatically schedules both `update_sheets` and `alert_summary` in parallel:
+6. **State Cache**: After `analyze_combined`, `save_state_cache` saves state to `.vep_state_cache.json` for fast debug cycles with `--use-state-cache`
+7. **Post-Analysis Actions**: After caching, routes back to `scheduler`, which automatically schedules both `update_sheets` and `alert_summary` in parallel:
    - `update_sheets`: Updates Google Sheets with VEP status
    - `alert_summary`: Composes structured alerts from VEP analysis
-7. **Notifications**: `alert_summary` conditionally routes to `send_notifications` (if alerts exist) or back to `scheduler` (if no alerts). `send_notifications` fans out to `send_email` and `send_slack` in parallel
-8. **Wait Loop**: If no tasks, waits until next round hour (or next interval if `--immediate-start` is used) before returning to scheduler (continuous operation)
+8. **Notifications**: `alert_summary` conditionally routes to `send_notifications` (if alerts exist) or back to `scheduler` (if no alerts). `send_notifications` fans out to `send_email` and `send_slack` in parallel
+9. **Wait Loop**: If no tasks, waits until next round hour (or next interval if `--immediate-start` is used) before returning to scheduler (continuous operation)
 
 **Key Design Principles:**
 - **Analysis Pipeline Enforcement**: VEPs must always go through `fetch_veps → run_monitoring → merge_vep_updates → analyze_combined` before updating sheets or sending emails

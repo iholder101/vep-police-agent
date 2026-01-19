@@ -28,6 +28,11 @@ if [ -f "$PROJECT_ROOT/GITHUB_TOKEN" ]; then
     CMD_ARGS+=(--github-token /workspace/GITHUB_TOKEN)
 fi
 
+# Add Resend API key if file exists (for consistency, even though email is skipped)
+if [ -f "$PROJECT_ROOT/RESEND_API_KEY" ]; then
+    CMD_ARGS+=(--resend-api-key /workspace/RESEND_API_KEY)
+fi
+
 # Add Slack webhook URL if file exists
 if [ -f "$PROJECT_ROOT/SLACK_WEBHOOK_URL" ]; then
     CMD_ARGS+=(--slack-webhook-url /workspace/SLACK_WEBHOOK_URL)
@@ -36,6 +41,9 @@ else
     echo "Create it with: echo 'https://hooks.slack.com/services/...' > SLACK_WEBHOOK_URL"
     echo ""
 fi
+
+# Use state cache for fast debug cycles
+CMD_ARGS+=(--use-state-cache)
 
 # Pass through any additional arguments/flags (e.g., --no-index-cache)
 if [ $# -gt 0 ]; then

@@ -14,6 +14,7 @@ from nodes.check_compliance import check_compliance_node
 from nodes.check_exceptions import check_exceptions_node
 from nodes.analyze_combined import analyze_combined_node
 from nodes.merge_vep_updates import merge_vep_updates_node
+from nodes.save_state_cache import save_state_cache_node
 from nodes.update_sheets import update_sheets_node
 from nodes.alert_summary import alert_summary_node
 from nodes.send_notifications import send_notifications_node
@@ -52,6 +53,7 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     workflow.add_node("check_exceptions", check_exceptions_node)
     workflow.add_node("merge_vep_updates", merge_vep_updates_node)
     workflow.add_node("analyze_combined", analyze_combined_node)
+    workflow.add_node("save_state_cache", save_state_cache_node)
     workflow.add_node("update_sheets", update_sheets_node)
     workflow.add_node("alert_summary", alert_summary_node)
     workflow.add_node("send_notifications", send_notifications_node)
@@ -93,8 +95,9 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     # After merging, analyze combined results
     workflow.add_edge("merge_vep_updates", "analyze_combined")
     
-    # Analysis completes, return to scheduler (scheduler decides what to do next)
-    workflow.add_edge("analyze_combined", "scheduler")
+    # Analysis completes, save state cache, then return to scheduler
+    workflow.add_edge("analyze_combined", "save_state_cache")
+    workflow.add_edge("save_state_cache", "scheduler")
     
     # Alert summary decides if notifications needed, then routes to send_notifications or scheduler
     workflow.add_conditional_edges(

@@ -26,6 +26,14 @@ if [ -f "$PROJECT_ROOT/RESEND_API_KEY" ]; then
     CMD_ARGS+=(--resend-api-key /workspace/RESEND_API_KEY)
 fi
 
+# Add Slack webhook URL if file exists
+if [ -f "$PROJECT_ROOT/SLACK_WEBHOOK_URL" ]; then
+    CMD_ARGS+=(--slack-webhook-url /workspace/SLACK_WEBHOOK_URL)
+fi
+
+# Use state cache for fast debug cycles
+CMD_ARGS+=(--use-state-cache)
+
 # Check if --sheet-id is already in arguments (user override)
 SHEET_ID_IN_ARGS=false
 for arg in "$@"; do
@@ -57,8 +65,9 @@ CMD_ARGS+=(--mock-veps)
 # Use mock flags to skip LLM calls for faster testing
 CMD_ARGS+=(--mock-analyzed-combined)
 CMD_ARGS+=(--mock-alert-summary)
-# Add --immediate-start to run first cycle immediately
+# Add --immediate-start and --one-cycle for single run
 CMD_ARGS+=(--immediate-start)
+CMD_ARGS+=(--one-cycle)
 # Also set --debug test-sheets for backward compatibility (affects exit behavior)
 CMD_ARGS+=(--debug test-sheets)
 

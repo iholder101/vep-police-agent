@@ -207,3 +207,5 @@ class VEPState(TypedDict):
     mock_analyzed_combined: bool  # Flag to skip LLM in analyze_combined node
     mock_alert_summary: bool  # Flag to skip LLM in alert_summary node
     immediate_start: bool  # Flag to start immediately without waiting for round hour
+    use_state_cache: bool  # Flag to use cached state from previous run on first cycle
+    _state_cache_used: bool  # Internal flag tracking if state cache was used this run

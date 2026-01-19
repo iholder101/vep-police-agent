@@ -2,20 +2,76 @@
 """Main entry point for VEP governance agent."""
 
 import argparse
+import json
 import os
 import signal
 import sys
 from datetime import datetime
-from typing import Optional
+from pathlib import Path
+from typing import Optional, Dict, Any
 from langchain_core.messages import HumanMessage
 from graph import create_graph
 from services.utils import log, invoke_agent
+from state import VEPInfo, ReleaseSchedule
+
+# State cache file location
+STATE_CACHE_FILE = Path(__file__).parent / ".vep_state_cache.json"
 
 # Global flag for graceful shutdown
 _shutdown_requested = False
 
 
-def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False, skip_monitoring: bool = False, skip_sheets: bool = False, skip_send_email: bool = False, skip_send_slack: bool = False, mock_veps: bool = False, mock_analyzed_combined: bool = False, mock_alert_summary: bool = False, immediate_start: bool = False):
+def load_state_cache() -> Optional[Dict[str, Any]]:
+    """Load cached state from previous run.
+
+    Returns:
+        Dict with cached state fields if cache exists and is valid, None otherwise
+    """
+    if not STATE_CACHE_FILE.exists():
+        log("State cache file not found", node="main")
+        return None
+
+    try:
+        with open(STATE_CACHE_FILE, "r") as f:
+            cached = json.load(f)
+
+        # Validate cache version
+        if cached.get("version") != "1.0":
+            log(f"State cache version mismatch: {cached.get('version')}", node="main", level="WARNING")
+            return None
+
+        # Deserialize VEPs
+        veps = []
+        for vep_data in cached.get("veps", []):
+            try:
+                veps.append(VEPInfo(**vep_data))
+            except Exception as e:
+                log(f"Failed to deserialize VEP: {e}", node="main", level="WARNING")
+
+        # Deserialize release schedule
+        release_schedule = None
+        if cached.get("release_schedule"):
+            try:
+                release_schedule = ReleaseSchedule(**cached["release_schedule"])
+            except Exception as e:
+                log(f"Failed to deserialize release schedule: {e}", node="main", level="WARNING")
+
+        log(f"Loaded state cache: {len(veps)} VEPs from {cached.get('timestamp', 'unknown')}", node="main")
+
+        return {
+            "veps": veps,
+            "release_schedule": release_schedule,
+            "current_release": cached.get("current_release"),
+            "general_insights": cached.get("general_insights", []),
+            "alerts": cached.get("alerts", []),
+        }
+
+    except Exception as e:
+        log(f"Failed to load state cache: {e}", node="main", level="ERROR")
+        return None
+
+
+def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False, skip_monitoring: bool = False, skip_sheets: bool = False, skip_send_email: bool = False, skip_send_slack: bool = False, mock_veps: bool = False, mock_analyzed_combined: bool = False, mock_alert_summary: bool = False, immediate_start: bool = False, use_state_cache: bool = False):
     """Create initial state for the agent."""
     sheet_config = {
         "sheet_name": "VEP Status",  # Optional: name for the sheet/tab
@@ -54,6 +110,8 @@ def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int =
         "mock_analyzed_combined": mock_analyzed_combined,  # Flag to skip LLM in analyze_combined
         "mock_alert_summary": mock_alert_summary,  # Flag to skip LLM in alert_summary
         "immediate_start": immediate_start,  # Flag to start immediately without waiting for round hour
+        "use_state_cache": use_state_cache,  # Flag to use cached state on first cycle
+        "_state_cache_used": False,  # Internal flag tracking if cache was used
     }
 
 
@@ -127,7 +185,9 @@ def log_startup_flags(args, index_cache_minutes: int) -> None:
         flags.append("  --mock-alert-summary: enabled")
     if args.immediate_start:
         flags.append("  --immediate-start: enabled")
-    
+    if args.use_state_cache:
+        flags.append("  --use-state-cache: enabled")
+
     # Log all flags
     if flags:
         for flag in flags:
@@ -152,6 +212,8 @@ def log_startup_flags(args, index_cache_minutes: int) -> None:
         log("Mock alert-summary mode: will skip LLM call and create mocked alerts", node="main")
     if args.immediate_start:
         log("Immediate-start mode: will run first cycle immediately and use current time + interval instead of round hours", node="main")
+    if args.use_state_cache:
+        log("Use-state-cache mode: first cycle will use cached state (skipping fetch/analyze), subsequent cycles run normally", node="main")
 
 
 def parse_args():
@@ -256,6 +318,11 @@ def parse_args():
         "--immediate-start",
         action="store_true",
         help="Run the first cycle immediately without waiting for round hour. Subsequent cycles will use current time + interval instead of round hours."
+    )
+    parser.add_argument(
+        "--use-state-cache",
+        action="store_true",
+        help="Use cached state from previous run on first cycle (skips fetch/analyze). Cache is created after each full analysis run. Useful for fast debug/test cycles."
     )
     return parser.parse_args()
 
@@ -363,7 +430,22 @@ def main():
     log("Graph created successfully", node="main")
     
     # Initialize state
-    initial_state = get_initial_state(sheet_id=args.sheet_id, index_cache_minutes=index_cache_minutes, one_cycle=args.one_cycle, skip_monitoring=args.skip_monitoring, skip_sheets=args.skip_sheets, skip_send_email=args.skip_send_email, skip_send_slack=args.skip_send_slack, mock_veps=args.mock_veps, mock_analyzed_combined=args.mock_analyzed_combined, mock_alert_summary=args.mock_alert_summary, immediate_start=args.immediate_start)
+    initial_state = get_initial_state(sheet_id=args.sheet_id, index_cache_minutes=index_cache_minutes, one_cycle=args.one_cycle, skip_monitoring=args.skip_monitoring, skip_sheets=args.skip_sheets, skip_send_email=args.skip_send_email, skip_send_slack=args.skip_send_slack, mock_veps=args.mock_veps, mock_analyzed_combined=args.mock_analyzed_combined, mock_alert_summary=args.mock_alert_summary, immediate_start=args.immediate_start, use_state_cache=args.use_state_cache)
+
+    # Load state cache if requested
+    if args.use_state_cache:
+        cached_state = load_state_cache()
+        if cached_state:
+            # Merge cached fields into initial state
+            initial_state["veps"] = cached_state.get("veps", [])
+            initial_state["release_schedule"] = cached_state.get("release_schedule")
+            initial_state["current_release"] = cached_state.get("current_release")
+            initial_state["general_insights"] = cached_state.get("general_insights", [])
+            initial_state["alerts"] = cached_state.get("alerts", [])
+            log(f"State cache merged: {len(initial_state['veps'])} VEPs loaded", node="main")
+        else:
+            log("No valid state cache found, will run full pipeline", node="main", level="WARNING")
+
     log("Initial state prepared", node="main")
     log(f"Sheet config: {initial_state['sheet_config']}", node="main")
     

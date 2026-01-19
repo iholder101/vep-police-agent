@@ -122,6 +122,25 @@ def scheduler_node(state: VEPState) -> Any:
         # VEPs were fetched but never analyzed
         veps_need_analysis = True
     
+    # Check if using state cache (first cycle only)
+    use_state_cache = state.get("use_state_cache", False)
+    state_cache_used = state.get("_state_cache_used", False)
+
+    # If using state cache and it hasn't been used yet, skip fetch/analyze
+    if use_state_cache and not state_cache_used:
+        veps = state.get("veps", [])
+        if veps:
+            log(f"Using cached state ({len(veps)} VEPs), skipping fetch/analysis pipeline", node="scheduler")
+            if not state.get("skip_sheets", False):
+                next_tasks.append("update_sheets")
+            next_tasks.append("alert_summary")
+            return {
+                "next_tasks": next_tasks,
+                "_state_cache_used": True,  # Mark cache as used
+            }
+        else:
+            log("State cache requested but no VEPs in cache, falling back to normal flow", node="scheduler", level="WARNING")
+
     # First run: Fetch VEPs, run monitoring, then update sheets and check alerts
     if is_first_run:
         veps = state.get("veps", [])
