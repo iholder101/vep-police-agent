@@ -26,6 +26,11 @@ if [ -f "$PROJECT_ROOT/RESEND_API_KEY" ]; then
     CMD_ARGS+=(--resend-api-key /workspace/RESEND_API_KEY)
 fi
 
+# Add Slack webhook URL if file exists
+if [ -f "$PROJECT_ROOT/SLACK_WEBHOOK_URL" ]; then
+    CMD_ARGS+=(--slack-webhook-url /workspace/SLACK_WEBHOOK_URL)
+fi
+
 # Check if --sheet-id is already in arguments (user override)
 SHEET_ID_IN_ARGS=false
 for arg in "$@"; do

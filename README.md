@@ -24,6 +24,7 @@ The agent uses Large Language Models (LLMs) via Google's Gemini API to intellige
 - 🤖 **AI-Powered Analysis**: Uses Gemini models to intelligently analyze VEP data and GitHub content
 - 📊 **Google Sheets Integration**: Maintains a real-time dashboard with VEP status, compliance flags, and alerts
 - 📧 **Email Alerts**: Sends structured email notifications for deadlines, compliance issues, low activity, and risks
+- 💬 **Slack Alerts**: Sends color-coded Slack notifications via Incoming Webhooks (parallel with email)
 - 🔍 **Comprehensive VEP Discovery**: Finds VEPs from GitHub issues, PRs, and documentation files
 - ⏰ **Deadline Monitoring**: Tracks Enhancement Freeze (EF) and Code Freeze (CF) dates from release schedules
 - ✅ **Compliance Checking**: Verifies SIG sign-offs, template completeness, and process adherence
@@ -79,6 +80,12 @@ echo "your-github-token" > GITHUB_TOKEN
 ```bash
 # Get free API key from https://resend.com/api-keys
 echo "re_..." > RESEND_API_KEY
+```
+
+**SLACK_WEBHOOK_URL** (optional, required for Slack alerts): Slack Incoming Webhook URL
+```bash
+# Get webhook URL from your Slack app configuration
+echo "https://hooks.slack.com/services/..." > SLACK_WEBHOOK_URL
 ```
 
 ### 4. Build Container Image (Optional)
@@ -151,12 +158,14 @@ podman run --rm --pull=newer \
 - `--google-token PATH`: Path to Google Service Account JSON file
 - `--github-token PATH`: Path to GitHub Personal Access Token file (optional but recommended)
 - `--resend-api-key PATH`: Path to Resend API key file for email sending (get free key at https://resend.com/api-keys)
+- `--slack-webhook-url PATH`: Path to Slack Incoming Webhook URL file (default: `SLACK_WEBHOOK_URL`)
 - `--sheet-id ID`: Google Sheets document ID (from URL: `https://docs.google.com/spreadsheets/d/{ID}/edit`)
 - `--one-cycle`: Run one cycle and exit after sheet update completes
 - `--immediate-start`: Run the first cycle immediately without waiting for round hour. Subsequent cycles will use current time + interval instead of round hours (useful for testing and one-time runs)
 - `--skip-monitoring`: Skip all monitoring checks (deadlines, activity, compliance, exceptions) for faster debugging
 - `--skip-sheets`: Skip Google Sheets updates (useful for testing email alerts)
 - `--skip-send-email`: Skip sending email alerts (useful for debugging without sending emails)
+- `--skip-send-slack`: Skip sending Slack alerts (useful for debugging without sending Slack messages)
 - `--fastest-model`: Force all nodes to use `GEMINI_3_FLASH_PREVIEW` (fastest model)
 - `--mock-veps`: Use mock VEPs instead of fetching from GitHub (useful for testing without API calls)
 - `--mock-analyzed-combined`: Skip LLM call in analyze_combined node and use naive analysis (faster testing)
@@ -180,6 +189,11 @@ podman run --rm --pull=newer \
 **Test Email** (tests email alert functionality with mock data):
 ```bash
 ./scripts/debug/debug-test-email.sh
+```
+
+**Test Slack** (tests Slack alert functionality with mock data):
+```bash
+./scripts/debug/debug-test-slack.sh
 ```
 
 ## Configuration
@@ -232,6 +246,25 @@ The agent uses [Resend](https://resend.com) for email delivery (easiest setup):
 - `status_change`: VEP status changed (new VEP, status update, etc.)
 - `milestone_update`: VEP milestone status changed
 
+### Slack Alerts Configuration
+
+The agent can send alerts to Slack via Incoming Webhooks. Alerts are sent in parallel with email notifications.
+
+**Slack Setup**:
+1. Go to https://api.slack.com/apps and create a new app (or use existing)
+2. Under "Features", click "Incoming Webhooks" and enable it
+3. Click "Add New Webhook to Workspace" and select a channel
+4. Copy the webhook URL
+5. Create `SLACK_WEBHOOK_URL` file: `echo "https://hooks.slack.com/services/..." > SLACK_WEBHOOK_URL`
+
+**Message Format**: Alerts are formatted using Slack Block Kit with color-coded attachments:
+- Critical: Red (#d32f2f)
+- High: Orange (#f57c00)
+- Medium: Yellow (#fbc02d)
+- Low: Green (#388e3c)
+
+**Skip Slack**: Use `--skip-send-slack` to disable Slack notifications while keeping email enabled.
+
 ### Scheduling Configuration
 
 The agent runs operations on configurable intervals. By default, all operations run on round hours (e.g., 13:00, 14:00, 15:00):
@@ -261,37 +294,41 @@ The agent's execution flow is orchestrated by a central scheduler that routes to
 ```mermaid
 graph TD
     Start([Start]) --> Scheduler[scheduler]
-    
+
     Scheduler -->|Periodic| FetchVEPs[fetch_veps]
     Scheduler -->|Need analysis| FetchVEPs
     Scheduler -->|Sheets due| UpdateSheets[update_sheets]
     Scheduler -->|Alerts due| AlertSummary[alert_summary]
     Scheduler -->|No tasks| Wait[wait]
-    
+
     FetchVEPs --> RunMonitoring[run_monitoring]
-    
+
     RunMonitoring --> CheckDeadlines[check_deadlines]
     RunMonitoring --> CheckActivity[check_activity]
     RunMonitoring --> CheckCompliance[check_compliance]
     RunMonitoring --> CheckExceptions[check_exceptions]
-    
+
     CheckDeadlines --> MergeUpdates[merge_vep_updates]
     CheckActivity --> MergeUpdates
     CheckCompliance --> MergeUpdates
     CheckExceptions --> MergeUpdates
-    
+
     MergeUpdates --> AnalyzeCombined[analyze_combined]
     AnalyzeCombined --> Scheduler
-    
-    AlertSummary -->|Alerts| SendEmail[send_email]
+
+    AlertSummary -->|Alerts| SendNotifications[send_notifications]
     AlertSummary -->|No alerts| Scheduler
-    
+
+    SendNotifications --> SendEmail[send_email]
+    SendNotifications --> SendSlack[send_slack]
+
     UpdateSheets --> Scheduler
     SendEmail --> Scheduler
+    SendSlack --> Scheduler
     Wait --> Scheduler
-    
+
     Scheduler -.->|Loop| Scheduler
-    
+
     style Scheduler fill:#2196F3,stroke:#1976D2,stroke-width:2px,color:#fff
     style RunMonitoring fill:#FF9800,stroke:#F57C00,stroke-width:2px,color:#fff
     style MergeUpdates fill:#4CAF50,stroke:#388E3C,stroke-width:2px,color:#fff
@@ -303,7 +340,9 @@ graph TD
     style CheckCompliance fill:#9E9E9E,stroke:#616161,stroke-width:2px,color:#fff
     style CheckExceptions fill:#FFC107,stroke:#F57C00,stroke-width:2px,color:#000
     style AlertSummary fill:#E91E63,stroke:#C2185B,stroke-width:2px,color:#fff
+    style SendNotifications fill:#FF5722,stroke:#E64A19,stroke-width:2px,color:#fff
     style SendEmail fill:#FF5722,stroke:#E64A19,stroke-width:2px,color:#fff
+    style SendSlack fill:#4A154B,stroke:#3C1042,stroke-width:2px,color:#fff
     style Wait fill:#9E9E9E,stroke:#616161,stroke-width:2px,color:#fff
 ```
 
@@ -322,7 +361,7 @@ graph TD
 6. **Post-Analysis Actions**: After `analyze_combined` completes, it routes back to `scheduler`, which automatically schedules both `update_sheets` and `alert_summary` in parallel:
    - `update_sheets`: Updates Google Sheets with VEP status
    - `alert_summary`: Composes structured alerts from VEP analysis
-7. **Email Alerts**: `alert_summary` conditionally routes to `send_email` (if alerts exist) or back to `scheduler` (if no alerts)
+7. **Notifications**: `alert_summary` conditionally routes to `send_notifications` (if alerts exist) or back to `scheduler` (if no alerts). `send_notifications` fans out to `send_email` and `send_slack` in parallel
 8. **Wait Loop**: If no tasks, waits until next round hour (or next interval if `--immediate-start` is used) before returning to scheduler (continuous operation)
 
 **Key Design Principles:**

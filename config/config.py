@@ -18,6 +18,8 @@ NODE_MODELS: Dict[str, str] = {
     "check_deadlines": DEFAULT_MODEL,
     "check_exceptions": DEFAULT_MODEL,
     "send_email": DEFAULT_MODEL,
+    "send_slack": DEFAULT_MODEL,
+    "send_notifications": DEFAULT_MODEL,
     "scheduler": DEFAULT_MODEL,
     "run_monitoring": DEFAULT_MODEL,
 }

@@ -15,7 +15,7 @@ from services.utils import log, invoke_agent
 _shutdown_requested = False
 
 
-def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False, skip_monitoring: bool = False, skip_sheets: bool = False, skip_send_email: bool = False, mock_veps: bool = False, mock_analyzed_combined: bool = False, mock_alert_summary: bool = False, immediate_start: bool = False):
+def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False, skip_monitoring: bool = False, skip_sheets: bool = False, skip_send_email: bool = False, skip_send_slack: bool = False, mock_veps: bool = False, mock_analyzed_combined: bool = False, mock_alert_summary: bool = False, immediate_start: bool = False):
     """Create initial state for the agent."""
     sheet_config = {
         "sheet_name": "VEP Status",  # Optional: name for the sheet/tab
@@ -49,6 +49,7 @@ def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int =
         "skip_monitoring": skip_monitoring,  # Flag to skip monitoring checks
         "skip_sheets": skip_sheets,  # Flag to skip sheet updates
         "skip_send_email": skip_send_email,  # Flag to skip sending email alerts
+        "skip_send_slack": skip_send_slack,  # Flag to skip sending Slack alerts
         "mock_veps": mock_veps,  # Flag to use mock VEPs instead of fetching from GitHub
         "mock_analyzed_combined": mock_analyzed_combined,  # Flag to skip LLM in analyze_combined
         "mock_alert_summary": mock_alert_summary,  # Flag to skip LLM in alert_summary
@@ -91,6 +92,11 @@ def log_startup_flags(args, index_cache_minutes: int) -> None:
             flags.append(f"  --resend-api-key: {args.resend_api_key} (file)")
         else:
             flags.append("  --resend-api-key: <provided>")
+    if args.slack_webhook_url:
+        if os.path.exists(args.slack_webhook_url):
+            flags.append(f"  --slack-webhook-url: {args.slack_webhook_url} (file)")
+        else:
+            flags.append("  --slack-webhook-url: <provided>")
     
     # Configuration flags
     if args.sheet_id:
@@ -111,6 +117,8 @@ def log_startup_flags(args, index_cache_minutes: int) -> None:
         flags.append("  --skip-sheets: enabled")
     if args.skip_send_email:
         flags.append("  --skip-send-email: enabled")
+    if args.skip_send_slack:
+        flags.append("  --skip-send-slack: enabled")
     if args.mock_veps:
         flags.append("  --mock-veps: enabled")
     if args.mock_analyzed_combined:
@@ -172,6 +180,12 @@ def parse_args():
         help="Resend API key for email sending (or set RESEND_API_KEY environment variable)"
     )
     parser.add_argument(
+        "--slack-webhook-url",
+        type=str,
+        default="SLACK_WEBHOOK_URL",
+        help="Path to file containing Slack Incoming Webhook URL (default: SLACK_WEBHOOK_URL)"
+    )
+    parser.add_argument(
         "--debug",
         type=str,
         choices=["discover-veps", "test-sheets"],
@@ -217,6 +231,11 @@ def parse_args():
         "--skip-send-email",
         action="store_true",
         help="Skip sending email alerts. Useful for debugging without sending emails."
+    )
+    parser.add_argument(
+        "--skip-send-slack",
+        action="store_true",
+        help="Skip sending Slack alerts. Useful for debugging without sending Slack messages."
     )
     parser.add_argument(
         "--mock-veps",
@@ -294,7 +313,18 @@ def setup_credentials(args):
         else:
             os.environ["RESEND_API_KEY"] = args.resend_api_key
             log("Resend API key set from CLI argument", node="main")
-    
+
+    if args.slack_webhook_url:
+        # If it looks like a file path, read it; otherwise treat as webhook URL string
+        if os.path.exists(args.slack_webhook_url):
+            with open(args.slack_webhook_url, "r") as f:
+                os.environ["SLACK_WEBHOOK_URL"] = f.read().strip()
+            log(f"Slack webhook URL loaded from file: {args.slack_webhook_url}", node="main")
+        elif args.slack_webhook_url.startswith("https://"):
+            os.environ["SLACK_WEBHOOK_URL"] = args.slack_webhook_url
+            log("Slack webhook URL set from CLI argument", node="main")
+        # If file doesn't exist and it's not a URL, silently skip (default file may not exist)
+
     if args.debug:
         os.environ["DEBUG_MODE"] = args.debug
         log(f"Debug mode enabled: {args.debug}", node="main")
@@ -333,7 +363,7 @@ def main():
     log("Graph created successfully", node="main")
     
     # Initialize state
-    initial_state = get_initial_state(sheet_id=args.sheet_id, index_cache_minutes=index_cache_minutes, one_cycle=args.one_cycle, skip_monitoring=args.skip_monitoring, skip_sheets=args.skip_sheets, skip_send_email=args.skip_send_email, mock_veps=args.mock_veps, mock_analyzed_combined=args.mock_analyzed_combined, mock_alert_summary=args.mock_alert_summary, immediate_start=args.immediate_start)
+    initial_state = get_initial_state(sheet_id=args.sheet_id, index_cache_minutes=index_cache_minutes, one_cycle=args.one_cycle, skip_monitoring=args.skip_monitoring, skip_sheets=args.skip_sheets, skip_send_email=args.skip_send_email, skip_send_slack=args.skip_send_slack, mock_veps=args.mock_veps, mock_analyzed_combined=args.mock_analyzed_combined, mock_alert_summary=args.mock_alert_summary, immediate_start=args.immediate_start)
     log("Initial state prepared", node="main")
     log(f"Sheet config: {initial_state['sheet_config']}", node="main")
     

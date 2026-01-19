@@ -16,7 +16,9 @@ from nodes.analyze_combined import analyze_combined_node
 from nodes.merge_vep_updates import merge_vep_updates_node
 from nodes.update_sheets import update_sheets_node
 from nodes.alert_summary import alert_summary_node
+from nodes.send_notifications import send_notifications_node
 from nodes.send_email import send_email_node
+from nodes.send_slack import send_slack_node
 from nodes.wait import wait_node
 
 def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
@@ -52,7 +54,9 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     workflow.add_node("analyze_combined", analyze_combined_node)
     workflow.add_node("update_sheets", update_sheets_node)
     workflow.add_node("alert_summary", alert_summary_node)
+    workflow.add_node("send_notifications", send_notifications_node)
     workflow.add_node("send_email", send_email_node)
+    workflow.add_node("send_slack", send_slack_node)
     workflow.add_node("wait", wait_node)
     
     # Set entry point
@@ -92,19 +96,24 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     # Analysis completes, return to scheduler (scheduler decides what to do next)
     workflow.add_edge("analyze_combined", "scheduler")
     
-    # Alert summary decides if email needed, then routes to send_email or scheduler
+    # Alert summary decides if notifications needed, then routes to send_notifications or scheduler
     workflow.add_conditional_edges(
         "alert_summary",
         route_after_alert_summary,
         {
-            "send_email": "send_email",
+            "send_notifications": "send_notifications",
             "scheduler": "scheduler",
         }
     )
-    
-    # Both update_sheets and send_email go back to scheduler
+
+    # send_notifications fans out to both email and Slack in parallel
+    workflow.add_edge("send_notifications", "send_email")
+    workflow.add_edge("send_notifications", "send_slack")
+
+    # Both update_sheets, send_email, and send_slack go back to scheduler
     workflow.add_edge("update_sheets", "scheduler")
     workflow.add_edge("send_email", "scheduler")
+    workflow.add_edge("send_slack", "scheduler")
     
     # fetch_veps always goes back to scheduler (scheduler decides next action)
     workflow.add_edge("fetch_veps", "scheduler")
@@ -159,13 +168,13 @@ def route_scheduler_operations(state: VEPState) -> Literal["fetch_veps", "run_mo
     return task if task in valid_tasks else "wait"
 
 
-def route_after_alert_summary(state: VEPState) -> Literal["send_email", "scheduler"]:
-    """Route after alert_summary based on whether email needs to be sent.
-    
-    If alert_summary determined that alerts need to be sent, route to send_email.
-    Otherwise, return to scheduler.
+def route_after_alert_summary(state: VEPState) -> Literal["send_notifications", "scheduler"]:
+    """Route after alert_summary based on whether notifications need to be sent.
+
+    If alert_summary determined that alerts need to be sent, route to send_notifications
+    which fans out to send_email and send_slack in parallel. Otherwise, return to scheduler.
     """
     alerts = state.get("alerts", [])
     if alerts:
-        return "send_email"
+        return "send_notifications"
     return "scheduler"
