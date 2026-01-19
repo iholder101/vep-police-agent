@@ -1685,6 +1685,119 @@ def _save_cached_index(cache_file: Path, indexed_context: Dict[str, Any]) -> Non
         # Don't fail if cache save fails - indexing still succeeded
 
 
+def _parse_date_from_text(text: str) -> Optional[datetime]:
+    """Parse a date from text, supporting various formats.
+
+    Supports formats like:
+    - "2025-01-15"
+    - "Jan 15, 2025"
+    - "January 15, 2025"
+    - "15 Jan 2025"
+
+    Returns:
+        datetime if parsed successfully, None otherwise
+    """
+    import calendar
+
+    # Try ISO format first
+    try:
+        return datetime.fromisoformat(text.strip())
+    except ValueError:
+        pass
+
+    # Try common date formats
+    date_patterns = [
+        r'(\d{4})-(\d{1,2})-(\d{1,2})',  # 2025-01-15
+        r'(\w+)\s+(\d{1,2}),?\s+(\d{4})',  # Jan 15, 2025 or January 15, 2025
+        r'(\d{1,2})\s+(\w+)\s+(\d{4})',  # 15 Jan 2025
+    ]
+
+    month_names = {name.lower(): num for num, name in enumerate(calendar.month_name) if num}
+    month_abbrs = {name.lower(): num for num, name in enumerate(calendar.month_abbr) if num}
+
+    for pattern in date_patterns:
+        match = re.search(pattern, text)
+        if match:
+            groups = match.groups()
+            try:
+                if pattern == date_patterns[0]:  # ISO-like
+                    year, month, day = int(groups[0]), int(groups[1]), int(groups[2])
+                elif pattern == date_patterns[1]:  # Month Day, Year
+                    month_str, day, year = groups[0].lower(), int(groups[1]), int(groups[2])
+                    month = month_names.get(month_str) or month_abbrs.get(month_str[:3])
+                    if not month:
+                        continue
+                else:  # Day Month Year
+                    day, month_str, year = int(groups[0]), groups[1].lower(), int(groups[2])
+                    month = month_names.get(month_str) or month_abbrs.get(month_str[:3])
+                    if not month:
+                        continue
+                return datetime(year, month, day)
+            except (ValueError, TypeError):
+                continue
+
+    return None
+
+
+def compute_release_phase(release_info: Optional[Dict[str, Any]]) -> str:
+    """Compute current release phase based on schedule dates.
+
+    Parses the schedule_content markdown to find key dates:
+    - Enhancement Freeze (EF)
+    - Code Freeze (CF)
+    - Release date
+
+    Returns:
+        One of: "design", "development", "stabilization", "released", "unknown"
+        - "design": Before Enhancement Freeze - focus on VEP tracking/approval
+        - "development": Between EF and Code Freeze - focus on implementation
+        - "stabilization": After Code Freeze - prioritize compliance
+        - "released": Post-release
+        - "unknown": Could not determine phase
+    """
+    if not release_info:
+        return "unknown"
+
+    schedule_content = release_info.get("schedule_content", "")
+    if not schedule_content:
+        return "unknown"
+
+    now = datetime.now()
+
+    # Parse dates from markdown table
+    # Look for patterns like "| Enhancement Freeze | 2025-01-15 |"
+    ef_date = None
+    cf_date = None
+    release_date = None
+
+    lines = schedule_content.split('\n')
+    for line in lines:
+        line_lower = line.lower()
+        if 'enhancement freeze' in line_lower or 'enhancement_freeze' in line_lower:
+            ef_date = _parse_date_from_text(line)
+        elif 'code freeze' in line_lower or 'code_freeze' in line_lower:
+            cf_date = _parse_date_from_text(line)
+        elif ('kubevirt release' in line_lower or 'release date' in line_lower or
+              'kubevirt_release' in line_lower):
+            release_date = _parse_date_from_text(line)
+        elif 'ga release' in line_lower:
+            release_date = release_date or _parse_date_from_text(line)
+
+    log(f"Parsed dates: EF={ef_date}, CF={cf_date}, Release={release_date}", node="indexer", level="DEBUG")
+
+    # Determine phase
+    if ef_date and now < ef_date:
+        return "design"
+    elif cf_date and now < cf_date:
+        return "development"
+    elif release_date and now < release_date:
+        return "stabilization"
+    elif release_date and now >= release_date:
+        return "released"
+    else:
+        return "unknown"
+
+
 def compute_veps_missing_prs(
     project_board_items: Dict[int, Dict[str, Any]],
     vep_to_pr_mappings: Dict[str, List[Dict[str, Any]]]
@@ -1774,8 +1887,12 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
     project_board_items = index_project_board_items(version=release_version)
     vep_to_pr_mappings = index_vep_pr_mappings(prs_index=prs_index)
 
+    # Compute release phase from schedule dates
+    release_phase = compute_release_phase(release_info)
+
     indexed_context = {
         "release_info": release_info,
+        "release_phase": release_phase,  # Current phase in release cycle
         "enhancements_readme": index_enhancements_readme(),
         "issues_index": index_enhancements_issues(days_back=days_back),
         "prs_index": prs_index,
@@ -1803,7 +1920,7 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
     approved_vep_prs_count = len(indexed_context["approved_vep_prs"])
     veps_missing_prs_count = len(indexed_context["veps_missing_prs"])
 
-    log(f"Indexed context created: release={release}, readme={readme_available}, issues={issues_count}, prs={prs_count}, vep_files={vep_files_count}", node="indexer")
+    log(f"Indexed context created: release={release}, phase={release_phase}, readme={readme_available}, issues={issues_count}, prs={prs_count}, vep_files={vep_files_count}", node="indexer")
     log(f"  - Project board items: {board_items_count}, VEP-to-PR mappings: {vep_pr_mappings_count}, approved-vep PRs: {approved_vep_prs_count}, VEPs missing PRs: {veps_missing_prs_count}", node="indexer")
     
     # Save to cache
