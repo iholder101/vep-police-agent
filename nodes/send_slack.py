@@ -31,20 +31,20 @@ def _format_slack_message(alerts: List[Dict[str, Any]], alert_summary_text: str)
         if severity_priority.get(severity, 3) < severity_priority.get(highest_severity, 3):
             highest_severity = severity
 
-    # Build alert text
-    alerts_by_type = {}
+    # Build alert text - group by subject (not "type" - that was a bug)
+    alerts_by_subject = {}
     for alert in alerts:
-        alert_type = alert.get("type", "other")
-        if alert_type not in alerts_by_type:
-            alerts_by_type[alert_type] = []
-        alerts_by_type[alert_type].append(alert)
+        subject_key = alert.get("subject", "other")
+        if subject_key not in alerts_by_subject:
+            alerts_by_subject[subject_key] = []
+        alerts_by_subject[subject_key].append(alert)
 
     # Format alert details
     alert_lines = []
-    for alert_type, type_alerts in alerts_by_type.items():
-        type_title = alert_type.replace("_", " ").title()
-        alert_lines.append(f"*{type_title}* ({len(type_alerts)} alert(s))")
-        for alert in type_alerts:
+    for subject_key, subject_alerts in alerts_by_subject.items():
+        subject_title = subject_key.replace("_", " ").title()
+        alert_lines.append(f"*{subject_title}* ({len(subject_alerts)} alert(s))")
+        for alert in subject_alerts:
             vep_id = alert.get("vep_id", "?")
             vep_name = alert.get("vep_name", "?")
             title = alert.get("title", "")

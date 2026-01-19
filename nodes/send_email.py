@@ -157,10 +157,10 @@ def send_email_node(state: VEPState) -> Any:
     # Format email content
     subject = f"VEP Governance Alerts - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     
-    # Group alerts by subject and severity
+    # Group alerts by subject and severity (use "subject" field, not "type")
     alerts_by_subject = {}
     for alert in alerts:
-        subject_key = alert.get("type", "other")
+        subject_key = alert.get("subject", "other")
         if subject_key not in alerts_by_subject:
             alerts_by_subject[subject_key] = []
         alerts_by_subject[subject_key].append(alert)
