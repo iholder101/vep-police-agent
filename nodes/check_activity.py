@@ -48,6 +48,10 @@ Your task:
 3. Add insights to vep.analysis["activity_insights"] with notes, recommendations, and context
 4. Flag inactive VEPs (>2 weeks without updates)
 5. Flag review lag (>1 week without review)
+6. IMPORTANT: Check the 'approved_vep_prs' in the context for PRs with 'approved-vep' label
+   - These PRs implement approved VEPs and should be monitored for staleness
+   - Include these in activity analysis for their corresponding VEPs
+   - Flag lingering approved-vep PRs that haven't been updated recently
 
 Use the GitHub MCP tools to fetch the necessary data. Refer to each tool's description for usage requirements and examples.
 
@@ -55,17 +59,25 @@ Return the updated VEP objects with activity fields filled in."""
     
     # Serialize full state for LLM
     release_schedule = state.get("release_schedule")
+
+    # Get approved_vep_prs from config cache if available (populated by indexer)
+    config_cache = state.get("config_cache", {})
+    approved_vep_prs = config_cache.get("approved_vep_prs", [])
+
     context = {
         "veps": [vep.model_dump(mode='json') for vep in veps],
         "release_schedule": release_schedule.model_dump(mode='json') if release_schedule else None,
         "current_release": state.get("current_release"),
+        "approved_vep_prs": approved_vep_prs,
     }
-    
+
     user_prompt = f"""Here is the current state:
 
 {json.dumps(context, indent=2, default=str)}
 
-Use GitHub MCP tools to check activity for each VEP. Update the VEP objects with activity information and return all updated VEPs."""
+Use GitHub MCP tools to check activity for each VEP. Update the VEP objects with activity information and return all updated VEPs.
+
+IMPORTANT: The 'approved_vep_prs' list contains PRs with the 'approved-vep' label. These implement approved VEPs and should be monitored for staleness."""
     
     # Invoke LLM with structured output
     result = invoke_llm_check("activity", context, system_prompt, user_prompt, ActivityCheckResponse)

@@ -162,6 +162,9 @@ class VEPInfo(BaseModel):
     analysis: Dict[str, Any] = {}  # LLM-generated insights and analysis - flexible structure
     notes: Optional[str] = None  # Free-form notes for human review
 
+    # Project board metadata from GitHub Project V2
+    board_fields: Optional[Dict[str, Any]] = None  # All project board field values (Status, Priority, dates, etc.)
+
 class VEPState(TypedDict):
     """LangGraph state schema - the entire state of the VEP governance agent.
     

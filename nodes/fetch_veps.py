@@ -279,6 +279,11 @@ Step 5: Create VEPInfo Objects for ALL Discovered VEPs
 - compliance: Initial compliance data (can be minimal, monitoring checks will fill in)
 - activity: Initial activity data (can be minimal, monitoring checks will fill in)
 - target_release: Target release version (from file if available, or issue)
+- board_fields: Project board metadata from PROJECT BOARD ITEMS (if VEP is on board)
+  * Use the issue number to lookup in project_board_items
+  * Contains Status, Priority, and other board-specific fields
+- implementation_prs: Use VEP-TO-PR MAPPINGS to populate implementation PRs
+  * Lookup by VEP number to find linked PRs from kubevirt/kubevirt
 
 CRITICAL REQUIREMENTS - YOU MUST FIND ALL VEPs (NO EXCEPTIONS):
 ================================================================================
@@ -413,6 +418,15 @@ INDEXED INFORMATION (pre-fetched - USE THIS DATA DIRECTLY):
 - PRs Index: Found {len(indexed_context.get("prs_index", []))} PRs: {json.dumps(indexed_context.get("prs_index", []), indent=2, default=str)}
 - VEP Files: Found {len(vep_files_index)} VEP files with FULL CONTENT already indexed:
 {json.dumps(vep_files_summary, indent=2, default=str)}
+
+- PROJECT BOARD ITEMS (from GitHub Project V2 board - contains Status, Priority, and other board metadata):
+{json.dumps(indexed_context.get("project_board_items", {}), indent=2, default=str)}
+
+- VEP-TO-PR MAPPINGS (pre-computed links from VEP numbers to implementation PRs in kubevirt/kubevirt):
+{json.dumps(indexed_context.get("vep_to_pr_mappings", {}), indent=2, default=str)}
+
+- APPROVED-VEP PRs (PRs with 'approved-vep' label, implementing approved VEPs):
+{json.dumps(indexed_context.get("approved_vep_prs", []), indent=2, default=str)}
 
 CRITICAL: The VEP files are ALREADY PARSED and their CONTENT is above. You do NOT need to read them again with tool calls!
 - Each VEP file above contains: filename, vep_number, and content_preview (full content is available)
