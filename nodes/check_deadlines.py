@@ -40,26 +40,26 @@ def check_deadlines_node(state: VEPState) -> Any:
         }
     
     # Build system prompt
-    system_prompt = """You are a VEP governance agent checking deadlines for KubeVirt Virtualization Enhancement Proposals.
+    system_prompt = """You are a VEP governance agent checking deadlines for KubeVirt VEPs.
 
 Your task:
-1. Fetch the current release schedule from kubevirt/sig-release repository
-   - Look for schedule.md files in releases/v1.X/ directories
-   - Parse Enhancement Freeze (EF) and Code Freeze (CF) dates
-2. For each VEP in the provided state, compute days until EF and CF
-3. Update vep.analysis["deadline_risk"] with risk information:
+1. Use the release_schedule from provided state (already fetched by indexer)
+   - Contains Enhancement Freeze (EF) and Code Freeze (CF) dates
+   - Only fetch from GitHub if release_schedule is null/missing
+2. For each VEP, compute days until EF and CF
+3. Update vep.analysis["deadline_risk"] with:
    - at_risk: boolean
    - risk_reason: string
    - days_until_ef: int
    - days_until_cf: int
-4. Add insights to vep.analysis["deadline_insights"] with notes, recommendations, and context
+4. Add insights to vep.analysis["deadline_insights"]
 5. Generate alerts for approaching deadlines:
    - 7 days before: WARNING
-   - 3 days before: URGENT  
+   - 3 days before: URGENT
    - 1 day before: CRITICAL
 6. Flag VEPs at risk (e.g., EF passed but VEP not merged)
 
-Return the updated VEP objects with deadline analysis filled in, and the release schedule if you fetched it."""
+Return updated VEP objects with deadline analysis, and release_schedule if you fetched new data."""
     
     # Serialize full state for LLM
     release_schedule = state.get("release_schedule")

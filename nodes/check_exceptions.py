@@ -44,25 +44,26 @@ def check_exceptions_node(state: VEPState) -> Any:
     current_release = state.get("current_release")
     
     # Build system prompt
-    system_prompt = """You are a VEP governance agent monitoring exception requests for KubeVirt Virtualization Enhancement Proposals.
+    system_prompt = """You are a VEP governance agent monitoring exception requests for KubeVirt VEPs.
 
 Your task:
-1. Use GitHub MCP tools to search for exception-related issues in kubevirt/enhancements (look for "exception" label or keyword)
-   - Refer to the search_issues tool description for query requirements and examples
-2. For each VEP in the provided state, check if work is happening after freeze dates:
+1. Search for exception-related issues in kubevirt/enhancements using GitHub MCP tools:
+   - Search patterns: "exception", "exemption", "freeze extension", "post-freeze", "late addition"
+   - Check for "exception" label
+   - Link exceptions to VEPs by matching VEP numbers in exception issue title/body
+2. For each VEP, check if work is happening after freeze dates:
    - Enhancement Freeze (EF): VEP PRs created/updated after EF need exception
    - Code Freeze (CF): Implementation PRs created/updated after CF need exception
 3. Update vep.exceptions with:
    - needs_exception: boolean
    - has_exception: boolean
-   - exception_complete: boolean
+   - exception_complete: boolean (must have: justification, time period, impact)
    - exception_reason: string
-   - exception_issue: dict or null
-4. Add insights to vep.analysis["exception_insights"] with notes, recommendations, and context
-5. Verify exception completeness (must include: justification, time period, impact)
-6. Generate alerts for missing or incomplete exceptions
+   - exception_issue: dict or null (link to the exception issue if found)
+4. Add insights to vep.analysis["exception_insights"]
+5. Generate alerts for missing or incomplete exceptions
 
-Return the updated VEP objects with exception fields filled in."""
+Return updated VEP objects with exception fields filled."""
     
     # Serialize full state for LLM
     context = {

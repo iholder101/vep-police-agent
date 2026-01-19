@@ -127,7 +127,12 @@ ALERT COMPOSITION RULES:
    - New VEPs or significant status changes → "status_change"
    - Milestone status changes → "milestone_update"
 
-3. For each alert, provide:
+3. DEDUPLICATION:
+   - If a VEP has multiple related issues (e.g., low activity + deadline approaching), consolidate into one alert with highest severity
+   - Avoid duplicate alerts from different monitoring checks for the same underlying issue
+   - Prefer one comprehensive alert per VEP over multiple narrow alerts
+
+4. For each alert, provide:
    - subject: One of the categories above
    - severity: Based on urgency and impact
    - vep_id: The tracking issue ID

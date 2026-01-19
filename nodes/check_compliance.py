@@ -40,14 +40,14 @@ Your task:
 1. For each VEP in the provided state, use GitHub MCP tools to fetch PRs, reviews, comments, and tracking issues
 2. Check compliance requirements:
    - VEP template completeness (check against template in repo)
-   - SIG sign-offs (all 3 SIGs: compute, network, storage)
+   - SIG sign-offs (owning SIG required; affected SIGs if cross-cutting feature)
    - VEP PR merged
    - Implementation PRs merged
    - PRs linked in tracking issue
    - Docs PR created/merged
    - Labels valid (SIG labels and target release labels)
 3. Update each VEP's compliance field with the check results
-4. Add insights to vep.analysis["compliance_insights"] with notes, recommendations, and context
+4. Add insights to vep.analysis["compliance_insights"]
 5. Generate alerts for any compliance violations
 
 Use the GitHub MCP tools to fetch the necessary data. Refer to each tool's description for usage requirements and examples.
