@@ -1497,11 +1497,14 @@ def index_approved_vep_prs(prs_index: Optional[List[Dict[str, Any]]] = None) -> 
     These are PRs that implement approved VEPs. Per vladikr's approach,
     monitoring these helps identify lingering implementation PRs.
 
+    Also detects mismatched PRs: those with 'approved-vep' label but no
+    VEP reference in title/body (indicates labeling error).
+
     Args:
         prs_index: Optional pre-fetched PRs list. If None, will be fetched.
 
     Returns:
-        List of PRs with approved-vep label, enriched with staleness info.
+        List of PRs with approved-vep label, enriched with staleness and mismatch info.
     """
     log("Indexing 'approved-vep' labeled PRs", node="indexer")
 
@@ -1510,6 +1513,9 @@ def index_approved_vep_prs(prs_index: Optional[List[Dict[str, Any]]] = None) -> 
 
     approved_vep_prs = []
     now = datetime.now()
+
+    # Pattern to detect VEP references (e.g., "VEP-123", "vep 123", "VEP#123")
+    vep_pattern = re.compile(r'vep[-\s#]?(\d+)', re.IGNORECASE)
 
     for pr in prs_index:
         if not isinstance(pr, dict):
@@ -1543,6 +1549,13 @@ def index_approved_vep_prs(prs_index: Optional[List[Dict[str, Any]]] = None) -> 
                 except (ValueError, TypeError):
                     pass
 
+            # Check for VEP reference in title and body
+            title = pr.get("title", "")
+            body = pr.get("body", "")
+            text_to_search = f"{title} {body}"
+            vep_matches = vep_pattern.findall(text_to_search)
+            has_vep_reference = len(vep_matches) > 0
+
             approved_vep_prs.append({
                 "number": pr.get("number"),
                 "title": pr.get("title"),
@@ -1552,9 +1565,14 @@ def index_approved_vep_prs(prs_index: Optional[List[Dict[str, Any]]] = None) -> 
                 "updated_at": updated_at,
                 "days_since_update": days_since_update,
                 "is_open": pr.get("state") == "open",
+                "has_vep_reference": has_vep_reference,
+                "is_mismatched": not has_vep_reference,  # Label exists but no VEP ref
+                "matched_vep_numbers": vep_matches if has_vep_reference else [],
             })
 
-    log(f"Found {len(approved_vep_prs)} PRs with 'approved-vep' label", node="indexer")
+    # Count mismatched for logging
+    mismatched_count = sum(1 for pr in approved_vep_prs if pr.get("is_mismatched"))
+    log(f"Found {len(approved_vep_prs)} PRs with 'approved-vep' label ({mismatched_count} mismatched)", node="indexer")
     return approved_vep_prs
 
 
