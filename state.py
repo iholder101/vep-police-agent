@@ -234,3 +234,4 @@ class VEPState(TypedDict):
     immediate_start: bool  # Flag to start immediately without waiting for round hour
     use_state_cache: bool  # Flag to use cached state from previous run on first cycle
     _state_cache_used: bool  # Internal flag tracking if state cache was used this run
+    _force_sheets_update: bool  # Internal flag to force sheets update on first cache cycle

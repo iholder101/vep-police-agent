@@ -112,6 +112,7 @@ def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int =
         "immediate_start": immediate_start,  # Flag to start immediately without waiting for round hour
         "use_state_cache": use_state_cache,  # Flag to use cached state on first cycle
         "_state_cache_used": False,  # Internal flag tracking if cache was used
+        "_force_sheets_update": False,  # Internal flag to force sheets update on first cache cycle
     }
 
 
