@@ -6,8 +6,8 @@ import os
 import json
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from langchain_core.tools import StructuredTool
-from pydantic import BaseModel, create_model
+from langchain_core.tools import Tool
+from pydantic import BaseModel
 from services.utils import log
 
 # ExceptionGroup is available in Python 3.11+ as a built-in
@@ -216,59 +216,10 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
                         if param_info:
                             description += "\n\nParameters:\n" + "\n".join(param_info)
                     
-                    # Create a Pydantic schema for the tool if we have input_schema
-                    args_schema = None
-                    if input_schema and 'properties' in input_schema:
-                        properties = input_schema['properties']
-                        required = input_schema.get('required', [])
-
-                        # Build Pydantic field definitions
-                        from typing import List, Dict, Any, Optional as Opt
-                        field_definitions = {}
-                        for param_name, param_schema in properties.items():
-                            param_type = param_schema.get('type', 'string')
-                            param_desc = param_schema.get('description', '')
-
-                            # Map JSON schema types to Python types
-                            # Gemini requires items type for arrays - empty items:{} is rejected
-                            python_type: type = str  # default
-                            if param_type == 'string':
-                                python_type = str
-                            elif param_type == 'integer':
-                                python_type = int
-                            elif param_type == 'number':
-                                python_type = float
-                            elif param_type == 'boolean':
-                                python_type = bool
-                            elif param_type == 'object':
-                                python_type = Dict[str, Any]
-                            elif param_type == 'array':
-                                # Check if it's a nested array (2D array like spreadsheet values)
-                                items_schema = param_schema.get('items', {})
-                                if items_schema.get('type') == 'array':
-                                    # Nested array: List[List[str]] for 2D arrays
-                                    python_type = List[List[str]]
-                                else:
-                                    # Simple array: List[str]
-                                    python_type = List[str]
-
-                            # Use Optional for non-required fields
-                            if param_name in required:
-                                field_definitions[param_name] = (python_type, ...)
-                            else:
-                                field_definitions[param_name] = (Opt[python_type], None)
-
-                        if field_definitions:
-                            try:
-                                args_schema = create_model(f'{mcp_tool.name}_args', **field_definitions)
-                            except Exception as e:
-                                log(f"Failed to create args_schema for {mcp_tool.name}: {e}", node="mcp_factory", level="DEBUG")
-
-                    langchain_tool = StructuredTool.from_function(
-                        func=tool_func,
+                    langchain_tool = Tool(
                         name=mcp_tool.name,
                         description=description,
-                        args_schema=args_schema,
+                        func=tool_func,
                     )
                     all_tools.append(langchain_tool)
                 
