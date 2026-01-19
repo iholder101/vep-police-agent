@@ -119,32 +119,56 @@ ERROR HANDLING:
 
 Return: table_schema, sheet_id, rows_updated, rows_added."""
     
-    # Prepare context for LLM
+    # Prepare simplified VEP data for the sheet (essential fields + analysis from analyze_combined)
+    simplified_veps = []
+    for vep in veps:
+        simplified_veps.append({
+            "tracking_issue_id": vep.tracking_issue_id,
+            "name": vep.name,
+            "title": vep.title,
+            "owner": vep.owner,
+            "owning_sig": vep.owning_sig,
+            "status": vep.status,
+            "target_release": vep.target_release,
+            "last_updated": str(vep.last_updated),
+            "compliance": {
+                "template_complete": vep.compliance.template_complete,
+                "all_sigs_signed_off": vep.compliance.all_sigs_signed_off,
+                "vep_merged": vep.compliance.vep_merged,
+                "prs_linked": vep.compliance.prs_linked,
+                "docs_pr_created": vep.compliance.docs_pr_created,
+            },
+            "activity_days_since_update": vep.activity.days_since_update,
+            "milestone_status": vep.current_milestone.status if vep.current_milestone else None,
+            # Analysis from analyze_combined - important for sheet columns
+            "analysis": vep.analysis if vep.analysis else {},
+        })
+
     context = {
-        "veps": [vep.model_dump(mode='json') for vep in veps],
+        "veps": simplified_veps,
         "sheet_config": sheet_config,
-        "alerts": state.get("alerts", []),
         "current_release": state.get("current_release"),
     }
     
     vep_count = len(veps)
-    user_prompt = f"""VEP state and sheet config:
+    sheet_id = sheet_config.get('sheet_id', 'NOT PROVIDED')
 
-{json.dumps(context, indent=2, default=str)}
-
+    user_prompt = f"""SHEET ID: {sheet_id}
 VEP COUNT: {vep_count}
-SHEET ID: {sheet_config.get('sheet_id', 'NOT PROVIDED')}
 
-TASK: Write all {vep_count} VEPs to Google Sheets with proper table formatting.
+ACTION REQUIRED: Call the write_range tool NOW to write this data to the sheet.
 
-STEPS:
-1. Verify access with get_spreadsheet
-2. Write all data (1 header + {vep_count} rows = {vep_count + 1} total)
-3. Format header (format_cells with bold + gray bg)
-4. Freeze header (freeze_rows with frozenRowCount=1)
-5. Add filters (create_filter covering all rows)
+VEP DATA TO WRITE:
+{json.dumps(simplified_veps, indent=2, default=str)}
 
-Column A must be "VEP ID" with tracking_issue_id. Verify row count before returning."""
+EXECUTE THESE TOOL CALLS IN ORDER:
+1. get_spreadsheet(spreadsheetId="{sheet_id}") - verify access
+2. write_range(spreadsheetId="{sheet_id}", range="Sheet1!A1", values=[header_row, ...data_rows...]) - write all {vep_count} VEPs
+3. format_cells - make header bold with gray background
+4. freeze_rows - freeze header row
+5. create_filter - add filters
+
+START BY CALLING get_spreadsheet NOW."""
     
     # Invoke LLM with Google Sheets MCP tools
     # Note: If Google Sheets MCP is not available, this will fail gracefully
