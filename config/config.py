@@ -1,7 +1,30 @@
 """Configuration values for VEP governance agent."""
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 from .util import GEMINI_3_PRO_PREVIEW, GEMINI_3_FLASH_PREVIEW, DEFAULT_MODEL
+
+# Project board numbers by release version
+# Each kubevirt release has its own GitHub Project V2 board
+VERSION_PROJECT_BOARDS: Dict[str, int] = {
+    "1.6": 15,
+    "1.7": 18,
+    "1.8": 19,
+}
+
+
+def get_project_board_for_version(version: Optional[str]) -> Optional[int]:
+    """Get project board number for a version string like 'v1.8' or '1.8'.
+
+    Args:
+        version: Version string (e.g., "v1.8", "1.8", or None)
+
+    Returns:
+        Project board number if found, None otherwise
+    """
+    if not version:
+        return None
+    v = version.lstrip("v")
+    return VERSION_PROJECT_BOARDS.get(v)
 
 # Model configuration per node type
 NODE_MODELS: Dict[str, str] = {

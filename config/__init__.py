@@ -5,6 +5,8 @@ from .config import (
     NODE_MODELS,
     EMAIL_RECIPIENTS,
     FETCH_VEPS_INTERVAL_SECONDS,
+    VERSION_PROJECT_BOARDS,
+    get_project_board_for_version,
 )
 
 # Re-export constants
