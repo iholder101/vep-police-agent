@@ -1471,6 +1471,73 @@ def index_vep_pr_mappings(prs_index: Optional[List[Dict[str, Any]]] = None) -> D
     return mappings
 
 
+def index_approved_vep_prs(prs_index: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+    """Index PRs with 'approved-vep' label from kubevirt/kubevirt.
+
+    These are PRs that implement approved VEPs. Per vladikr's approach,
+    monitoring these helps identify lingering implementation PRs.
+
+    Args:
+        prs_index: Optional pre-fetched PRs list. If None, will be fetched.
+
+    Returns:
+        List of PRs with approved-vep label, enriched with staleness info.
+    """
+    log("Indexing 'approved-vep' labeled PRs", node="indexer")
+
+    if prs_index is None:
+        prs_index = index_kubevirt_prs()
+
+    approved_vep_prs = []
+    now = datetime.now()
+
+    for pr in prs_index:
+        if not isinstance(pr, dict):
+            continue
+        # Skip raw_data entries
+        if "raw_data" in pr:
+            continue
+
+        labels = pr.get("labels", [])
+        # Handle both string labels and dict labels
+        label_names = []
+        for label in labels:
+            if isinstance(label, str):
+                label_names.append(label.lower())
+            elif isinstance(label, dict):
+                label_names.append(label.get("name", "").lower())
+
+        if "approved-vep" in label_names:
+            # Calculate staleness
+            updated_at = pr.get("updated_at")
+            days_since_update = None
+            if updated_at:
+                try:
+                    if isinstance(updated_at, str):
+                        updated_dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+                        # Make naive for comparison
+                        updated_dt = updated_dt.replace(tzinfo=None)
+                    else:
+                        updated_dt = updated_at
+                    days_since_update = (now - updated_dt).days
+                except (ValueError, TypeError):
+                    pass
+
+            approved_vep_prs.append({
+                "number": pr.get("number"),
+                "title": pr.get("title"),
+                "state": pr.get("state"),
+                "url": pr.get("url"),
+                "labels": labels,
+                "updated_at": updated_at,
+                "days_since_update": days_since_update,
+                "is_open": pr.get("state") == "open",
+            })
+
+    log(f"Found {len(approved_vep_prs)} PRs with 'approved-vep' label", node="indexer")
+    return approved_vep_prs
+
+
 def _load_cached_index(cache_file: Path, max_age_minutes: int = 60) -> Optional[Dict[str, Any]]:
     """Load cached indexed context if it exists and is fresh.
     
@@ -1558,6 +1625,9 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
         - issues_index: List of issues in enhancements repo
         - prs_index: List of PRs in kubevirt repo
         - vep_files_index: List of VEP files in veps/ directory
+        - project_board_items: VEPs from GitHub Project V2 board with all fields
+        - vep_to_pr_mappings: Pre-computed VEP number to implementation PR mappings
+        - approved_vep_prs: PRs with 'approved-vep' label
     """
     # Try to load from cache first
     cached_context = _load_cached_index(CACHE_FILE, cache_max_age_minutes)
@@ -1572,25 +1642,42 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
     
     # Cache miss or expired - create new index
     log(f"Creating indexed context for VEP discovery (days_back={days_back}, cache_max_age_minutes={cache_max_age_minutes})", node="indexer")
-    
+
+    # First fetch release info to get version for project board lookup
+    release_info = index_release_schedule()
+    release_version = release_info.get("current_release") if release_info else None
+
+    # Fetch PRs once and reuse for mappings
+    prs_index = index_kubevirt_prs(days_back=days_back)
+
     indexed_context = {
-        "release_info": index_release_schedule(),
+        "release_info": release_info,
         "enhancements_readme": index_enhancements_readme(),
         "issues_index": index_enhancements_issues(days_back=days_back),
-        "prs_index": index_kubevirt_prs(days_back=days_back),
+        "prs_index": prs_index,
         "vep_files_index": index_vep_files(),
+        # New: Project board items with all field metadata
+        "project_board_items": index_project_board_items(version=release_version),
+        # New: Pre-computed VEP-to-PR mappings
+        "vep_to_pr_mappings": index_vep_pr_mappings(prs_index=prs_index),
+        # New: PRs with approved-vep label
+        "approved_vep_prs": index_approved_vep_prs(prs_index=prs_index),
         "indexed_at": datetime.now().isoformat(),
         "days_back": days_back,
     }
-    
+
     # Log summary
-    release = indexed_context["release_info"]["current_release"] if indexed_context["release_info"] else "unknown"
+    release = release_version if release_version else "unknown"
     readme_available = "yes" if indexed_context["enhancements_readme"] else "no"
     issues_count = len(indexed_context["issues_index"])
     prs_count = len(indexed_context["prs_index"])
     vep_files_count = len(indexed_context["vep_files_index"])
-    
+    board_items_count = len(indexed_context["project_board_items"])
+    vep_pr_mappings_count = len(indexed_context["vep_to_pr_mappings"])
+    approved_vep_prs_count = len(indexed_context["approved_vep_prs"])
+
     log(f"Indexed context created: release={release}, readme={readme_available}, issues={issues_count}, prs={prs_count}, vep_files={vep_files_count}", node="indexer")
+    log(f"  - Project board items: {board_items_count}, VEP-to-PR mappings: {vep_pr_mappings_count}, approved-vep PRs: {approved_vep_prs_count}", node="indexer")
     
     # Save to cache
     _save_cached_index(CACHE_FILE, indexed_context)
