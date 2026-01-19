@@ -1,6 +1,6 @@
 """Configuration values for VEP governance agent."""
 
-from typing import Dict, List, Optional
+from typing import Dict, List
 from .util import GEMINI_3_PRO_PREVIEW, GEMINI_3_FLASH_PREVIEW, DEFAULT_MODEL
 
 # Model configuration per node type
@@ -26,9 +26,6 @@ NODE_MODELS: Dict[str, str] = {
 EMAIL_RECIPIENTS: List[str] = [
     "iholder@redhat.com",
 ]
-
-# Email service configuration (can be overridden by RESEND_API_KEY env var)
-RESEND_API_KEY: Optional[str] = None
 
 # Agent operation interval (in seconds)
 # After each fetch, the full pipeline runs: fetch_veps -> run_monitoring -> analyze_combined -> update_sheets -> alert_summary

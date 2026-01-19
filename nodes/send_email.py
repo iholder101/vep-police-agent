@@ -1,6 +1,7 @@
 """Send email node - sends alerts via Resend API (easiest email service for real inbox delivery)."""
 
 import json
+import os
 import requests
 from datetime import datetime
 from typing import Any, List
@@ -11,17 +12,17 @@ import config
 
 def _send_via_resend(recipients: List[str], subject: str, html_body: str, text_body: str) -> bool:
     """Send email via Resend API (easiest email service - sends to real inboxes!).
-    
+
     Resend: https://resend.com
     - 3,000 emails/month free
     - Developer-friendly API
     - No domain verification needed for basic sending
     - Just needs API key from environment: RESEND_API_KEY
-    
+
     Returns:
         True if email was sent successfully, False otherwise
     """
-    api_key = config.get_resend_api_key()
+    api_key = os.environ.get("RESEND_API_KEY")
     if not api_key:
         return False
     
@@ -124,7 +125,7 @@ def send_email_node(state: VEPState) -> Any:
         }
     
     # Check if Resend API key is configured
-    api_key = config.get_resend_api_key()
+    api_key = os.environ.get("RESEND_API_KEY")
     if not api_key:
         log("RESEND_API_KEY not configured - cannot send email", node="send_email", level="ERROR")
         log("To send emails:", node="send_email", level="INFO")

@@ -1,7 +1,7 @@
 """Constants and helper functions for configuration."""
 
 import os
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 # Gemini Model constants
 GEMINI_3_PRO_PREVIEW = "gemini-3-pro-preview"
@@ -71,10 +71,3 @@ def get_email_recipients() -> List[str]:
     return EMAIL_RECIPIENTS.copy() if EMAIL_RECIPIENTS else []
 
 
-def get_resend_api_key() -> Optional[str]:
-    """Get Resend API key (env var takes precedence over config)."""
-    from .config import RESEND_API_KEY
-    env_key = os.environ.get("RESEND_API_KEY")
-    if env_key:
-        return env_key.strip()
-    return RESEND_API_KEY

@@ -4,7 +4,6 @@
 from .config import (
     NODE_MODELS,
     EMAIL_RECIPIENTS,
-    RESEND_API_KEY,
     FETCH_VEPS_INTERVAL_SECONDS,
 )
 
@@ -29,5 +28,4 @@ from .util import (
     set_node_model,
     get_all_node_models,
     get_email_recipients,
-    get_resend_api_key,
 )
