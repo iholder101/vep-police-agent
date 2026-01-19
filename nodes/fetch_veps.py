@@ -419,6 +419,24 @@ INDEXED INFORMATION (pre-fetched - USE THIS DATA DIRECTLY):
 - VEP Files: Found {len(vep_files_index)} VEP files with FULL CONTENT already indexed:
 {json.dumps(vep_files_summary, indent=2, default=str)}
 
+RELEASE PHASE CONTEXT:
+================================================================================
+Current Phase: {indexed_context.get("release_phase", "unknown")}
+
+Phase meanings and governance priorities:
+- "design": Before Enhancement Freeze - focus on VEP tracking and approval status
+- "development": Between EF and Code Freeze - focus on implementation PR progress
+- "stabilization": After Code Freeze - PRIORITY: code freeze compliance, all PRs must be merged
+- "released": Post-release - historical context, focus shifts to next release
+- "unknown": Could not determine phase from schedule
+
+Use this phase to prioritize VEP issues appropriately. In "stabilization" phase,
+VEPs without merged implementation PRs are at highest risk.
+================================================================================
+
+- VEPs MISSING IMPLEMENTATION PRs (tracked VEPs with no linked PRs - urgent in stabilization phase):
+{json.dumps(indexed_context.get("veps_missing_prs", []), indent=2, default=str)}
+
 - PROJECT BOARD ITEMS (from GitHub Project V2 board - contains Status, Priority, and other board metadata):
 {json.dumps(indexed_context.get("project_board_items", {}), indent=2, default=str)}
 
@@ -426,6 +444,7 @@ INDEXED INFORMATION (pre-fetched - USE THIS DATA DIRECTLY):
 {json.dumps(indexed_context.get("vep_to_pr_mappings", {}), indent=2, default=str)}
 
 - APPROVED-VEP PRs (PRs with 'approved-vep' label, implementing approved VEPs):
+  Note: PRs marked with is_mismatched=true have the label but no VEP reference in title/body
 {json.dumps(indexed_context.get("approved_vep_prs", []), indent=2, default=str)}
 
 CRITICAL: The VEP files are ALREADY PARSED and their CONTENT is above. You do NOT need to read them again with tool calls!
