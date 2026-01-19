@@ -20,19 +20,20 @@ CACHE_FILE = Path(__file__).parent.parent / ".vep_index_cache.json"
 
 def _call_with_retry(tool_func, max_retries=3, delay=5, **kwargs):
     """Call a tool function with retry logic for rate limit errors.
-    
+
     Args:
         tool_func: The tool function to call
         max_retries: Maximum number of retries
         delay: Initial delay in seconds (doubles on each retry)
         **kwargs: Arguments to pass to tool_func
-    
+
     Returns:
         Result from tool_func, or None if all retries fail
     """
     for attempt in range(max_retries):
         try:
-            return tool_func(**kwargs)
+            result = tool_func(**kwargs)
+            return result
         except Exception as e:
             error_str = str(e).lower()
             # Check if it's a rate limit error
@@ -1139,7 +1140,7 @@ def index_vep_files() -> List[Dict[str, Any]]:
                 # Add delay between requests to avoid rate limits (IP-based: 60/hour)
                 if i > 0:
                     time.sleep(2)  # 2s delay between subdirectory requests to stay under 60/hour
-                
+
                 try:
                     log(f"Reading subdirectory {subdir} ({i+1}/{len(subdirectories)})", node="indexer", level="DEBUG")
                     # Try with owner/repo/path format first
@@ -1149,7 +1150,7 @@ def index_vep_files() -> List[Dict[str, Any]]:
                         repo="enhancements",
                         path=subdir
                     )
-                    
+
                     # If that fails, try with path format
                     if subdir_content is None:
                         try:

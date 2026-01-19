@@ -140,11 +140,9 @@ EMAIL_RECIPIENTS: List[str] = [
 RESEND_API_KEY: Optional[str] = None
 
 # Agent operation intervals (in seconds)
-# These control how often different operations run
 # All operations run on round hours (e.g., 13:00, 14:00, 15:00)
+# After each fetch, the full pipeline runs: fetch_veps -> run_monitoring -> analyze_combined -> update_sheets -> alert_summary
 FETCH_VEPS_INTERVAL_SECONDS: int = 1800  # 30 minutes - how often to fetch/update VEPs from GitHub
-UPDATE_SHEETS_INTERVAL_SECONDS: int = 7200  # 2 hours - how often to update Google Sheets
-ALERT_SUMMARY_INTERVAL_SECONDS: int = 7200  # 2 hours - how often to check if alerts need to be sent
 
 
 def get_email_recipients() -> List[str]:
