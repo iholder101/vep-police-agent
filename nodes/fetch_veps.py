@@ -16,6 +16,114 @@ class FetchVEPsResponse(CheckResponse):
     pass
 
 
+def _create_mock_veps() -> list[VEPInfo]:
+    """Create mock VEPs for testing without GitHub API calls."""
+    from state import VEPMilestone, VEPCompliance, VEPActivity
+
+    now = datetime.now()
+    return [
+        VEPInfo(
+            tracking_issue_id=1001,
+            name="vep-001",
+            title="Test VEP 1",
+            owner="testuser1",
+            owning_sig="compute",
+            status="open",
+            last_updated=now,
+            created_at=now,
+            current_milestone=VEPMilestone(
+                version="v1.8",
+                status="Tracked",
+                promotion_phase="Net New",
+                exception_phase="None",
+                target_stage="Alpha",
+                all_code_prs_merged=False
+            ),
+            compliance=VEPCompliance(
+                template_complete=True,
+                all_sigs_signed_off=False,
+                vep_merged=True,
+                prs_linked=True,
+                docs_pr_created=False,
+                labels_valid=True
+            ),
+            activity=VEPActivity(
+                last_activity=now,
+                days_since_update=5,
+                review_lag_days=None
+            ),
+            tracking_issue=None,
+            target_release="v1.8"
+        ),
+        VEPInfo(
+            tracking_issue_id=1002,
+            name="vep-002",
+            title="Test VEP 2",
+            owner="testuser2",
+            owning_sig="network",
+            status="in-progress",
+            last_updated=now,
+            created_at=now,
+            current_milestone=VEPMilestone(
+                version="v1.8",
+                status="Tracked",
+                promotion_phase="Remaining",
+                exception_phase="None",
+                target_stage="Beta",
+                all_code_prs_merged=False
+            ),
+            compliance=VEPCompliance(
+                template_complete=True,
+                all_sigs_signed_off=False,
+                vep_merged=True,
+                prs_linked=True,
+                docs_pr_created=False,
+                labels_valid=True
+            ),
+            activity=VEPActivity(
+                last_activity=now,
+                days_since_update=2,
+                review_lag_days=1
+            ),
+            tracking_issue=None,
+            target_release="v1.8"
+        ),
+        VEPInfo(
+            tracking_issue_id=1003,
+            name="vep-003",
+            title="Test VEP 3",
+            owner="testuser3",
+            owning_sig="storage",
+            status="closed",
+            last_updated=now,
+            created_at=now,
+            current_milestone=VEPMilestone(
+                version="v1.9",
+                status="Complete",
+                promotion_phase="Graduating",
+                exception_phase="None",
+                target_stage="Stable",
+                all_code_prs_merged=True
+            ),
+            compliance=VEPCompliance(
+                template_complete=True,
+                all_sigs_signed_off=True,
+                vep_merged=True,
+                prs_linked=True,
+                docs_pr_created=True,
+                labels_valid=True
+            ),
+            activity=VEPActivity(
+                last_activity=now,
+                days_since_update=0,
+                review_lag_days=None
+            ),
+            tracking_issue=None,
+            target_release="v1.9"
+        ),
+    ]
+
+
 def fetch_veps_node(state: VEPState) -> Any:
     """Discover VEPs from kubevirt/enhancements repository.
     
@@ -49,113 +157,7 @@ def fetch_veps_node(state: VEPState) -> Any:
     
     if use_mock_veps:
         log("Mock VEPs mode enabled - creating minimal mock VEPs for testing (skipping GitHub fetch)", node="fetch_veps")
-        
-        # Import required models for mock VEPs
-        from state import VEPMilestone, VEPCompliance, VEPActivity
-        
-        # Create a few minimal VEPs for testing sheets with all required fields
-        now = datetime.now()
-        mock_veps = [
-            VEPInfo(
-                tracking_issue_id=1001,
-                name="vep-001",
-                title="Test VEP 1",
-                owner="testuser1",
-                owning_sig="compute",
-                status="open",
-                last_updated=now,
-                created_at=now,
-                current_milestone=VEPMilestone(
-                    version="v1.8",
-                    status="Tracked",
-                    promotion_phase="Net New",
-                    exception_phase="None",
-                    target_stage="Alpha",
-                    all_code_prs_merged=False
-                ),
-                compliance=VEPCompliance(
-                    template_complete=True,
-                    all_sigs_signed_off=False,
-                    vep_merged=True,
-                    prs_linked=True,
-                    docs_pr_created=False,
-                    labels_valid=True
-                ),
-                activity=VEPActivity(
-                    last_activity=now,
-                    days_since_update=5,
-                    review_lag_days=None
-                ),
-                tracking_issue=None,
-                target_release="v1.8"
-            ),
-            VEPInfo(
-                tracking_issue_id=1002,
-                name="vep-002",
-                title="Test VEP 2",
-                owner="testuser2",
-                owning_sig="network",
-                status="in-progress",
-                last_updated=now,
-                created_at=now,
-                current_milestone=VEPMilestone(
-                    version="v1.8",
-                    status="Tracked",
-                    promotion_phase="Remaining",
-                    exception_phase="None",
-                    target_stage="Beta",
-                    all_code_prs_merged=False
-                ),
-                compliance=VEPCompliance(
-                    template_complete=True,
-                    all_sigs_signed_off=False,
-                    vep_merged=True,
-                    prs_linked=True,
-                    docs_pr_created=False,
-                    labels_valid=True
-                ),
-                activity=VEPActivity(
-                    last_activity=now,
-                    days_since_update=2,
-                    review_lag_days=1
-                ),
-                tracking_issue=None,
-                target_release="v1.8"
-            ),
-            VEPInfo(
-                tracking_issue_id=1003,
-                name="vep-003",
-                title="Test VEP 3",
-                owner="testuser3",
-                owning_sig="storage",
-                status="closed",
-                last_updated=now,
-                created_at=now,
-                current_milestone=VEPMilestone(
-                    version="v1.9",
-                    status="Complete",
-                    promotion_phase="Graduating",
-                    exception_phase="None",
-                    target_stage="Stable",
-                    all_code_prs_merged=True
-                ),
-                compliance=VEPCompliance(
-                    template_complete=True,
-                    all_sigs_signed_off=True,
-                    vep_merged=True,
-                    prs_linked=True,
-                    docs_pr_created=True,
-                    labels_valid=True
-                ),
-                activity=VEPActivity(
-                    last_activity=now,
-                    days_since_update=0,
-                    review_lag_days=None
-                ),
-                tracking_issue=None,
-                target_release="v1.9"
-            ),
-        ]
+        mock_veps = _create_mock_veps()
         log(f"Created {len(mock_veps)} mock VEPs for sheets testing", node="fetch_veps", level="DEBUG")
         return {
             "veps": mock_veps,
