@@ -11,8 +11,17 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 UNIT_NAME="vep-police-agent"
 UNIT_FILE="/etc/systemd/system/${UNIT_NAME}.service"
 
+# Check if --delete flag is present anywhere in args
+DELETE_REQUESTED=false
+for arg in "$@"; do
+    if [ "$arg" = "--delete" ]; then
+        DELETE_REQUESTED=true
+        break
+    fi
+done
+
 # Handle --delete flag
-if [ "$1" = "--delete" ]; then
+if [ "$DELETE_REQUESTED" = true ]; then
     # Check if running as root (needed to delete systemd unit)
     if [ "$EUID" -ne 0 ]; then
         echo "Error: This script must be run as root (sudo) to delete systemd unit files."
@@ -57,16 +66,37 @@ if [ "$1" = "--delete" ]; then
     exit 0
 fi
 
+# Collect extra flags to pass to the agent (any args that aren't script-specific)
+EXTRA_FLAGS=()
+SHOW_HELP=false
+for arg in "$@"; do
+    case "$arg" in
+        --help|-h)
+            SHOW_HELP=true
+            ;;
+        --delete)
+            # Already handled above
+            ;;
+        *)
+            EXTRA_FLAGS+=("$arg")
+            ;;
+    esac
+done
+
 # Show help if requested
-if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+if [ "$SHOW_HELP" = true ]; then
     cat <<EOF
-Usage: $0 [--help|--delete]
+Usage: $0 [--help|--delete] [AGENT_FLAGS...]
 
 Creates or deletes a systemd unit for the VEP Police Agent.
 
 Options:
   --help, -h    Show this help message
   --delete      Remove the systemd unit and clean up (stops and disables service)
+
+Agent Flags (passed to run-latest-agent.sh):
+  Any additional flags are embedded in the systemd unit and passed to the agent.
+  Example: $0 --use-state-cache --skip-send-email
 
 Creates a systemd unit for the VEP Police Agent that runs once.
 
@@ -142,6 +172,13 @@ fi
 # If run via sudo, use SUDO_USER; otherwise use the actual user (should be root)
 SERVICE_USER="${SUDO_USER:-$(whoami)}"
 
+# Build ExecStart command with extra flags
+EXEC_START="$PROJECT_ROOT/scripts/run-latest-agent.sh --immediate-start"
+if [ ${#EXTRA_FLAGS[@]} -gt 0 ]; then
+    EXEC_START="$EXEC_START ${EXTRA_FLAGS[*]}"
+    echo "Including extra flags in systemd unit: ${EXTRA_FLAGS[*]}"
+fi
+
 # Create systemd unit file
 cat > "$UNIT_FILE" <<EOF
 [Unit]
@@ -152,7 +189,7 @@ After=network.target
 Type=simple
 User=$SERVICE_USER
 WorkingDirectory=$PROJECT_ROOT
-ExecStart=$PROJECT_ROOT/scripts/run-latest-agent.sh --immediate-start
+ExecStart=$EXEC_START
 StandardOutput=journal
 StandardError=journal
 
