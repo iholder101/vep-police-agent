@@ -141,6 +141,7 @@ def scheduler_node(state: VEPState) -> Any:
             return {
                 "next_tasks": next_tasks,
                 "last_check_times": last_check_times,
+                "sheets_need_update": True,  # Force sheets update when using cache
                 "_state_cache_used": True,  # Mark cache as used
             }
         else:
