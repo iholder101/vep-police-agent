@@ -96,8 +96,13 @@ def invoke_llm_with_tools(
         log(f"Using model {model_name} for {operation_type}", node=operation_type, level="DEBUG")
 
         # Create LLM with tools bound
+        # Use tool_choice="any" when require_tools is True to force LLM to call at least one tool
         llm = get_model(model_name=model_name)
-        llm_with_tools = llm.bind_tools(tools)
+        if require_tools:
+            llm_with_tools = llm.bind_tools(tools, tool_choice="any")
+            log(f"Tool choice set to 'any' - forcing LLM to use tools", node=operation_type, level="DEBUG")
+        else:
+            llm_with_tools = llm.bind_tools(tools)
         
         # Build messages
         messages = [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
