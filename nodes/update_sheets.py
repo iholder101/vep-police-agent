@@ -33,6 +33,12 @@ def update_sheets_node(state: VEPState) -> Any:
     veps = state.get("veps", [])
     sheets_need_update = state.get("sheets_need_update", False)
     sheet_config = state.get("sheet_config", {})
+
+    # Check for force flag (set by scheduler on first cache cycle, cleared after use)
+    force_sheets_update = state.get("_force_sheets_update", False)
+    if force_sheets_update:
+        sheets_need_update = True
+
     skip_sheets = state.get("skip_sheets", False)
     
     # Check if sheets should be skipped
@@ -70,6 +76,7 @@ def update_sheets_node(state: VEPState) -> Any:
         return {
             "last_check_times": last_check_times,
             "sheets_need_update": False,
+            "_force_sheets_update": False,  # Clear force flag
             "next_tasks": next_tasks,
         }
     
@@ -81,6 +88,7 @@ def update_sheets_node(state: VEPState) -> Any:
         return {
             "last_check_times": last_check_times,
             "sheets_need_update": False,
+            "_force_sheets_update": False,  # Clear force flag
             "next_tasks": next_tasks,  # Signal to fetch VEPs
         }
     
@@ -231,6 +239,7 @@ Column A must be "VEP ID" with tracking_issue_id. Verify row count before return
         result = {
             "last_check_times": last_check_times,
             "sheets_need_update": False,  # Clear flag after successful update
+            "_force_sheets_update": False,  # Clear force flag
             "next_tasks": next_tasks,
             "sheet_config": sheet_config,
         }
@@ -282,6 +291,7 @@ Column A must be "VEP ID" with tracking_issue_id. Verify row count before return
         return {
             "last_check_times": last_check_times,
             "sheets_need_update": False if is_mcp_unavailable else True,
+            "_force_sheets_update": False,  # Clear force flag
             "next_tasks": next_tasks,
             "errors": errors,
         }
