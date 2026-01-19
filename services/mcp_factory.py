@@ -216,10 +216,47 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
                         if param_info:
                             description += "\n\nParameters:\n" + "\n".join(param_info)
                     
+                    # Create a Pydantic schema for the tool if we have input_schema
+                    args_schema = None
+                    if input_schema and 'properties' in input_schema:
+                        properties = input_schema['properties']
+                        required = input_schema.get('required', [])
+
+                        # Build Pydantic field definitions
+                        field_definitions = {}
+                        for param_name, param_schema in properties.items():
+                            param_type = param_schema.get('type', 'string')
+                            param_desc = param_schema.get('description', '')
+
+                            # Map JSON schema types to Python types
+                            type_mapping = {
+                                'string': str,
+                                'integer': int,
+                                'number': float,
+                                'boolean': bool,
+                                'array': list,
+                                'object': dict,
+                            }
+                            python_type = type_mapping.get(param_type, str)
+
+                            # Use Optional for non-required fields
+                            if param_name in required:
+                                field_definitions[param_name] = (python_type, ...)
+                            else:
+                                from typing import Optional as Opt
+                                field_definitions[param_name] = (Opt[python_type], None)
+
+                        if field_definitions:
+                            try:
+                                args_schema = create_model(f'{mcp_tool.name}_args', **field_definitions)
+                            except Exception as e:
+                                log(f"Failed to create args_schema for {mcp_tool.name}: {e}", node="mcp_factory", level="DEBUG")
+
                     langchain_tool = Tool(
                         name=mcp_tool.name,
                         description=description,
                         func=tool_func,
+                        args_schema=args_schema,
                     )
                     all_tools.append(langchain_tool)
                 
