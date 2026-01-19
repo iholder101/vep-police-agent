@@ -37,6 +37,95 @@ The agent uses Large Language Models (LLMs) via Google's Gemini API to intellige
 - 🚀 **Containerized**: Runs in Podman/Docker containers for easy deployment
 - 🔐 **MCP Integration**: Uses Model Context Protocol (MCP) for GitHub and Google Sheets access
 
+## Architecture
+
+The agent is built using **LangGraph** for orchestration and follows a node-based architecture:
+
+### Node Graph
+
+The agent's execution flow is orchestrated by a central scheduler that routes to different nodes:
+
+```mermaid
+graph TD
+    Start([Start]) --> Scheduler[scheduler]
+
+    Scheduler -->|Periodic| FetchVEPs[fetch_veps]
+    Scheduler -->|Need analysis| FetchVEPs
+    Scheduler -->|Sheets due| UpdateSheets[update_sheets]
+    Scheduler -->|Alerts due| AlertSummary[alert_summary]
+    Scheduler -->|No tasks| Wait[wait]
+
+    FetchVEPs --> RunMonitoring[run_monitoring]
+
+    RunMonitoring --> CheckDeadlines[check_deadlines]
+    RunMonitoring --> CheckActivity[check_activity]
+    RunMonitoring --> CheckCompliance[check_compliance]
+    RunMonitoring --> CheckExceptions[check_exceptions]
+
+    CheckDeadlines --> MergeUpdates[merge_vep_updates]
+    CheckActivity --> MergeUpdates
+    CheckCompliance --> MergeUpdates
+    CheckExceptions --> MergeUpdates
+
+    MergeUpdates --> AnalyzeCombined[analyze_combined]
+    AnalyzeCombined --> SaveStateCache[save_state_cache]
+    SaveStateCache --> Scheduler
+
+    AlertSummary -->|Alerts| SendNotifications[send_notifications]
+    AlertSummary -->|No alerts| Scheduler
+
+    SendNotifications --> SendEmail[send_email]
+    SendNotifications --> SendSlack[send_slack]
+
+    UpdateSheets --> Scheduler
+    SendEmail --> Scheduler
+    SendSlack --> Scheduler
+    Wait --> Scheduler
+
+    Scheduler -.->|Loop| Scheduler
+
+    style Scheduler fill:#2196F3,stroke:#1976D2,stroke-width:2px,color:#fff
+    style RunMonitoring fill:#FF9800,stroke:#F57C00,stroke-width:2px,color:#fff
+    style MergeUpdates fill:#4CAF50,stroke:#388E3C,stroke-width:2px,color:#fff
+    style AnalyzeCombined fill:#9C27B0,stroke:#7B1FA2,stroke-width:2px,color:#fff
+    style SaveStateCache fill:#673AB7,stroke:#512DA8,stroke-width:2px,color:#fff
+    style UpdateSheets fill:#F44336,stroke:#D32F2F,stroke-width:2px,color:#fff
+    style FetchVEPs fill:#00BCD4,stroke:#0097A7,stroke-width:2px,color:#fff
+    style CheckDeadlines fill:#795548,stroke:#5D4037,stroke-width:2px,color:#fff
+    style CheckActivity fill:#607D8B,stroke:#455A64,stroke-width:2px,color:#fff
+    style CheckCompliance fill:#9E9E9E,stroke:#616161,stroke-width:2px,color:#fff
+    style CheckExceptions fill:#FFC107,stroke:#F57C00,stroke-width:2px,color:#000
+    style AlertSummary fill:#E91E63,stroke:#C2185B,stroke-width:2px,color:#fff
+    style SendNotifications fill:#FF5722,stroke:#E64A19,stroke-width:2px,color:#fff
+    style SendEmail fill:#FF5722,stroke:#E64A19,stroke-width:2px,color:#fff
+    style SendSlack fill:#4A154B,stroke:#3C1042,stroke-width:2px,color:#fff
+    style Wait fill:#9E9E9E,stroke:#616161,stroke-width:2px,color:#fff
+```
+
+**Flow Description:**
+1. **Entry Point**: The `scheduler` node is the central coordinator and entry point
+2. **VEP Discovery**: Routes to `fetch_veps` in two cases:
+   - **Priority**: If no VEPs exist (immediate fetch on first run)
+   - **Periodic**: Every configured interval (default: 1 hour) to refresh and discover new VEPs
+3. **Automatic Analysis Pipeline**: After `fetch_veps` completes, the scheduler automatically schedules `run_monitoring` to ensure VEPs always go through the full analysis pipeline before updating sheets or sending emails
+4. **Parallel Monitoring**: `run_monitoring` triggers four parallel checks:
+   - `check_deadlines`: Tracks EF/CF deadlines
+   - `check_activity`: Monitors VEP activity
+   - `check_compliance`: Verifies process compliance
+   - `check_exceptions`: Monitors exceptions
+5. **Merge & Analyze**: All parallel checks converge to `merge_vep_updates`, then `analyze_combined` for holistic analysis
+6. **State Cache**: After `analyze_combined`, `save_state_cache` saves state to `.vep_state_cache.json` for fast debug cycles with `--use-state-cache`
+7. **Post-Analysis Actions**: After caching, routes back to `scheduler`, which automatically schedules both `update_sheets` and `alert_summary` in parallel:
+   - `update_sheets`: Updates Google Sheets with VEP status
+   - `alert_summary`: Composes structured alerts from VEP analysis
+8. **Notifications**: `alert_summary` conditionally routes to `send_notifications` (if alerts exist) or back to `scheduler` (if no alerts). `send_notifications` fans out to `send_email` and `send_slack` in parallel
+9. **Wait Loop**: If no tasks, waits until next round hour (or next interval if `--immediate-start` is used) before returning to scheduler (continuous operation)
+
+**Key Design Principles:**
+- **Analysis Pipeline Enforcement**: VEPs must always go through `fetch_veps → run_monitoring → merge_vep_updates → analyze_combined` before updating sheets or sending emails
+- **Parallel Execution**: `update_sheets` and `alert_summary` run in parallel after analysis completes for efficiency
+- **Scheduler-Driven**: The scheduler is the central coordinator that ensures proper sequencing and prevents skipping the analysis pipeline
+
 ## Requirements
 
 - Python 3.11+
@@ -287,95 +376,6 @@ The agent caches indexed VEP data to avoid redundant API calls:
 - Default cache age: 60 minutes
 - Use `--no-index-cache` to disable caching
 - Use `--index-cache-minutes` to adjust cache duration
-
-## Architecture
-
-The agent is built using **LangGraph** for orchestration and follows a node-based architecture:
-
-### Node Graph
-
-The agent's execution flow is orchestrated by a central scheduler that routes to different nodes:
-
-```mermaid
-graph TD
-    Start([Start]) --> Scheduler[scheduler]
-
-    Scheduler -->|Periodic| FetchVEPs[fetch_veps]
-    Scheduler -->|Need analysis| FetchVEPs
-    Scheduler -->|Sheets due| UpdateSheets[update_sheets]
-    Scheduler -->|Alerts due| AlertSummary[alert_summary]
-    Scheduler -->|No tasks| Wait[wait]
-
-    FetchVEPs --> RunMonitoring[run_monitoring]
-
-    RunMonitoring --> CheckDeadlines[check_deadlines]
-    RunMonitoring --> CheckActivity[check_activity]
-    RunMonitoring --> CheckCompliance[check_compliance]
-    RunMonitoring --> CheckExceptions[check_exceptions]
-
-    CheckDeadlines --> MergeUpdates[merge_vep_updates]
-    CheckActivity --> MergeUpdates
-    CheckCompliance --> MergeUpdates
-    CheckExceptions --> MergeUpdates
-
-    MergeUpdates --> AnalyzeCombined[analyze_combined]
-    AnalyzeCombined --> SaveStateCache[save_state_cache]
-    SaveStateCache --> Scheduler
-
-    AlertSummary -->|Alerts| SendNotifications[send_notifications]
-    AlertSummary -->|No alerts| Scheduler
-
-    SendNotifications --> SendEmail[send_email]
-    SendNotifications --> SendSlack[send_slack]
-
-    UpdateSheets --> Scheduler
-    SendEmail --> Scheduler
-    SendSlack --> Scheduler
-    Wait --> Scheduler
-
-    Scheduler -.->|Loop| Scheduler
-
-    style Scheduler fill:#2196F3,stroke:#1976D2,stroke-width:2px,color:#fff
-    style RunMonitoring fill:#FF9800,stroke:#F57C00,stroke-width:2px,color:#fff
-    style MergeUpdates fill:#4CAF50,stroke:#388E3C,stroke-width:2px,color:#fff
-    style AnalyzeCombined fill:#9C27B0,stroke:#7B1FA2,stroke-width:2px,color:#fff
-    style SaveStateCache fill:#673AB7,stroke:#512DA8,stroke-width:2px,color:#fff
-    style UpdateSheets fill:#F44336,stroke:#D32F2F,stroke-width:2px,color:#fff
-    style FetchVEPs fill:#00BCD4,stroke:#0097A7,stroke-width:2px,color:#fff
-    style CheckDeadlines fill:#795548,stroke:#5D4037,stroke-width:2px,color:#fff
-    style CheckActivity fill:#607D8B,stroke:#455A64,stroke-width:2px,color:#fff
-    style CheckCompliance fill:#9E9E9E,stroke:#616161,stroke-width:2px,color:#fff
-    style CheckExceptions fill:#FFC107,stroke:#F57C00,stroke-width:2px,color:#000
-    style AlertSummary fill:#E91E63,stroke:#C2185B,stroke-width:2px,color:#fff
-    style SendNotifications fill:#FF5722,stroke:#E64A19,stroke-width:2px,color:#fff
-    style SendEmail fill:#FF5722,stroke:#E64A19,stroke-width:2px,color:#fff
-    style SendSlack fill:#4A154B,stroke:#3C1042,stroke-width:2px,color:#fff
-    style Wait fill:#9E9E9E,stroke:#616161,stroke-width:2px,color:#fff
-```
-
-**Flow Description:**
-1. **Entry Point**: The `scheduler` node is the central coordinator and entry point
-2. **VEP Discovery**: Routes to `fetch_veps` in two cases:
-   - **Priority**: If no VEPs exist (immediate fetch on first run)
-   - **Periodic**: Every configured interval (default: 1 hour) to refresh and discover new VEPs
-3. **Automatic Analysis Pipeline**: After `fetch_veps` completes, the scheduler automatically schedules `run_monitoring` to ensure VEPs always go through the full analysis pipeline before updating sheets or sending emails
-4. **Parallel Monitoring**: `run_monitoring` triggers four parallel checks:
-   - `check_deadlines`: Tracks EF/CF deadlines
-   - `check_activity`: Monitors VEP activity
-   - `check_compliance`: Verifies process compliance
-   - `check_exceptions`: Monitors exceptions
-5. **Merge & Analyze**: All parallel checks converge to `merge_vep_updates`, then `analyze_combined` for holistic analysis
-6. **State Cache**: After `analyze_combined`, `save_state_cache` saves state to `.vep_state_cache.json` for fast debug cycles with `--use-state-cache`
-7. **Post-Analysis Actions**: After caching, routes back to `scheduler`, which automatically schedules both `update_sheets` and `alert_summary` in parallel:
-   - `update_sheets`: Updates Google Sheets with VEP status
-   - `alert_summary`: Composes structured alerts from VEP analysis
-8. **Notifications**: `alert_summary` conditionally routes to `send_notifications` (if alerts exist) or back to `scheduler` (if no alerts). `send_notifications` fans out to `send_email` and `send_slack` in parallel
-9. **Wait Loop**: If no tasks, waits until next round hour (or next interval if `--immediate-start` is used) before returning to scheduler (continuous operation)
-
-**Key Design Principles:**
-- **Analysis Pipeline Enforcement**: VEPs must always go through `fetch_veps → run_monitoring → merge_vep_updates → analyze_combined` before updating sheets or sending emails
-- **Parallel Execution**: `update_sheets` and `alert_summary` run in parallel after analysis completes for efficiency
-- **Scheduler-Driven**: The scheduler is the central coordinator that ensures proper sequencing and prevents skipping the analysis pipeline
 
 ## Troubleshooting
 
