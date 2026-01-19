@@ -223,19 +223,22 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
                         required = input_schema.get('required', [])
 
                         # Build Pydantic field definitions
+                        from typing import List, Dict, Any, Optional as Opt
                         field_definitions = {}
                         for param_name, param_schema in properties.items():
                             param_type = param_schema.get('type', 'string')
                             param_desc = param_schema.get('description', '')
 
                             # Map JSON schema types to Python types
+                            # For arrays, use List[str] to ensure items type is defined
+                            # (Gemini requires items type for arrays)
                             type_mapping = {
                                 'string': str,
                                 'integer': int,
                                 'number': float,
                                 'boolean': bool,
-                                'array': list,
-                                'object': dict,
+                                'array': List[str],  # Use List[str] instead of list to satisfy Gemini
+                                'object': Dict[str, Any],  # Use Dict[str, Any] for proper schema
                             }
                             python_type = type_mapping.get(param_type, str)
 
@@ -243,7 +246,6 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[Tool]:
                             if param_name in required:
                                 field_definitions[param_name] = (python_type, ...)
                             else:
-                                from typing import Optional as Opt
                                 field_definitions[param_name] = (Opt[python_type], None)
 
                         if field_definitions:
