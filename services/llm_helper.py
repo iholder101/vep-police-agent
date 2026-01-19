@@ -78,7 +78,8 @@ def invoke_llm_with_tools(
         # Get MCP tools
         tools = get_mcp_tools_by_name(*mcp_names)
         mcp_list = ", ".join(mcp_names)
-        log(f"Loaded {len(tools)} MCP tools ({mcp_list}) for {operation_type}", node=operation_type)
+        tool_names = [t.name for t in tools] if tools else []
+        log(f"Loaded {len(tools)} MCP tools ({mcp_list}) for {operation_type}: {tool_names}", node=operation_type)
         
         if not tools:
             log(f"No MCP tools available for {operation_type}", node=operation_type, level="ERROR")
@@ -92,7 +93,8 @@ def invoke_llm_with_tools(
         # Get model for this operation type (node)
         import config
         model_name = config.get_model_for_node(operation_type)
-        
+        log(f"Using model {model_name} for {operation_type}", node=operation_type, level="DEBUG")
+
         # Create LLM with tools bound
         llm = get_model(model_name=model_name)
         llm_with_tools = llm.bind_tools(tools)
@@ -122,6 +124,11 @@ def invoke_llm_with_tools(
             # Check if response has tool calls
             if not (hasattr(response, 'tool_calls') and response.tool_calls):
                 # No more tool calls, break and get structured output
+                # Debug: log what the response looks like
+                log(f"Response type: {type(response).__name__}, has tool_calls attr: {hasattr(response, 'tool_calls')}", node=operation_type, level="DEBUG")
+                if hasattr(response, 'content'):
+                    content_preview = str(response.content)[:200] if response.content else "(empty)"
+                    log(f"Response content preview: {content_preview}", node=operation_type, level="DEBUG")
                 break
 
             log(f"LLM made {len(response.tool_calls)} tool call(s), iteration {iteration}", node=operation_type)
