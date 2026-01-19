@@ -807,20 +807,21 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
     return []
 
 
-def index_kubevirt_prs(days_back: Optional[int] = 365) -> List[Dict[str, Any]]:
+def index_kubevirt_prs(days_back: Optional[int] = 365, fetch_reviews: bool = True) -> List[Dict[str, Any]]:
     """Index PRs in kubevirt/kubevirt repository.
-    
+
     Args:
         days_back: Only include PRs from last N days (None = all PRs)
-    
+        fetch_reviews: If True, fetch review counts for open PRs (default: True)
+
     Returns:
-        List of PR summaries (number, title, state, labels) for context
+        List of PR summaries (number, title, state, labels, review_count) for context
     """
-    log(f"Indexing PRs from kubevirt/kubevirt (days_back={days_back})", node="indexer")
-    
+    log(f"Indexing PRs from kubevirt/kubevirt (days_back={days_back}, fetch_reviews={fetch_reviews})", node="indexer")
+
     try:
         tools = get_mcp_tools_by_name("github")
-        
+
         # Find list_pull_requests tool - try exact matches first
         list_prs_tool = None
         tool_names_to_try = [
@@ -829,14 +830,14 @@ def index_kubevirt_prs(days_back: Optional[int] = 365) -> List[Dict[str, Any]]:
             "list_pulls",
             "search_pull_requests",
         ]
-        
+
         # First try exact match
         for tool in tools:
             if tool.name in tool_names_to_try:
                 list_prs_tool = tool
                 log(f"Found PR tool (exact match): {tool.name}", node="indexer", level="DEBUG")
                 break
-        
+
         # If no exact match, try partial
         if not list_prs_tool:
             for tool in tools:
@@ -845,11 +846,26 @@ def index_kubevirt_prs(days_back: Optional[int] = 365) -> List[Dict[str, Any]]:
                     list_prs_tool = tool
                     log(f"Found PR tool (partial match): {tool.name}", node="indexer", level="DEBUG")
                     break
-        
+
         if not list_prs_tool:
             log(f"Could not find PR listing tool. Available tools: {[t.name for t in tools]}", node="indexer", level="WARNING")
             return []
-        
+
+        # Find get_pull_request_reviews tool for review counts
+        get_reviews_tool = None
+        if fetch_reviews:
+            reviews_tool_names = [
+                "mcp_GitHub_get_pull_request_reviews",
+                "get_pull_request_reviews",
+            ]
+            for tool in tools:
+                if tool.name in reviews_tool_names or "review" in tool.name.lower():
+                    get_reviews_tool = tool
+                    log(f"Found reviews tool: {tool.name}", node="indexer", level="DEBUG")
+                    break
+            if not get_reviews_tool:
+                log("Could not find PR reviews tool, review counts will be None", node="indexer", level="DEBUG")
+
         try:
             # Try different parameter formats
             try:
@@ -870,7 +886,7 @@ def index_kubevirt_prs(days_back: Optional[int] = 365) -> List[Dict[str, Any]]:
                         owner="kubevirt",
                         repo="kubevirt"
                     )
-            
+
             # Parse result
             if isinstance(prs_result, str):
                 # Check if it's an error message
@@ -884,7 +900,7 @@ def index_kubevirt_prs(days_back: Optional[int] = 365) -> List[Dict[str, Any]]:
                 prs = []
                 for pr in prs_result:
                     if isinstance(pr, dict):
-                        prs.append({
+                        pr_data = {
                             "number": pr.get("number"),
                             "title": pr.get("title"),
                             "labels": [l.get("name") if isinstance(l, dict) else l for l in pr.get("labels", [])],
@@ -894,27 +910,52 @@ def index_kubevirt_prs(days_back: Optional[int] = 365) -> List[Dict[str, Any]]:
                             "created_at": pr.get("created_at"),
                             "updated_at": pr.get("updated_at"),
                             "body": (pr.get("body") or "")[:500],  # First 500 chars of body for VEP references
-                        })
-                
+                            "review_count": None,  # Will be populated below if fetch_reviews=True
+                        }
+                        prs.append(pr_data)
+
                 # Filter by date if requested
                 if days_back is not None:
                     original_count = len(prs)
                     prs = _filter_by_date(prs, days_back)
                     log(f"Filtered PRs: {original_count} -> {len(prs)} (last {days_back} days)", node="indexer")
-                
+
+                # Fetch review counts for open PRs only (to limit API calls)
+                if fetch_reviews and get_reviews_tool:
+                    open_prs = [p for p in prs if p.get("state") == "open"]
+                    log(f"Fetching review counts for {len(open_prs)} open PRs", node="indexer")
+                    for pr_data in open_prs:
+                        pr_number = pr_data.get("number")
+                        if pr_number:
+                            try:
+                                time.sleep(API_DELAY)
+                                reviews_result = _call_with_retry(
+                                    get_reviews_tool.func,
+                                    owner="kubevirt",
+                                    repo="kubevirt",
+                                    pull_number=pr_number
+                                )
+                                if isinstance(reviews_result, list):
+                                    pr_data["review_count"] = len(reviews_result)
+                                elif reviews_result:
+                                    # Try to parse if string
+                                    pr_data["review_count"] = 0
+                            except Exception as e:
+                                log(f"Error fetching reviews for PR #{pr_number}: {e}", node="indexer", level="DEBUG")
+
                 log(f"Indexed {len(prs)} PRs", node="indexer")
                 return prs
             else:
                 return [{"raw_data": str(prs_result)[:15000]}]
-                
+
         except Exception as e:
             log(f"Error listing PRs: {e}", node="indexer", level="WARNING")
             return []
-            
+
     except Exception as e:
         log(f"Error in index_kubevirt_prs: {e}", node="indexer", level="WARNING")
         return []
-    
+
     return []
 
 
