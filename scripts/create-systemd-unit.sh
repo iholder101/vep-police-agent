@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script to create a systemd unit for the VEP Police Agent
-# The unit will run the agent continuously using run-latest-agent.sh
+# The unit will run the agent once using run-latest-agent.sh
 # Logs are automatically handled by systemd (view with: journalctl -u vep-police-agent)
 
 set -e
@@ -67,12 +67,12 @@ Options:
   --help, -h    Show this help message
   --delete      Remove the systemd unit and clean up (stops and disables service)
 
-Creates a systemd unit for the VEP Police Agent that runs continuously.
+Creates a systemd unit for the VEP Police Agent that runs once.
 
 The script will:
 - Create a systemd unit at /etc/systemd/system/${UNIT_NAME}.service
 - Use the run-latest-agent.sh script to run the agent
-- Configure automatic restart on failure
+- Run once without automatic restart
 - Set up logging via systemd journald
 
 Prerequisites:
@@ -152,8 +152,6 @@ Type=simple
 User=$SERVICE_USER
 WorkingDirectory=$PROJECT_ROOT
 ExecStart=$PROJECT_ROOT/scripts/run-latest-agent.sh --immediate-start
-Restart=always
-RestartSec=10
 StandardOutput=journal
 StandardError=journal
 
