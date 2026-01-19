@@ -1380,8 +1380,42 @@ def index_vep_files() -> List[Dict[str, Any]]:
     except Exception as e:
         log(f"Error in index_vep_files: {e}", node="indexer", level="WARNING")
         return []
-    
+
     return []
+
+
+def index_project_board_items(version: Optional[str] = None) -> Dict[int, Dict[str, Any]]:
+    """Index VEP items from the kubevirt GitHub Project V2 board.
+
+    Fetches all VEPs from the project board for the given release version,
+    including all custom field metadata (Status, Priority, dates, etc.).
+
+    Args:
+        version: Release version string (e.g., "v1.8" or "1.8").
+                 If None, will try to auto-detect from release schedule.
+
+    Returns:
+        Dict mapping issue_number -> {title, url, state, fields: {...}}
+        Empty dict if board cannot be fetched.
+    """
+    from config import get_project_board_for_version
+    from services.graphql_client import get_veps_from_project_board
+
+    log(f"Indexing project board items for version: {version}", node="indexer")
+
+    # Get board number for this version
+    board_number = get_project_board_for_version(version)
+    if board_number is None:
+        log(f"No project board configured for version: {version}", node="indexer", level="WARNING")
+        return {}
+
+    try:
+        veps = get_veps_from_project_board(project_number=board_number)
+        log(f"Indexed {len(veps)} VEPs from project board #{board_number}", node="indexer")
+        return veps
+    except Exception as e:
+        log(f"Error indexing project board: {e}", node="indexer", level="WARNING")
+        return {}
 
 
 def _load_cached_index(cache_file: Path, max_age_minutes: int = 60) -> Optional[Dict[str, Any]]:
