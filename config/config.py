@@ -27,25 +27,29 @@ def get_project_board_for_version(version: Optional[str]) -> Optional[int]:
     return VERSION_PROJECT_BOARDS.get(v)
 
 # Model configuration per node type
+# Architecture: fetch nodes use lightweight LLM to gather data, analysis nodes use powerful LLM to reason
 NODE_MODELS: Dict[str, str] = {
-    # Deep reasoning nodes
-    "analyze_combined": GEMINI_3_PRO_PREVIEW,
-    "merge_vep_updates": GEMINI_3_PRO_PREVIEW,
+    # Deep reasoning nodes - use powerful model for analysis
+    "analyze_combined": GEMINI_3_PRO_PREVIEW,  # Single node that does ALL analysis with full context
     "update_sheets": GEMINI_3_PRO_PREVIEW,
-    "alert_summary": GEMINI_3_PRO_PREVIEW,
+    "alert_summary": GEMINI_3_PRO_PREVIEW,  # Generates summary-style notifications
 
-    # Standard nodes - use fast model
-    "fetch_veps": DEFAULT_MODEL,
-    "check_activity": DEFAULT_MODEL,
-    "check_compliance": DEFAULT_MODEL,
-    "check_deadlines": DEFAULT_MODEL,
-    "check_exceptions": DEFAULT_MODEL,
-    "send_email": DEFAULT_MODEL,
-    "send_slack": DEFAULT_MODEL,
-    "send_notifications": DEFAULT_MODEL,
-    "save_state_cache": DEFAULT_MODEL,
-    "scheduler": DEFAULT_MODEL,
-    "run_monitoring": DEFAULT_MODEL,
+    # Context fetch nodes - use fast model (Flash) to fetch data via GitHub MCP
+    # These nodes ONLY fetch raw data, NO analysis - analysis is done by analyze_combined
+    "fetch_veps": GEMINI_3_FLASH_PREVIEW,
+    "check_activity": GEMINI_3_FLASH_PREVIEW,
+    "check_compliance": GEMINI_3_FLASH_PREVIEW,
+    "check_deadlines": GEMINI_3_FLASH_PREVIEW,
+    "check_exceptions": GEMINI_3_FLASH_PREVIEW,
+    "merge_vep_updates": GEMINI_3_FLASH_PREVIEW,  # Simple context merge, no deep reasoning
+
+    # Utility nodes
+    "send_email": GEMINI_3_FLASH_PREVIEW,
+    "send_slack": GEMINI_3_FLASH_PREVIEW,
+    "send_notifications": GEMINI_3_FLASH_PREVIEW,
+    "save_state_cache": GEMINI_3_FLASH_PREVIEW,
+    "scheduler": GEMINI_3_FLASH_PREVIEW,
+    "run_monitoring": GEMINI_3_FLASH_PREVIEW,
 }
 
 # Email notification configuration

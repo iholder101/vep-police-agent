@@ -207,17 +207,43 @@ def invoke_llm_check(
     response_model: Type[T]
 ) -> T:
     """Invoke LLM to perform a check with GitHub MCP tools using structured output.
-    
+
     Convenience wrapper around invoke_llm_with_tools for check nodes.
-    
+
     Args:
         check_type: Type of check ("deadlines", "activity", "compliance", "exceptions")
         state_context: Current state context (veps, release_schedule, etc.)
         system_prompt: System prompt describing the task
         user_prompt: User prompt with specific instructions
         response_model: Pydantic model for structured output
-    
+
     Returns:
         Validated Pydantic model instance
     """
     return invoke_llm_with_tools(check_type, state_context, system_prompt, user_prompt, response_model, mcp_names=("github",))
+
+
+def invoke_llm_fetch(
+    fetch_type: str,
+    state_context: Dict[str, Any],
+    system_prompt: str,
+    user_prompt: str,
+    response_model: Type[T]
+) -> T:
+    """Invoke lightweight LLM to fetch context data with GitHub MCP tools.
+
+    Used by fetch nodes (check_deadlines, check_activity, check_compliance, check_exceptions)
+    to gather raw data without analysis. The LLM uses GitHub MCP tools to fetch data and
+    returns it in a structured format for later analysis by analyze_combined.
+
+    Args:
+        fetch_type: Type of fetch ("deadlines", "activity", "compliance", "exceptions")
+        state_context: Current state context (veps, release_schedule, etc.)
+        system_prompt: System prompt describing what data to fetch
+        user_prompt: User prompt with specific instructions
+        response_model: Pydantic model for structured output (typically FetchResponse)
+
+    Returns:
+        Validated Pydantic model instance with context data
+    """
+    return invoke_llm_with_tools(fetch_type, state_context, system_prompt, user_prompt, response_model, mcp_names=("github",))

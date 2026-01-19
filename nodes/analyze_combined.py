@@ -1,4 +1,8 @@
-"""Analysis node - reasons about combined check results and generates alerts."""
+"""Analysis node - performs ALL reasoning about VEP status and generates alerts.
+
+This is the ONLY analysis node. Fetch nodes (check_*) only gather raw data.
+This node has access to ALL context at once and does holistic reasoning.
+"""
 
 import json
 from datetime import datetime
@@ -11,168 +15,172 @@ from services.response_models import CheckResponse
 
 class AnalyzeCombinedResponse(CheckResponse):
     """Response model for combined analysis."""
-    sheets_need_update: bool = False  # Whether Google Sheets needs to be synced with these changes
-    general_insights: List[str] = []  # General insights and patterns across all VEPs (overall release health, trends, cross-VEP patterns) - each insight as a separate string
+    sheets_need_update: bool = False
+    general_insights: List[str] = []
 
 
 def analyze_combined_node(state: VEPState) -> Any:
-    """Analyze combined results from all monitoring checks.
-    
-    This node:
-    1. Reads results from all check nodes (deadlines, activity, compliance, exceptions)
-    2. Uses LLM to reason about combinations (e.g., "low activity + close deadline = urgent")
-    3. Merges insights from all checks into unified analysis
-    4. Generates alerts based on combined context
-    5. Updates VEP analysis fields with holistic insights
-    
-    Examples of cross-check reasoning:
-    - Low activity + far deadline = OK (not urgent)
-    - Low activity + close deadline = URGENT (needs attention)
-    - Compliance issues + close deadline = CRITICAL
-    - Multiple compliance flags failing = needs immediate review
+    """Analyze all VEPs using their combined context data.
+
+    This is the ONLY analysis node in the pipeline. It:
+    1. Receives VEPs with raw context from all fetch nodes:
+       - vep.context.deadline: days to EF/CF, freeze status, target release
+       - vep.context.activity: last updates, recent events, staleness
+       - vep.context.compliance: PR status, labels, template completeness
+       - vep.context.exceptions: exception issues, post-freeze activity
+    2. Performs holistic cross-domain reasoning:
+       - Low activity + close deadline = URGENT
+       - Compliance issues + close deadline = CRITICAL
+       - Post-freeze commits without exception = ALERT
+    3. Updates vep.analysis with combined insights and priority
+    4. Generates alerts for issues that need attention
+    5. Determines if sheets need updating
     """
     veps = state.get("veps", [])
-    log(f"Analyzing combined results for {len(veps)} VEP(s)", node="analyze_combined")
-    
+    log(f"Analyzing {len(veps)} VEP(s) with combined context", node="analyze_combined")
+
     last_check_times = state.get("last_check_times", {})
     last_check_times["analyze_combined"] = datetime.now()
-    
+
     if not veps:
         return {
             "last_check_times": last_check_times,
             "general_insights": [],
             "sheets_need_update": False,
         }
-    
-    # Check if mock mode is enabled - skip LLM and do naive analysis
+
+    # Check for mock mode - skip LLM and do naive analysis
     mock_mode = state.get("mock_analyzed_combined", False)
     if mock_mode:
-        log("Mock analyzed-combined mode: Skipping LLM call, using naive analysis", node="analyze_combined")
-
-        # Naive analysis: just preserve all VEPs, add basic combined insights, set sheets_need_update
-        updated_veps = []
-
+        log("Mock mode: Skipping LLM, using naive analysis", node="analyze_combined")
         for vep in veps:
-            # Add basic combined insights if not present
             if not hasattr(vep, 'analysis') or vep.analysis is None:
                 vep.analysis = {}
+            vep.analysis["combined_insights"] = "Mock analysis: Status reviewed."
 
-            if "combined_insights" not in vep.analysis:
-                vep.analysis["combined_insights"] = "Mock analysis: All checks completed. Status reviewed."
-
-            updated_veps.append(vep)
-
-        # Always set sheets_need_update in mock mode if skip_monitoring is enabled
         skip_monitoring = state.get("skip_monitoring", False)
-        sheets_need_update = True if skip_monitoring else False
-
-        log(f"Mock analysis complete: {len(updated_veps)} VEP(s), sheets_need_update={sheets_need_update}", node="analyze_combined")
-
         return {
             "last_check_times": last_check_times,
-            "veps": updated_veps,
-            "general_insights": ["Mock analysis: All checks completed. Status reviewed."],
-            "sheets_need_update": sheets_need_update,
+            "veps": veps,
+            "general_insights": ["Mock analysis complete."],
+            "sheets_need_update": skip_monitoring,
         }
-    
-    # Build system prompt
-    system_prompt = """You are a VEP governance agent performing holistic analysis of VEP status.
 
-Your task:
-1. Analyze each VEP's combined status from all monitoring checks:
-   - Deadline proximity (from deadline_risk in analysis)
-   - Activity levels (from activity field)
-   - Compliance status (from compliance field)
-   - Exception status (from exceptions field)
-   - Insights from all checks (deadline_insights, activity_insights, compliance_insights, exception_insights)
-2. Reason about combinations:
-   - Low activity + far deadline = OK (not urgent)
-   - Low activity + close deadline = URGENT (needs attention)
-   - Compliance issues + close deadline = CRITICAL
-   - Multiple compliance flags failing = needs immediate review
-3. Merge insights from all checks into vep.analysis["combined_insights"]:
-   - Overall status assessment
-   - Priority level
-   - Recommended actions
-   - Cross-check patterns identified
-4. Generate general_insights (list of strings, each insight as a separate item) covering:
-   - Overall release health assessment (e.g., "5 of 20 VEPs are at risk this release cycle")
-   - Cross-VEP patterns and trends (e.g., "Most VEPs are behind schedule", "Compliance issues are concentrated in network SIG")
-   - Release-wide recommendations (e.g., "Consider extending Enhancement Freeze deadline", "Focus SIG review efforts on network VEPs")
-   - High-level observations that don't fit into individual VEP analysis
-   - Return as a list of strings, where each string is a separate insight/observation
-5. Generate additional alerts based on combined reasoning
-6. Determine if Google Sheets needs to be updated:
-   - Set sheets_need_update to True if there are meaningful changes that should be reflected in the sheets
-   - Consider: significant status changes, new alerts, compliance changes, deadline updates
-   - Set to False if changes are minor or only internal analysis updates
+    # Build system prompt for comprehensive analysis
+    system_prompt = """You are a VEP governance analyst. Your job is to analyze VEP status using ALL available context and generate actionable insights.
 
-Return the updated VEP objects with merged analysis, general insights, and your decision on whether sheets need updating."""
-    
-    # Serialize full state for LLM
+INPUT: Each VEP has raw context data from fetch nodes:
+- context.deadline: {days_until_ef, days_until_cf, ef_passed, cf_passed, vep_merged, target_release}
+- context.activity: {last_issue_update, last_pr_update, days_since_update, recent_comments, recent_commits}
+- context.compliance: {pr_state, has_lgtm, has_approved_label, sig_labels, implementation_prs, template sections}
+- context.exceptions: {exception_issue_number, exception_issue_state, has_post_ef_commits, has_post_cf_commits}
+
+YOUR ANALYSIS TASKS:
+
+1. DEADLINE RISK ASSESSMENT:
+   - Calculate risk level (low/medium/high/critical) based on days to freeze + current progress
+   - Flag VEPs at risk of missing deadlines
+   - Note if VEP is merged (safe) vs still pending
+
+2. ACTIVITY ANALYSIS:
+   - Identify stale VEPs (no activity for >7 days during active development)
+   - Note unusual patterns (burst of activity, sudden silence)
+   - Consider activity relative to deadline proximity
+
+3. COMPLIANCE CHECK:
+   - Flag missing approvals (no LGTM, no approved label)
+   - Check for missing SIG labels
+   - Identify incomplete template sections
+   - Note implementation PR status
+
+4. EXCEPTION HANDLING:
+   - Flag post-freeze commits without approved exception
+   - Check exception request status
+   - Validate exception justification if present
+
+5. CROSS-DOMAIN REASONING (CRITICAL):
+   - Low activity + close deadline = URGENT priority
+   - Compliance issues + close deadline = CRITICAL priority
+   - Post-freeze work + no exception = BLOCKER
+   - Multiple issues on same VEP = escalate priority
+
+6. OUTPUT FOR EACH VEP:
+   Update vep.analysis with:
+   - combined_insights: string summary of overall status
+   - priority: "low", "medium", "high", or "critical"
+   - risk_factors: list of identified risks
+   - recommended_actions: list of suggested next steps
+
+7. GENERAL INSIGHTS (release-wide):
+   Return a list of strings covering:
+   - Overall release health ("5 of 20 VEPs at risk")
+   - Cross-VEP patterns ("Network SIG VEPs are behind")
+   - Release-wide recommendations
+
+8. SHEETS UPDATE DECISION:
+   Set sheets_need_update=True if:
+   - Any VEP has critical/high priority
+   - Significant status changes detected
+   - New compliance or exception issues
+   Set to False if only minor internal updates.
+
+IMPORTANT: Generate alerts in the `alerts` field for issues needing attention. Each alert should have:
+- subject: brief title
+- severity: "low", "medium", "high", "critical"
+- vep_name: which VEP (or "general" for release-wide)
+- message: what's the issue and recommended action"""
+
+    # Serialize VEPs with full context for LLM
     release_schedule = state.get("release_schedule")
     context = {
         "veps": [vep.model_dump(mode='json') for vep in veps],
         "release_schedule": release_schedule.model_dump(mode='json') if release_schedule else None,
         "current_release": state.get("current_release"),
-        "alerts": state.get("alerts", []),  # Include existing alerts for context
+        "today": datetime.now().strftime("%Y-%m-%d"),
     }
-    
-    user_prompt = f"""Here is the current state with all check results:
+
+    user_prompt = f"""Analyze these VEPs using their combined context data:
 
 {json.dumps(context, indent=2, default=str)}
 
-Analyze the combined results from all monitoring checks. Merge insights and generate holistic recommendations. Return all updated VEPs with combined analysis."""
-    
-    # Invoke LLM with structured output
+For each VEP:
+1. Review all context fields (deadline, activity, compliance, exceptions)
+2. Perform cross-domain reasoning to identify risks
+3. Update analysis with combined_insights, priority, risk_factors, recommended_actions
+4. Generate alerts for issues needing attention
+
+Return updated VEPs with complete analysis, general_insights list, and sheets_need_update decision."""
+
+    # Invoke powerful LLM (Pro) for deep analysis
     result = invoke_llm_check("analyze_combined", context, system_prompt, user_prompt, AnalyzeCombinedResponse)
 
-    # NOTE: Do NOT add alerts here - alert_summary node is responsible for all alert generation
-    # This avoids duplicate alerts from multiple nodes
-    
-    # Use the updated VEPs from LLM directly
     updated_veps = result.updated_veps
-    
-    # CRITICAL: Ensure all VEPs are preserved - LLM might drop some during analysis
+
+    # Preserve VEPs that LLM might have dropped
     if len(updated_veps) < len(veps):
-        log(f"Warning: LLM returned {len(updated_veps)} VEP(s), expected {len(veps)}. Preserving all VEPs.", node="analyze_combined", level="WARNING")
-        # Fallback: keep existing VEPs that weren't in the analysis result
+        log(f"Warning: LLM returned {len(updated_veps)} VEP(s), expected {len(veps)}. Preserving all.", node="analyze_combined", level="WARNING")
         existing_names = {vep.name for vep in updated_veps}
         for vep in veps:
             if vep.name not in existing_names:
-                log(f"Preserving VEP {vep.name} that was dropped during analysis", node="analyze_combined", level="DEBUG")
+                log(f"Preserving dropped VEP {vep.name}", node="analyze_combined", level="DEBUG")
                 updated_veps.append(vep)
-    
-    # Also check if we have MORE VEPs than expected (shouldn't happen, but log it)
-    if len(updated_veps) > len(veps):
-        log(f"Info: LLM returned {len(updated_veps)} VEP(s), expected {len(veps)}. Using all returned VEPs.", node="analyze_combined", level="INFO")
-    
-    # Use LLM's decision on whether sheets need updating
-    # But if skip_monitoring is enabled, always set sheets_need_update to trigger alert_summary
+
+    # Determine sheets update need
     skip_monitoring = state.get("skip_monitoring", False)
-    if skip_monitoring:
-        sheets_need_update = True  # Always trigger alert_summary when skip_monitoring is enabled
-        log("Skip-monitoring mode: Setting sheets_need_update=True to ensure alert_summary runs", node="analyze_combined")
-    else:
-        sheets_need_update = result.sheets_need_update
-    
+    sheets_need_update = True if skip_monitoring else result.sheets_need_update
+
+    # Log results
     if result.alerts:
-        log(f"LLM identified {len(result.alerts)} additional issue(s) (alerts generated by alert_summary)", node="analyze_combined")
-    
+        log(f"Analysis generated {len(result.alerts)} alert(s)", node="analyze_combined")
     if result.general_insights:
-        log(f"General insights generated: {len(result.general_insights)} insight(s)", node="analyze_combined", level="DEBUG")
-        # Log first 3 insights as preview
-        for i, insight in enumerate(result.general_insights[:3], 1):
-            preview = insight[:150] + ("..." if len(insight) > 150 else "")
-            log(f"  Insight {i}: {preview}", node="analyze_combined", level="DEBUG")
-        if len(result.general_insights) > 3:
-            log(f"  ... and {len(result.general_insights) - 3} more insight(s)", node="analyze_combined", level="DEBUG")
-    
-    log(f"Sheets update needed: {sheets_need_update} (decided by LLM{' or skip_monitoring mode' if skip_monitoring else ''})", node="analyze_combined")
-    
+        log(f"Generated {len(result.general_insights)} general insight(s)", node="analyze_combined")
+
+    log(f"Sheets update needed: {sheets_need_update}", node="analyze_combined")
+
     return {
         "last_check_times": last_check_times,
-        "veps": updated_veps,  # Return updated VEPs explicitly
+        "veps": updated_veps,
+        "alerts": result.alerts,  # Pass alerts to alert_summary for notification
         "general_insights": result.general_insights,
         "sheets_need_update": sheets_need_update,
     }

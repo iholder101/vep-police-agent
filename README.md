@@ -108,23 +108,28 @@ graph TD
    - **Priority**: If no VEPs exist (immediate fetch on first run)
    - **Periodic**: Every configured interval (default: 1 hour) to refresh and discover new VEPs
 3. **Automatic Analysis Pipeline**: After `fetch_veps` completes, the scheduler automatically schedules `run_monitoring` to ensure VEPs always go through the full analysis pipeline before updating sheets or sending emails
-4. **Parallel Monitoring**: `run_monitoring` triggers four parallel checks:
-   - `check_deadlines`: Tracks EF/CF deadlines
-   - `check_activity`: Monitors VEP activity
-   - `check_compliance`: Verifies process compliance
-   - `check_exceptions`: Monitors exceptions
-5. **Merge & Analyze**: All parallel checks converge to `merge_vep_updates`, then `analyze_combined` for holistic analysis
-6. **State Cache**: After `analyze_combined`, `save_state_cache` saves state to `cache/state_cache.json` for fast debug cycles with `--use-state-cache`
-7. **Post-Analysis Actions**: After caching, routes back to `scheduler`, which automatically schedules both `update_sheets` and `alert_summary` in parallel:
+4. **Parallel Context Fetch**: `run_monitoring` triggers four parallel **fetch nodes** (using lightweight Flash model):
+   - `check_deadlines`: Fetches deadline context (days to EF/CF, freeze status)
+   - `check_activity`: Fetches activity context (last updates, recent events)
+   - `check_compliance`: Fetches compliance context (PR status, labels, template)
+   - `check_exceptions`: Fetches exception context (exception issues, post-freeze work)
+5. **Deterministic Merge**: `merge_vep_updates` applies raw context data to VEPs (no LLM needed)
+6. **Holistic Analysis**: `analyze_combined` (using powerful Pro model) performs ALL reasoning:
+   - Cross-domain analysis (e.g., low activity + close deadline = URGENT)
+   - Generates alerts for issues needing attention
+   - Updates VEP priority and recommended actions
+7. **State Cache**: After `analyze_combined`, `save_state_cache` saves state to `cache/state_cache.json` for fast debug cycles with `--use-state-cache`
+8. **Post-Analysis Actions**: After caching, routes back to `scheduler`, which automatically schedules both `update_sheets` and `alert_summary` in parallel:
    - `update_sheets`: Updates Google Sheets with VEP status
-   - `alert_summary`: Composes structured alerts from VEP analysis
-8. **Notifications**: `alert_summary` conditionally routes to `send_notifications` (if alerts exist) or back to `scheduler` (if no alerts). `send_notifications` fans out to `send_email` and `send_slack` in parallel
-9. **Wait Loop**: If no tasks, waits until next round hour (or next interval if `--immediate-start` is used) before returning to scheduler (continuous operation)
+   - `alert_summary`: Formats alerts for notifications (limits to ~20 most significant)
+9. **Notifications**: `alert_summary` conditionally routes to `send_notifications` (if alerts exist) or back to `scheduler` (if no alerts). `send_notifications` fans out to `send_email` and `send_slack` in parallel
+10. **Wait Loop**: If no tasks, waits until next round hour (or next interval if `--immediate-start` is used) before returning to scheduler (continuous operation)
 
 **Key Design Principles:**
-- **Analysis Pipeline Enforcement**: VEPs must always go through `fetch_veps → run_monitoring → merge_vep_updates → analyze_combined` before updating sheets or sending emails
-- **Parallel Execution**: `update_sheets` and `alert_summary` run in parallel after analysis completes for efficiency
-- **Scheduler-Driven**: The scheduler is the central coordinator that ensures proper sequencing and prevents skipping the analysis pipeline
+- **Separation of Concerns**: Fetch nodes gather raw data (Flash), merge node combines context (deterministic), analyze node does reasoning (Pro)
+- **Single Analysis Point**: All cross-domain reasoning happens in `analyze_combined`, ensuring holistic insights
+- **Parallel Execution**: `update_sheets` and `alert_summary` run in parallel after analysis completes
+- **Scheduler-Driven**: The scheduler is the central coordinator that ensures proper sequencing
 
 ## Requirements
 
@@ -298,11 +303,20 @@ podman run --rm --pull=newer \
 
 ### Model Selection
 
-Models are configured per node in `config.py`. By default:
-- **Fast nodes**: Use `GEMINI_3_FLASH_PREVIEW` (check_activity, check_compliance, etc.)
-- **Deep reasoning nodes**: Use `GEMINI_3_PRO_PREVIEW` (analyze_combined, merge_vep_updates, update_sheets, alert_summary)
+Models are configured per node in `config.py`. The architecture uses a two-tier approach:
 
-Use `--fastest-model` to override all nodes to use the fastest model for testing.
+- **Context Fetch nodes** (Flash - fast and cheap):
+  - `fetch_veps`, `check_deadlines`, `check_activity`, `check_compliance`, `check_exceptions`
+  - These gather raw data only, no analysis
+
+- **Analysis nodes** (Pro - powerful reasoning):
+  - `analyze_combined`: Cross-domain reasoning, alert generation
+  - `update_sheets`, `alert_summary`: Output formatting
+
+- **Deterministic nodes** (no LLM):
+  - `merge_vep_updates`: Applies context data to VEPs (pure Python)
+
+Use `--fastest-model` to override all nodes to use Flash for testing.
 
 ### Google Sheets Setup
 

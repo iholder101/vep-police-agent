@@ -1,96 +1,99 @@
-"""Exception tracking node - monitors exception requests."""
+"""Exception context fetch node - fetches exception-related data for VEPs.
+
+This is a FETCH node - it only gathers raw data, NO analysis.
+Analysis is done by analyze_combined which has access to ALL context at once.
+"""
 
 import json
 from datetime import datetime
 from typing import Any
-from services.response_models import CheckResponse
 from state import VEPState
 from services.utils import log
-from services.llm_helper import invoke_llm_check
-
-
-class ExceptionCheckResponse(CheckResponse):
-    """Response model for exception check."""
-    pass
+from services.llm_helper import invoke_llm_fetch
+from services.response_models import FetchResponse
 
 
 def check_exceptions_node(state: VEPState) -> Any:
-    """Track exception requests and post-freeze work.
-    
-    This node:
-    1. Fetches exception requests from issues (using GitHub MCP)
-    2. Monitors for post-freeze work without exceptions
-    3. Tracks exception requests (from mailing list or issues)
-    4. Verifies exception completeness (justification, time period, impact)
-    5. Updates VEP exception fields in state
-    
-    Note: This node fetches its own data from GitHub MCP - it's self-contained.
+    """Fetch exception-related context for VEPs.
+
+    This is a FETCH node using lightweight LLM (Flash). It:
+    1. Searches for exception requests in kubevirt/enhancements
+    2. Checks for post-freeze work that might need exceptions
+    3. Stores raw exception data in vep.context.exceptions
+
+    NO analysis is done here - that's handled by analyze_combined.
     """
     veps = state.get("veps", [])
     veps_count = len(veps)
-    log(f"Checking exceptions for {veps_count} VEP(s) using LLM", node="check_exceptions")
-    
+    log(f"Fetching exception context for {veps_count} VEP(s)", node="check_exceptions")
+
     last_check_times = state.get("last_check_times", {})
     last_check_times["check_exceptions"] = datetime.now()
-    
+
     if not veps:
         return {
             "last_check_times": last_check_times,
         }
-    
-    # Get release schedule context
+
+    # Get release schedule for freeze dates
     release_schedule = state.get("release_schedule")
-    current_release = state.get("current_release")
-    
-    # Build system prompt
-    system_prompt = """You are a VEP governance agent monitoring exception requests for KubeVirt VEPs.
 
-Your task:
-1. Search for exception-related issues in kubevirt/enhancements using GitHub MCP tools:
-   - Search patterns: "exception", "exemption", "freeze extension", "post-freeze", "late addition"
-   - Check for "exception" label
-   - Link exceptions to VEPs by matching VEP numbers in exception issue title/body
-2. For each VEP, check if work is happening after freeze dates:
-   - Enhancement Freeze (EF): VEP PRs created/updated after EF need exception
-   - Code Freeze (CF): Implementation PRs created/updated after CF need exception
-3. Update vep.exceptions with:
-   - needs_exception: boolean
-   - has_exception: boolean
-   - exception_complete: boolean (must have: justification, time period, impact)
-   - exception_reason: string
-   - exception_issue: dict or null (link to the exception issue if found)
-4. Add insights to vep.analysis["exception_insights"]
-5. Generate alerts for missing or incomplete exceptions
+    # Build system prompt - FETCH ONLY, no analysis
+    system_prompt = """You are a lightweight data fetcher for VEP exception information.
 
-Return updated VEP objects with exception fields filled."""
-    
-    # Serialize full state for LLM
+Your task is to FETCH raw data only - do NOT analyze or generate alerts.
+
+FETCH TASKS:
+1. Search for exception-related issues in kubevirt/enhancements:
+   - Search patterns: "exception", "exemption", "freeze extension", "post-freeze"
+   - Check for "exception" label on issues
+   - For each found exception issue, get: number, title, state, labels, body (first 500 chars)
+
+2. For each VEP, check if it has an associated exception:
+   - exception_issue_number: int or null
+   - exception_issue_state: "open", "closed" or null
+   - exception_labels: list of labels on exception issue
+
+3. Check for post-freeze activity:
+   - has_post_ef_commits: bool (commits after Enhancement Freeze)
+   - has_post_cf_commits: bool (commits after Code Freeze)
+   - post_freeze_pr_numbers: list of PR numbers with post-freeze activity
+
+IMPORTANT: Do NOT analyze whether exceptions are needed, do NOT judge completeness.
+Just fetch the raw data. Exception analysis is done by a separate node.
+
+Return context_updates with the raw exception data for each VEP."""
+
+    # Serialize minimal state for LLM
     context = {
-        "veps": [vep.model_dump(mode='json') for vep in veps],
+        "veps": [{"tracking_issue_id": vep.tracking_issue_id, "name": vep.name, "title": vep.title,
+                  "target_release": vep.target_release} for vep in veps],
         "release_schedule": release_schedule.model_dump(mode='json') if release_schedule else None,
-        "current_release": current_release,
+        "current_release": state.get("current_release"),
     }
-    
-    user_prompt = f"""Here is the current state:
+
+    user_prompt = f"""Fetch exception context for these VEPs:
 
 {json.dumps(context, indent=2, default=str)}
 
-Use GitHub MCP tools to check exceptions for each VEP. Update the VEP objects with exception information and return all updated VEPs."""
-    
-    # Invoke LLM with structured output
-    result = invoke_llm_check("exceptions", context, system_prompt, user_prompt, ExceptionCheckResponse)
+First, search kubevirt/enhancements for exception-related issues.
+Then, for each VEP, return context_updates with:
+- exception_issue_number, exception_issue_state, exception_labels
+- has_post_ef_commits, has_post_cf_commits, post_freeze_pr_numbers"""
 
-    # NOTE: Do NOT add alerts here - alert_summary node is responsible for all alert generation
-    # This avoids duplicate alerts from multiple check nodes
+    # Invoke lightweight LLM to fetch data
+    result = invoke_llm_fetch("check_exceptions", context, system_prompt, user_prompt, FetchResponse)
 
-    # Store updates in vep_updates_by_check for the merge node to combine
+    # Store context updates for merge node to apply
+    context_by_id = {cu.tracking_issue_id: cu.context_data for cu in result.context_updates}
+
+    # Store in vep_updates_by_check for merge node
     vep_updates_by_check = state.get("vep_updates_by_check", {})
-    vep_updates_by_check["check_exceptions"] = result.updated_veps
+    vep_updates_by_check["check_exceptions"] = {"context_field": "exceptions", "updates": context_by_id}
 
-    if result.alerts:
-        log(f"LLM identified {len(result.alerts)} exception issue(s) (alerts generated by alert_summary)", node="check_exceptions")
+    log(f"Fetched exception context for {len(context_by_id)} VEP(s)", node="check_exceptions")
 
     return {
         "last_check_times": last_check_times,
-        "vep_updates_by_check": vep_updates_by_check,  # Store updates for merge node
+        "vep_updates_by_check": vep_updates_by_check,
     }

@@ -1,4 +1,10 @@
-"""Alert summary node - composes alert list from VEP analysis."""
+"""Alert summary node - formats alerts for Slack/email notifications.
+
+This node receives alerts from analyze_combined and:
+1. Prioritizes and limits to ~20 most significant alerts
+2. Generates executive summary format for notifications
+3. Highlights changes since last report
+"""
 
 import json
 from datetime import datetime
@@ -11,187 +17,211 @@ from pydantic import BaseModel
 
 class Alert(BaseModel):
     """Represents a single alert."""
-    subject: str  # Alert subject/category (e.g., "deadline_approaching", "low_activity", "compliance_issue", "risk")
+    subject: str  # Alert category (deadline, activity, compliance, exception, risk)
     severity: str  # "low", "medium", "high", "critical"
-    vep_id: int  # VEP tracking issue ID
-    vep_name: str  # VEP identifier (e.g., "vep-0156")
-    title: str  # Alert title/headline
-    message: str  # Detailed alert message
-    metadata: Dict[str, Any] = {}  # Additional context (deadline dates, compliance flags, etc.)
+    vep_id: int = 0  # VEP tracking issue ID (0 for general alerts)
+    vep_name: str  # VEP identifier or "general"
+    title: str  # Alert headline
+    message: str  # Detailed message
+    metadata: Dict[str, Any] = {}
 
 
 class AlertSummaryResponse(BaseModel):
-    """Response model for alert summary."""
-    alerts: List[Alert] = []  # List of composed alerts
-    summary_text: str = ""  # Human-readable summary text for email
+    """Response model for alert summary formatting."""
+    alerts: List[Alert] = []  # Prioritized/filtered alerts
+    executive_summary: str = ""  # 2-3 sentence overview
+    changes_since_last: str = ""  # What changed since last report
+    summary_text: str = ""  # Full formatted summary for email
+
+
+# Severity priority for sorting
+SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+MAX_ALERTS = 20  # Limit alerts for notifications
 
 
 def alert_summary_node(state: VEPState) -> Any:
-    """Compose alert list from merged VEP analysis.
-    
+    """Format alerts for Slack/email notifications.
+
     This node:
-    1. Takes the merged VEP analysis from analyze_combined
-    2. Identifies alert-worthy situations:
-       - Deadlines approaching (EF, CF)
-       - Low activity (inactive VEPs)
-       - Compliance issues (missing sign-offs, incomplete templates, etc.)
-       - Risk indicators (at risk status, exception required, etc.)
-       - Status changes (new VEPs, status updates)
-    3. Composes structured alerts for each situation
-    4. Generates a human-readable summary text for email
-    
-    Alerts are categorized by subject and severity to enable filtering and prioritization.
+    1. Takes alerts from analyze_combined
+    2. Prioritizes by severity (critical > high > medium > low)
+    3. Limits to ~20 most significant alerts
+    4. Generates executive summary format:
+       - Overall status (1-2 sentences)
+       - Changes since last report
+       - Top alerts by priority
+       - Action items
     """
     veps = state.get("veps", [])
-    log(f"Composing alert summary for {len(veps)} VEP(s)", node="alert_summary")
-    
+    incoming_alerts = state.get("alerts", [])
+    general_insights = state.get("general_insights", [])
+
+    log(f"Formatting alert summary: {len(incoming_alerts)} alert(s), {len(veps)} VEP(s)", node="alert_summary")
+
     last_check_times = state.get("last_check_times", {})
     last_check_times["alert_summary"] = datetime.now()
-    
+
     if not veps:
         return {
             "last_check_times": last_check_times,
             "alerts": [],
+            "alert_summary_text": "No VEPs to report on.",
         }
-    
-    # Check if mock mode is enabled - skip LLM and create mocked alerts
+
+    # Check for mock mode
     mock_mode = state.get("mock_alert_summary", False)
     if mock_mode:
-        log("Mock alert-summary mode: Skipping LLM call, creating mocked alerts", node="alert_summary")
-        
-        # Create mocked alerts for first few VEPs
+        log("Mock mode: Creating sample alerts", node="alert_summary")
         mocked_alerts = []
-        for i, vep in enumerate(veps[:3]):  # Create alerts for first 3 VEPs
-            alert_types = [
-                ("deadline_approaching", "high", f"VEP {vep.tracking_issue_id}: Deadline approaching in {i+2} days"),
-                ("low_activity", "medium", f"VEP {vep.tracking_issue_id}: Low activity detected ({i+5} days since update)"),
-                ("compliance_issue", "high", f"VEP {vep.tracking_issue_id}: Missing SIG sign-off"),
-            ]
-            
-            subject, severity, title = alert_types[i % len(alert_types)]
+        for i, vep in enumerate(veps[:3]):
             mocked_alerts.append({
-                "subject": subject,
-                "severity": severity,
+                "subject": ["deadline", "activity", "compliance"][i % 3],
+                "severity": ["high", "medium", "high"][i % 3],
                 "vep_id": vep.tracking_issue_id,
                 "vep_name": vep.name,
-                "title": title,
-                "message": f"Mock alert for {vep.name}: {title}",
-                "metadata": {"mock": True, "vep_title": vep.title},
+                "title": f"Mock alert for {vep.name}",
+                "message": f"This is a mock alert for testing.",
+                "metadata": {"mock": True},
             })
-        
-        summary_text = f"Mock Alert Summary:\n\n"
-        summary_text += f"Generated {len(mocked_alerts)} mock alert(s) for testing.\n\n"
-        for alert in mocked_alerts:
-            summary_text += f"- [{alert['severity'].upper()}] {alert['title']}\n"
-        
-        log(f"Created {len(mocked_alerts)} mocked alert(s)", node="alert_summary")
-        
         return {
             "last_check_times": last_check_times,
             "alerts": mocked_alerts,
-            "alert_summary_text": summary_text,
+            "alert_summary_text": "Mock Alert Summary: Generated for testing.",
         }
-    
-    # Build system prompt
-    system_prompt = """You are a VEP governance agent composing alerts from VEP analysis.
 
-Your task is to identify alert-worthy situations and compose structured alerts.
+    # Sort and limit alerts
+    sorted_alerts = sorted(
+        incoming_alerts,
+        key=lambda a: (
+            SEVERITY_ORDER.get(a.get("severity", "low"), 3),
+            a.get("vep_name", "zzz")
+        )
+    )
+    limited_alerts = sorted_alerts[:MAX_ALERTS]
 
-ALERT CATEGORIES (subject field):
-1. "deadline_approaching" - Deadlines (EF, CF) are approaching or have passed
-2. "low_activity" - VEP has low/no activity (inactive, stale)
-3. "compliance_issue" - VEP has compliance problems (missing sign-offs, incomplete template, etc.)
-4. "risk" - VEP is at risk, requires exception, or has other risk indicators
-5. "status_change" - VEP status changed (new VEP, status update, etc.)
-6. "milestone_update" - VEP milestone status changed
+    # Count by severity
+    severity_counts = {}
+    for alert in incoming_alerts:
+        sev = alert.get("severity", "low")
+        severity_counts[sev] = severity_counts.get(sev, 0) + 1
 
-SEVERITY LEVELS:
-- "critical": Immediate action required (deadline passed, multiple compliance issues, at risk)
-- "high": Urgent attention needed (deadline < 3 days, compliance issues, low activity + close deadline)
-- "medium": Should be addressed soon (deadline < 7 days, single compliance issue, low activity)
-- "low": Informational (status changes, milestone updates, minor issues)
+    # Build system prompt for summary formatting
+    system_prompt = """You are formatting a VEP governance report for email/Slack.
 
-ALERT COMPOSITION RULES:
-1. For each VEP, analyze:
-   - Deadline proximity (days until EF/CF, or if passed)
-   - Activity levels (days since last update, review lag)
-   - Compliance status (template, sign-offs, PRs linked, labels)
-   - Milestone status (at risk, exception required, etc.)
-   - Status changes (new VEP, status updates)
+Generate a concise, executive-style summary with these sections:
 
-2. Create alerts for:
-   - Deadlines approaching within 7 days (or passed) → "deadline_approaching"
-   - No activity for >14 days → "low_activity"
-   - Any compliance flags failing → "compliance_issue"
-   - VEP marked "At risk" or "Exception Required" → "risk"
-   - New VEPs or significant status changes → "status_change"
-   - Milestone status changes → "milestone_update"
+1. EXECUTIVE SUMMARY (2-3 sentences):
+   - Overall release health status
+   - Key risks or blockers
+   - Immediate action needed (if any)
 
-3. DEDUPLICATION:
-   - If a VEP has multiple related issues (e.g., low activity + deadline approaching), consolidate into one alert with highest severity
-   - Avoid duplicate alerts from different monitoring checks for the same underlying issue
-   - Prefer one comprehensive alert per VEP over multiple narrow alerts
+2. CHANGES SINCE LAST REPORT:
+   - New VEPs added
+   - Status changes (merged, at-risk, etc.)
+   - Resolved issues
+   - If no changes, say "No significant changes"
 
-4. For each alert, provide:
-   - subject: One of the categories above
-   - severity: Based on urgency and impact
-   - vep_id: The tracking issue ID
-   - vep_name: VEP identifier (e.g., "vep-0156")
-   - title: Brief alert headline (e.g., "VEP 156: Deadline approaching in 2 days")
-   - message: Detailed message explaining the alert
-   - metadata: Additional context (deadline dates, compliance flags, etc.)
+3. ALERT SUMMARY:
+   Format alerts by severity (critical first):
+   - Group by severity level
+   - Show VEP name, issue, recommended action
+   - Keep each alert to 1-2 lines
 
-4. Generate a summary_text that provides a human-readable overview of all alerts, organized by category.
+4. ACTION ITEMS:
+   - List specific actions needed from maintainers
+   - Prioritize by urgency
 
-Return all alerts and the summary text."""
-    
+Keep the entire summary under 50 lines. Be concise and actionable.
+Use plain text formatting suitable for both email and Slack."""
+
     # Prepare context
     release_schedule = state.get("release_schedule")
     context = {
         "veps": [vep.model_dump(mode='json') for vep in veps],
+        "alerts": limited_alerts,
+        "general_insights": general_insights,
+        "severity_counts": severity_counts,
+        "total_alerts": len(incoming_alerts),
+        "showing_alerts": len(limited_alerts),
         "release_schedule": release_schedule.model_dump(mode='json') if release_schedule else None,
         "current_release": state.get("current_release"),
     }
-    
-    user_prompt = f"""Here is the current VEP state with all analysis:
+
+    user_prompt = f"""Format this VEP governance data into an executive summary:
 
 {json.dumps(context, indent=2, default=str)}
 
-Analyze each VEP and compose alerts for alert-worthy situations. Return all alerts and a summary text."""
-    
-    # Invoke LLM with structured output
+Generate:
+1. executive_summary: 2-3 sentence overview
+2. changes_since_last: What's new/changed (or "No significant changes")
+3. summary_text: Full formatted report for email/Slack
+
+Keep alerts concise. Limit to the top {MAX_ALERTS} by severity."""
+
+    # Use LLM to generate formatted summary
     result = invoke_llm_with_tools(
         "alert_summary",
         context,
         system_prompt,
         user_prompt,
         AlertSummaryResponse,
-        mcp_names=("github",)  # May need GitHub tools for additional context
+        mcp_names=()  # No MCP tools needed for formatting
     )
-    
-    # Convert Alert objects to dicts for state storage
-    alerts_dicts = [alert.model_dump() for alert in result.alerts]
-    
-    if alerts_dicts:
-        log(f"Composed {len(alerts_dicts)} alert(s) - email will be sent", node="alert_summary")
-        for alert in alerts_dicts:
-            log(f"  - {alert['subject']} ({alert['severity']}): {alert['title']}", node="alert_summary", level="DEBUG")
-    else:
-        log("No alerts to send - skipping email", node="alert_summary")
-    
-    result = {
+
+    # Convert to dicts for state
+    formatted_alerts = [a.model_dump() for a in result.alerts] if result.alerts else limited_alerts
+
+    log_msg = f"Summary: {len(formatted_alerts)} alert(s)"
+    if severity_counts:
+        counts_str = ", ".join(f"{k}: {v}" for k, v in sorted(severity_counts.items(), key=lambda x: SEVERITY_ORDER.get(x[0], 3)))
+        log_msg += f" ({counts_str})"
+    log(log_msg, node="alert_summary")
+
+    output = {
         "last_check_times": last_check_times,
-        "alerts": alerts_dicts,  # Add new alerts to state (empty list if no alerts)
-        "alert_summary_text": result.summary_text,  # Store summary text for email
+        "alerts": formatted_alerts,
+        "alert_summary_text": result.summary_text or _build_fallback_summary(formatted_alerts, veps, general_insights),
+        "executive_summary": result.executive_summary,
+        "changes_since_last": result.changes_since_last,
     }
-    
-    # In one-cycle mode, if update_sheets already set _exit_after_sheets, clear next_tasks now
-    # This ensures alert_summary runs before exit
+
+    # Handle one-cycle mode exit
     if state.get("one_cycle", False) and state.get("_exit_after_sheets", False):
-        log("One-cycle mode: Alert summary completed, clearing queue for exit", node="alert_summary")
+        log("One-cycle mode: Alert summary completed", node="alert_summary")
         next_tasks = state.get("next_tasks", [])
         if "alert_summary" in next_tasks:
             next_tasks.remove("alert_summary")
-        result["next_tasks"] = next_tasks
-    
-    return result
+        output["next_tasks"] = next_tasks
+
+    return output
+
+
+def _build_fallback_summary(alerts: List[Dict], veps: list, insights: List[str]) -> str:
+    """Build fallback summary if LLM doesn't return one."""
+    lines = ["VEP Police Report", "=" * 40, ""]
+
+    # Executive summary
+    lines.append("SUMMARY")
+    lines.append(f"Monitoring {len(veps)} VEP(s). {len(alerts)} alert(s) generated.")
+    lines.append("")
+
+    # Insights
+    if insights:
+        lines.append("KEY INSIGHTS")
+        for insight in insights[:3]:
+            lines.append(f"- {insight}")
+        lines.append("")
+
+    # Alerts by severity
+    if alerts:
+        lines.append("ALERTS")
+        for sev in ["critical", "high", "medium", "low"]:
+            sev_alerts = [a for a in alerts if a.get("severity") == sev]
+            if sev_alerts:
+                lines.append(f"\n{sev.upper()} ({len(sev_alerts)}):")
+                for alert in sev_alerts[:5]:
+                    lines.append(f"  - {alert.get('vep_name', '?')}: {alert.get('title', alert.get('message', 'No details'))}")
+    else:
+        lines.append("No alerts - all VEPs on track.")
+
+    return "\n".join(lines)

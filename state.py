@@ -129,9 +129,28 @@ class IssueInfo(BaseModel):
     class Config:
         extra = "allow"  # Allow extra fields from GitHub API
 
+class VEPContext(BaseModel):
+    """Raw context data fetched by monitoring nodes.
+
+    This stores raw data fetched by the lightweight fetch nodes (check_deadlines,
+    check_activity, check_compliance, check_exceptions). The data here is NOT analyzed -
+    analysis is done by analyze_combined which has access to ALL context at once.
+
+    Each field corresponds to data fetched by a specific check node.
+    """
+    # From check_deadlines - deadline-related raw data
+    deadline: Dict[str, Any] = Field(default_factory=dict)
+    # From check_activity - activity-related raw data
+    activity: Dict[str, Any] = Field(default_factory=dict)
+    # From check_compliance - compliance-related raw data
+    compliance: Dict[str, Any] = Field(default_factory=dict)
+    # From check_exceptions - exception-related raw data
+    exceptions: Dict[str, Any] = Field(default_factory=dict)
+
+
 class VEPInfo(BaseModel):
     """Core VEP data structure with all tracking information.
-    
+
     This represents a single Virtualization Enhancement Proposal (VEP) with all
     its metadata, compliance status, activity metrics, and related PRs/issues.
     Used throughout the agent for monitoring, compliance checking, and notifications.
@@ -156,10 +175,13 @@ class VEPInfo(BaseModel):
     enhancement_prs: List[PRInfo] = []  # PRs in kubevirt/enhancements repo (VEP creation/updates)
     implementation_prs: List[PRInfo] = []  # PRs in kubevirt/kubevirt repo (actual code implementation)
 
+    # Raw context data fetched by monitoring nodes (NOT analyzed - just raw data)
+    context: VEPContext = Field(default_factory=VEPContext)
+
     # Flexible extensions - structure varies, so Dict allows flexibility
     target_release: Optional[str] = None  # Target release version (e.g., "v1.8")
     exceptions: Dict[str, Any] = {}  # Exception requests and status - structure varies by VEP
-    analysis: Dict[str, Any] = {}  # LLM-generated insights and analysis - flexible structure
+    analysis: Dict[str, Any] = {}  # LLM-generated insights and analysis from analyze_combined
     notes: Optional[str] = None  # Free-form notes for human review
 
     # Project board metadata from GitHub Project V2

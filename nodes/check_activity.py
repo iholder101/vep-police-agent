@@ -1,97 +1,102 @@
-"""Activity monitoring node - checks for inactive VEPs and review lag."""
+"""Activity context fetch node - fetches activity-related data for VEPs.
+
+This is a FETCH node - it only gathers raw data, NO analysis.
+Analysis is done by analyze_combined which has access to ALL context at once.
+"""
 
 import json
 from datetime import datetime
 from typing import Any
-from services.response_models import CheckResponse
 from state import VEPState
 from services.utils import log
-from services.llm_helper import invoke_llm_check
-
-
-class ActivityCheckResponse(CheckResponse):
-    """Response model for activity check."""
-    pass
+from services.llm_helper import invoke_llm_fetch
+from services.response_models import FetchResponse
 
 
 def check_activity_node(state: VEPState) -> Any:
-    """Monitor VEP activity and flag inactive VEPs.
-    
-    Uses LLM with GitHub MCP tools to:
-    1. Fetch issue/PR updates from GitHub
-    2. Calculate activity metrics (last activity, days since update, review lag)
-    3. Flag inactive VEPs (>2 weeks without updates)
-    4. Monitor review lag times (>1 week without review)
+    """Fetch activity-related context for VEPs.
+
+    This is a FETCH node using lightweight LLM (Flash). It:
+    1. Fetches recent activity from tracking issues and PRs
+    2. Computes days since last update
+    3. Stores raw activity data in vep.context.activity
+
+    NO analysis is done here - that's handled by analyze_combined.
     """
     veps = state.get("veps", [])
     veps_count = len(veps)
-    log(f"Checking activity for {veps_count} VEP(s) using LLM", node="check_activity")
-    
+    log(f"Fetching activity context for {veps_count} VEP(s)", node="check_activity")
+
     last_check_times = state.get("last_check_times", {})
     last_check_times["check_activity"] = datetime.now()
-    
+
     if not veps:
         return {
             "last_check_times": last_check_times,
         }
-    
-    # Build system prompt
-    system_prompt = """You are a VEP governance agent monitoring activity for KubeVirt Virtualization Enhancement Proposals.
 
-Your task:
-1. For each VEP in the provided state, use GitHub MCP tools to fetch the tracking issue and related PRs
-2. Calculate activity metrics and update vep.activity:
-   - last_activity: datetime (from issues/PRs)
-   - days_since_update: int
-   - review_lag_days: Optional[int] (days since last review)
-3. Add insights to vep.analysis["activity_insights"] with notes, recommendations, and context
-4. Flag inactive VEPs (>2 weeks without updates)
-5. Flag review lag (>1 week without review)
-6. IMPORTANT: Check the 'approved_vep_prs' in the context for PRs with 'approved-vep' label
-   - These PRs implement approved VEPs and should be monitored for staleness
-   - Include these in activity analysis for their corresponding VEPs
-   - Flag lingering approved-vep PRs that haven't been updated recently
-
-Use the GitHub MCP tools to fetch the necessary data. Refer to each tool's description for usage requirements and examples.
-
-Return the updated VEP objects with activity fields filled in."""
-    
-    # Serialize full state for LLM
-    release_schedule = state.get("release_schedule")
-
-    # Get approved_vep_prs from config cache if available (populated by indexer)
+    # Get approved_vep_prs from config cache if available
     config_cache = state.get("config_cache", {})
     approved_vep_prs = config_cache.get("approved_vep_prs", [])
 
+    # Build system prompt - FETCH ONLY, no analysis
+    system_prompt = """You are a lightweight data fetcher for VEP activity information.
+
+Your task is to FETCH raw data only - do NOT analyze or generate alerts.
+
+FETCH TASKS for each VEP:
+1. Get activity timestamps:
+   - last_issue_update: datetime (from tracking issue)
+   - last_pr_update: datetime (from any related PR)
+   - last_comment_date: datetime (most recent comment on issue or PR)
+   - days_since_update: int (computed from most recent activity)
+
+2. Get recent events (last 5-10):
+   - recent_comments: list of {author, date, type} (issue/pr comments)
+   - recent_commits: list of {author, date, message} (on related PRs)
+   - recent_reviews: list of {author, date, state} (PR reviews)
+
+3. Check for stale approved-vep PRs:
+   - For PRs with 'approved-vep' label, get last_updated date
+   - approved_vep_pr_stale: bool (not updated in >3 days)
+
+IMPORTANT: Do NOT analyze staleness, do NOT judge activity levels, do NOT make recommendations.
+Just fetch the raw data. Activity analysis is done by a separate node.
+
+Return context_updates with the raw activity data for each VEP."""
+
+    # Serialize minimal state for LLM
     context = {
-        "veps": [vep.model_dump(mode='json') for vep in veps],
-        "release_schedule": release_schedule.model_dump(mode='json') if release_schedule else None,
-        "current_release": state.get("current_release"),
+        "veps": [{"tracking_issue_id": vep.tracking_issue_id, "name": vep.name,
+                  "last_updated": vep.last_updated.isoformat() if vep.last_updated else None,
+                  "tracking_issue": {"number": vep.tracking_issue.number, "updated_at": vep.tracking_issue.updated_at.isoformat()} if vep.tracking_issue else None,
+                  "enhancement_prs": [{"number": pr.number, "updated_at": pr.updated_at.isoformat()} for pr in vep.enhancement_prs]} for vep in veps],
         "approved_vep_prs": approved_vep_prs,
+        "today": datetime.now().isoformat(),
     }
 
-    user_prompt = f"""Here is the current state:
+    user_prompt = f"""Fetch activity context for these VEPs:
 
 {json.dumps(context, indent=2, default=str)}
 
-Use GitHub MCP tools to check activity for each VEP. Update the VEP objects with activity information and return all updated VEPs.
+For each VEP, use GitHub MCP tools to fetch recent activity and return context_updates with:
+- last_issue_update, last_pr_update, last_comment_date, days_since_update
+- recent_comments, recent_commits, recent_reviews
+- approved_vep_pr_stale (if applicable)"""
 
-IMPORTANT: The 'approved_vep_prs' list contains PRs with the 'approved-vep' label. These implement approved VEPs and should be monitored for staleness."""
-    
-    # Invoke LLM with structured output
-    result = invoke_llm_check("activity", context, system_prompt, user_prompt, ActivityCheckResponse)
+    # Invoke lightweight LLM to fetch data
+    result = invoke_llm_fetch("check_activity", context, system_prompt, user_prompt, FetchResponse)
 
-    # NOTE: Do NOT add alerts here - alert_summary node is responsible for all alert generation
-    # This avoids duplicate alerts from multiple check nodes
+    # Store context updates for merge node to apply
+    context_by_id = {cu.tracking_issue_id: cu.context_data for cu in result.context_updates}
 
-    # Store updates in vep_updates_by_check for the merge node to combine
+    # Store in vep_updates_by_check for merge node
     vep_updates_by_check = state.get("vep_updates_by_check", {})
-    vep_updates_by_check["check_activity"] = result.updated_veps
+    vep_updates_by_check["check_activity"] = {"context_field": "activity", "updates": context_by_id}
 
-    if result.alerts:
-        log(f"LLM identified {len(result.alerts)} activity issue(s) (alerts generated by alert_summary)", node="check_activity")
+    log(f"Fetched activity context for {len(context_by_id)} VEP(s)", node="check_activity")
 
     return {
         "last_check_times": last_check_times,
-        "vep_updates_by_check": vep_updates_by_check,  # Store updates for merge node
+        "vep_updates_by_check": vep_updates_by_check,
     }

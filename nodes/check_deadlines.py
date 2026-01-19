@@ -1,105 +1,114 @@
-"""Deadline monitoring node - checks VEP deadlines and generates alerts."""
+"""Deadline context fetch node - fetches deadline-related data for VEPs.
+
+This is a FETCH node - it only gathers raw data, NO analysis.
+Analysis is done by analyze_combined which has access to ALL context at once.
+"""
 
 import json
 from datetime import datetime
-from typing import Any, Optional
-from state import VEPState, VEPInfo, ReleaseSchedule
+from typing import Any, Optional, List
+from pydantic import BaseModel
+from state import VEPState, ReleaseSchedule
 from services.utils import log
-from services.llm_helper import invoke_llm_check
-from services.response_models import CheckResponse
+from services.llm_helper import invoke_llm_fetch
+from services.response_models import FetchResponse, VEPContextUpdate
 
 
-class DeadlineCheckResponse(CheckResponse):
-    """Response model for deadline check."""
+class DeadlineFetchResponse(FetchResponse):
+    """Response model for deadline fetch."""
     current_release: Optional[str] = None
     release_schedule: Optional[ReleaseSchedule] = None
 
 
 def check_deadlines_node(state: VEPState) -> Any:
-    """Check VEP deadlines and generate alerts for approaching deadlines.
-    
-    Uses LLM with GitHub MCP tools to:
-    1. Fetch release schedule from kubevirt/sig-release
-    2. Compute days until EF and CF for each VEP
-    3. Generate alerts for approaching deadlines (7d, 3d, 1d warnings)
-    4. Flag VEPs that won't make deadlines
-    
-    Note: Days until EF/CF are computed on-demand, not stored in state.
+    """Fetch deadline-related context for VEPs.
+
+    This is a FETCH node using lightweight LLM (Flash). It:
+    1. Fetches release schedule from kubevirt/sig-release (if not cached)
+    2. Computes days until EF and CF for each VEP
+    3. Stores raw deadline data in vep.context.deadline
+
+    NO analysis is done here - that's handled by analyze_combined.
     """
     veps = state.get("veps", [])
     veps_count = len(veps)
-    log(f"Checking deadlines for {veps_count} VEP(s) using LLM", node="check_deadlines")
-    
+    log(f"Fetching deadline context for {veps_count} VEP(s)", node="check_deadlines")
+
     last_check_times = state.get("last_check_times", {})
     last_check_times["check_deadlines"] = datetime.now()
-    
+
     if not veps:
         return {
             "last_check_times": last_check_times,
         }
-    
-    # Build system prompt
-    system_prompt = """You are a VEP governance agent checking deadlines for KubeVirt VEPs.
 
-Your task:
-1. Use the release_schedule from provided state (already fetched by indexer)
-   - Contains Enhancement Freeze (EF) and Code Freeze (CF) dates
-   - Only fetch from GitHub if release_schedule is null/missing
-2. For each VEP, compute days until EF and CF
-3. Update vep.analysis["deadline_risk"] with:
-   - at_risk: boolean
-   - risk_reason: string
-   - days_until_ef: int
-   - days_until_cf: int
-4. Add insights to vep.analysis["deadline_insights"]
-5. Generate alerts for approaching deadlines:
-   - 7 days before: WARNING
-   - 3 days before: URGENT
-   - 1 day before: CRITICAL
-6. Flag VEPs at risk (e.g., EF passed but VEP not merged)
+    # Build system prompt - FETCH ONLY, no analysis
+    system_prompt = """You are a lightweight data fetcher for VEP deadline information.
 
-Return updated VEP objects with deadline analysis, and release_schedule if you fetched new data."""
-    
-    # Serialize full state for LLM
+Your task is to FETCH raw data only - do NOT analyze or generate alerts.
+
+FETCH TASKS:
+1. If release_schedule is null/missing, fetch it from kubevirt/sig-release repo
+   - Look for schedule files with Enhancement Freeze (EF) and Code Freeze (CF) dates
+2. For each VEP, compute and return:
+   - days_until_ef: int (negative if passed)
+   - days_until_cf: int (negative if passed)
+   - ef_passed: bool
+   - cf_passed: bool
+   - vep_merged: bool (is the VEP PR merged?)
+   - target_release: str (which release this VEP targets)
+
+IMPORTANT: Do NOT analyze risk, do NOT generate insights, do NOT make recommendations.
+Just fetch and compute the raw data. Analysis is done by a separate node.
+
+Return context_updates with the raw deadline data for each VEP."""
+
+    # Serialize minimal state for LLM
     release_schedule = state.get("release_schedule")
     context = {
-        "veps": [vep.model_dump(mode='json') for vep in veps],
+        "veps": [{"tracking_issue_id": vep.tracking_issue_id, "name": vep.name, "title": vep.title,
+                  "target_release": vep.target_release, "compliance": vep.compliance.model_dump()} for vep in veps],
         "release_schedule": release_schedule.model_dump(mode='json') if release_schedule else None,
         "current_release": state.get("current_release"),
+        "today": datetime.now().strftime("%Y-%m-%d"),
     }
-    
-    user_prompt = f"""Here is the current state:
+
+    user_prompt = f"""Fetch deadline context for these VEPs:
 
 {json.dumps(context, indent=2, default=str)}
 
-Use GitHub MCP tools to fetch the release schedule and check deadlines for each VEP. Update the VEP objects with deadline analysis and return all updated VEPs."""
-    
-    # Invoke LLM with structured output
-    result = invoke_llm_check("deadlines", context, system_prompt, user_prompt, DeadlineCheckResponse)
+For each VEP, return a context_update with tracking_issue_id and context_data containing:
+- days_until_ef, days_until_cf, ef_passed, cf_passed, vep_merged, target_release
 
-    # NOTE: Do NOT add alerts here - alert_summary node is responsible for all alert generation
-    # This avoids duplicate alerts from multiple check nodes
+If release_schedule is missing, fetch it first using GitHub MCP tools."""
 
-    # Store updates in vep_updates_by_check for the merge node to combine
+    # Invoke lightweight LLM to fetch data
+    result = invoke_llm_fetch("check_deadlines", context, system_prompt, user_prompt, DeadlineFetchResponse)
+
+    # Store context updates for merge node to apply
+    # We store the raw context data keyed by VEP ID - merge node will apply to veps
+    context_by_id = {cu.tracking_issue_id: cu.context_data for cu in result.context_updates}
+
+    # Store in vep_updates_by_check for merge node
     vep_updates_by_check = state.get("vep_updates_by_check", {})
-    vep_updates_by_check["check_deadlines"] = result.updated_veps
-    
+    vep_updates_by_check["check_deadlines"] = {"context_field": "deadline", "updates": context_by_id}
+
     # Update release schedule if LLM fetched it
     current_release = state.get("current_release")
-    release_schedule = state.get("release_schedule")
-    
+    release_schedule_out = state.get("release_schedule")
+
     if result.release_schedule:
-        release_schedule = result.release_schedule
-    
+        release_schedule_out = result.release_schedule
+        log(f"Fetched release schedule for {result.release_schedule.version}", node="check_deadlines")
+
     if result.current_release:
         current_release = result.current_release
-    
-    if result.alerts:
-        log(f"LLM identified {len(result.alerts)} deadline issue(s) (alerts generated by alert_summary)", node="check_deadlines")
+
+    log(f"Fetched deadline context for {len(context_by_id)} VEP(s)", node="check_deadlines")
 
     return {
         "last_check_times": last_check_times,
         "current_release": current_release,
-        "release_schedule": release_schedule,
-        "vep_updates_by_check": vep_updates_by_check,  # Store updates for merge node
+        "release_schedule": release_schedule_out,
+        "vep_updates_by_check": vep_updates_by_check,
     }
