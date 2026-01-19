@@ -5,6 +5,8 @@ An AI-powered governance agent for monitoring and managing KubeVirt [Virtualizat
 This agent continuously tracks VEP progress, monitors compliance, checks deadlines,
 and maintains a Google Sheets dashboard with real-time VEP status.
 
+It is largely inspired by @vladikr's work on https://github.com/vladikr/vepMonitoring.
+
 ## Purpose
 
 The VEP Police Agent automates the monitoring and governance of the KubeVirt VEP process by:
