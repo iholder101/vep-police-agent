@@ -125,11 +125,20 @@ YOUR ANALYSIS TASKS:
    Set to False if only minor internal updates.
 
 IMPORTANT: Generate alerts in the `alerts` field for issues needing attention. Each alert should have:
-- subject: brief title
+- subject: Use ONE of these canonical types:
+  * "deadline_violation" - freeze deadlines missed/approaching
+  * "activity_issue" - stale/inactive VEPs
+  * "compliance_issue" - missing labels, approvals, docs
+  * "exception_required" - needs exception for post-freeze work
+  * "general_risk" - cross-domain or urgent blockers
 - severity: "low", "medium", "high", "critical"
 - vep_id: the tracking_issue_id (GitHub issue number, e.g. 181)
 - vep_name: which VEP identifier (e.g. "vep-0181")
-- message: what's the issue and recommended action"""
+- title: brief alert headline
+- message: what's the issue and recommended action
+
+Generate ONE alert per VEP per issue type. Do NOT create multiple alerts for the same VEP
+and issue category - consolidate related issues into a single alert."""
 
     # Serialize VEPs with full context for LLM
     release_schedule = state.get("release_schedule")
