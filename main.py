@@ -13,6 +13,8 @@ from langchain_core.messages import HumanMessage
 from graph import create_graph
 from services.utils import log, invoke_agent
 from state import VEPInfo, ReleaseSchedule
+from nodes.state_history import clear_all_history, HISTORY_DIR
+from nodes.escalation import clear_persistence
 
 # State cache file location
 STATE_CACHE_FILE = Path(__file__).parent / "cache" / "state_cache.json"
@@ -325,6 +327,11 @@ def parse_args():
         action="store_true",
         help="Use cached state from previous run on first cycle (skips fetch/analyze). Cache is created after each full analysis run. Useful for fast debug/test cycles."
     )
+    parser.add_argument(
+        "--clear-history",
+        action="store_true",
+        help="Clear all history and caches (state_cache.json, index_cache.json, history snapshots, alert persistence) and exit. Useful for fresh starts."
+    )
     return parser.parse_args()
 
 
@@ -406,13 +413,46 @@ def setup_credentials(args):
 def main():
     """Run the VEP governance agent."""
     global _shutdown_requested
-    
+
     # Register signal handler for graceful shutdown
     signal.signal(signal.SIGINT, signal_handler)
-    
+
     # Parse command line arguments
     args = parse_args()
-    
+
+    # Handle --clear-history flag (clears caches and exits)
+    if args.clear_history:
+        log("Clearing all history and caches...", node="main")
+        cleared = 0
+
+        # Clear state cache
+        if STATE_CACHE_FILE.exists():
+            STATE_CACHE_FILE.unlink()
+            log(f"  Removed: {STATE_CACHE_FILE}", node="main")
+            cleared += 1
+
+        # Clear index cache
+        index_cache_file = Path(__file__).parent / "cache" / "index_cache.json"
+        if index_cache_file.exists():
+            index_cache_file.unlink()
+            log(f"  Removed: {index_cache_file}", node="main")
+            cleared += 1
+
+        # Clear history snapshots
+        history_cleared = clear_all_history()
+        if history_cleared > 0:
+            log(f"  Removed: {history_cleared} history snapshot(s)", node="main")
+            cleared += history_cleared
+
+        # Clear alert persistence
+        persistence_cleared = clear_persistence()
+        if persistence_cleared > 0:
+            log(f"  Removed: {persistence_cleared} alert persistence entries", node="main")
+            cleared += 1
+
+        log(f"Cleared {cleared} item(s). Ready for fresh start.", node="main")
+        return
+
     # Set up credentials from CLI args
     setup_credentials(args)
     
