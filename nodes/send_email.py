@@ -204,7 +204,9 @@ def send_email_node(state: VEPState) -> Any:
             message = alert.get("message", "")
             metadata = alert.get("metadata", {})
 
-            vep_display = f"{vep_name} - {vep_title}" if vep_title else vep_name
+            vep_url = f"https://github.com/kubevirt/enhancements/issues/{vep_id}"
+            vep_link = f'<a href="{vep_url}">{vep_name}</a>'
+            vep_display = f"{vep_link} - {vep_title}" if vep_title else vep_link
             html_body += f"""
 <div class="alert {severity}">
   <div class="vep-id">{vep_display}</div>
@@ -230,14 +232,16 @@ def send_email_node(state: VEPState) -> Any:
         subject_title = subject_key.replace("_", " ").title()
         text_body += f"{subject_title} ({len(subject_alerts)} alert(s)):\n"
         for alert in subject_alerts:
+            vep_id = alert.get("vep_id", "?")
             vep_name = alert.get("vep_name", "?")
             vep_title = alert.get("vep_title", "")
             if vep_title and len(vep_title) > 40:
                 vep_title = vep_title[:37] + "..."
             title = alert.get("title", "")
             message = alert.get("message", "")
+            vep_url = f"https://github.com/kubevirt/enhancements/issues/{vep_id}"
             vep_display = f"{vep_name} ({vep_title})" if vep_title else vep_name
-            text_body += f"  - {vep_display}: {title}\n    {message}\n"
+            text_body += f"  - {vep_display}: {title}\n    {message}\n    {vep_url}\n"
         text_body += "\n"
     
     # Send via Resend

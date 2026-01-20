@@ -54,8 +54,10 @@ def _format_slack_message(alerts: List[Dict[str, Any]], alert_summary_text: str)
             title = alert.get("title", "")
             severity = alert.get("severity", "low")
             severity_emoji = {"critical": ":red_circle:", "high": ":large_orange_circle:", "medium": ":large_yellow_circle:", "low": ":white_circle:"}.get(severity, ":white_circle:")
-            # Format: :emoji: vep-0181 (Short Title): alert headline
-            vep_display = f"{vep_name} ({vep_title})" if vep_title else vep_name
+            # Format: :emoji: <link|vep-0181> (Short Title): alert headline
+            vep_url = f"https://github.com/kubevirt/enhancements/issues/{vep_id}"
+            vep_link = f"<{vep_url}|{vep_name}>"
+            vep_display = f"{vep_link} ({vep_title})" if vep_title else vep_link
             alert_lines.append(f"  {severity_emoji} {vep_display}: {title}")
 
     alert_text = "\n".join(alert_lines)
