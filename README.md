@@ -3,17 +3,17 @@
 AI-powered governance agent for monitoring KubeVirt [Virtualization Enhancement Proposals](https://github.com/kubevirt/enhancements) (VEPs).
 
 **What it does:**
-- Maintains a [Google Sheet dashboard](https://docs.google.com/spreadsheets/d/12evICwzi3Hpkbc3vWLp6pKEQNz7G3yFblWP2b764et4) with real-time VEP status
-- Sends [Slack alerts](https://redhat.enterprise.slack.com/archives/C0A9XR9BRJM) and email summaries
-  - *Note: Slack channel currently Red Hat-only; migrating to CNCF Slack for open access*
-- Uses Gemini LLMs to analyze VEP data, check compliance, track deadlines, and flag risks
+- Maintains a [Google Sheet dashboard](https://docs.google.com/spreadsheets/d/12evICwzi3Hpkbc3vWLp6pKEQNz7G3yFblWP2b764et4) with real-time VEP status.
+- Sends [Slack alerts](https://redhat.enterprise.slack.com/archives/C0A9XR9BRJM) and email summaries.
+  - *Note: Slack channel currently Red Hat-only; migrating to CNCF Slack for open access.*
+- Uses Gemini LLMs to analyze VEP data, check compliance, track deadlines, and flag risks.
 
 **Key capabilities:**
-- Discovers VEPs from GitHub issues, PRs, and docs
-- Monitors compliance (SIG sign-offs, template completeness)
-- Tracks Enhancement Freeze (EF) and Code Freeze (CF) deadlines
-- Flags inactive VEPs and escalates persistent issues
-- Runs continuously or as one-shot (for cron jobs)
+- Discovers VEPs from GitHub issues, PRs, and docs.
+- Monitors compliance (SIG sign-offs, template completeness).
+- Tracks Enhancement Freeze (EF) and Code Freeze (CF) deadlines.
+- Flags inactive VEPs and escalates persistent issues.
+- Runs continuously or as one-shot (for cron jobs).
 
 ## Architecture
 
@@ -83,22 +83,22 @@ graph TD
 ```
 
 **Flow Summary:**
-1. `scheduler` coordinates all operations on configurable intervals
-2. `fetch_veps` discovers VEPs from GitHub, then triggers the analysis pipeline
-3. Four parallel fetch nodes gather context (deadlines, activity, compliance, exceptions) using Flash model
-4. `merge_vep_updates` combines context data (deterministic, no LLM)
-5. `analyze_combined` (Pro model) does cross-domain reasoning and generates alerts
-6. `detect_changes` compares to previous run for accurate change reporting
-7. `update_sheets` and `alert_summary` run in parallel; alerts fan out to email and Slack
+1. `scheduler` coordinates all operations on configurable intervals.
+2. `fetch_veps` discovers VEPs from GitHub, then triggers the analysis pipeline.
+3. Four parallel fetch nodes gather context (deadlines, activity, compliance, exceptions) using Flash model.
+4. `merge_vep_updates` combines context data (deterministic, no LLM).
+5. `analyze_combined` (Pro model) does cross-domain reasoning and generates alerts.
+6. `detect_changes` compares to previous run for accurate change reporting.
+7. `update_sheets` and `alert_summary` run in parallel; alerts fan out to email and Slack.
 
 ## Requirements
 
-- Python 3.11+ (or Podman/Docker)
-- Google Gemini API key
-- Google Service Account credentials (for Sheets)
-- GitHub PAT (optional, recommended for rate limits)
-- Resend API key (optional, for email)
-- Slack Webhook URL (optional, for Slack)
+- Python 3.11+ (or Podman/Docker).
+- Google Gemini API key.
+- Google Service Account credentials (for Sheets).
+- GitHub PAT (optional, recommended for rate limits).
+- Resend API key (optional, for email).
+- Slack Webhook URL (optional, for Slack).
 
 ## Installation
 
@@ -247,27 +247,27 @@ podman run --rm --pull=newer \
 ### Models
 
 Two-tier approach configured in `config.py`:
-- **Flash** (fast): Fetch nodes (`fetch_veps`, `check_*`)
-- **Pro** (powerful): Analysis nodes (`analyze_combined`, `update_sheets`, `alert_summary`)
+- **Flash** (fast): Fetch nodes (`fetch_veps`, `check_*`).
+- **Pro** (powerful): Analysis nodes (`analyze_combined`, `update_sheets`, `alert_summary`).
 
 Use `--fastest-model` to force Flash everywhere for testing.
 
 ### Google Sheets
 
-1. Share your sheet with the service account email (from `GOOGLE_TOKEN`)
-2. Grant **Editor** access
-3. Pass sheet ID via `--sheet-id` (from URL: `docs.google.com/spreadsheets/d/{ID}/edit`)
+1. Share your sheet with the service account email (from `GOOGLE_TOKEN`).
+2. Grant **Editor** access.
+3. Pass sheet ID via `--sheet-id` (from URL: `docs.google.com/spreadsheets/d/{ID}/edit`).
 
 ### Email (Resend)
 
-1. Get free API key from https://resend.com/api-keys
-2. Save to `RESEND_API_KEY` file
-3. Configure recipients in `config.py` or via `EMAIL_RECIPIENTS` env var
+1. Get free API key from https://resend.com/api-keys.
+2. Save to `RESEND_API_KEY` file.
+3. Configure recipients in `config.py` or via `EMAIL_RECIPIENTS` env var.
 
 ### Slack
 
-1. Create webhook at https://api.slack.com/apps → Incoming Webhooks
-2. Save URL to `SLACK_WEBHOOK_URL` file
+1. Create webhook at https://api.slack.com/apps → Incoming Webhooks.
+2. Save URL to `SLACK_WEBHOOK_URL` file.
 
 Alerts are color-coded by severity (Critical=red, High=orange, Medium=yellow, Low=green).
 
@@ -278,10 +278,10 @@ All operations run hourly on round hours by default. Configure intervals in `con
 ### Caching
 
 Cache files in `cache/` directory:
-- `index_cache.json`: VEP data from GitHub (default: 60 min)
-- `state_cache.json`: State snapshot for `--use-state-cache`
-- `history/`: Snapshots for change detection (keeps last 24)
-- `alert_persistence.json`: Tracks escalation logic
+- `index_cache.json`: VEP data from GitHub (default: 60 min).
+- `state_cache.json`: State snapshot for `--use-state-cache`.
+- `history/`: Snapshots for change detection (keeps last 24).
+- `alert_persistence.json`: Tracks escalation logic.
 
 Use `--clear-history` for a fresh start.
 
