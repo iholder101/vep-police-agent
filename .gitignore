@@ -6,3 +6,6 @@ SLACK_WEBHOOK_URL
 **/__pycache__/
 cache/*
 !cache/.gitkeep
+!cache/history/
+cache/history/*
+!cache/history/.gitkeep

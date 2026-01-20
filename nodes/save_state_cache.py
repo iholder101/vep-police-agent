@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 from state import VEPState
 from services.utils import log
+from nodes.state_history import save_snapshot
 
 # Cache file location (in project root)
 CACHE_FILE = Path(__file__).parent.parent / "cache" / "state_cache.json"
@@ -63,6 +64,9 @@ def save_state_cache_node(state: VEPState) -> Any:
             json.dump(cache_data, f, indent=2, default=str)
 
         log(f"State cache saved to {CACHE_FILE} ({len(serialized_veps)} VEPs)", node="save_state_cache")
+
+        # Also save a timestamped snapshot for historical tracking
+        save_snapshot(cache_data)
 
     except Exception as e:
         log(f"Failed to save state cache: {e}", node="save_state_cache", level="ERROR")
