@@ -212,6 +212,7 @@ class VEPState(TypedDict):
     alerts: Annotated[List[Dict[str, Any]], concat_list_reducer]  # Alerts queued for notification (deadline warnings, compliance issues, etc.) - concatenated from parallel nodes
     alert_summary_text: Optional[str]  # Human-readable summary text for email alerts
     general_insights: Annotated[List[str], concat_list_reducer]  # General insights and patterns across all VEPs (overall release health, trends, cross-VEP patterns) - each insight as a separate string
+    detected_changes: Optional[Dict[str, Any]]  # Changes detected vs previous run (from detect_changes node)
     sheets_need_update: bool  # Flag indicating Google Sheets needs syncing
     errors: List[Dict[str, Any]]  # Errors encountered during processing
     config_cache: Dict[str, Any]  # Cached configuration (VEP template, process docs, etc.)
