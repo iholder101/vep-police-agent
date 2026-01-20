@@ -34,6 +34,11 @@ The agent uses Large Language Models (LLMs) via Google's Gemini API to intellige
 - ✅ **Compliance Checking**: Verifies SIG sign-offs, template completeness, and process adherence
 - 📈 **Activity Monitoring**: Flags inactive VEPs and tracks review lag times
 - 🔄 **Continuous Operation**: Runs continuously or in one-cycle mode for scheduled jobs
+- 🧠 **Self-Improvement Capabilities**:
+  - **Alert Deduplication**: Consolidates alerts by VEP + issue type to reduce noise
+  - **Historical Tracking**: Saves timestamped snapshots for real "changes since last" comparison
+  - **Alert Escalation**: Persistent unresolved alerts get escalated in severity over time
+  - **Change Detection**: Compares current state to previous run for accurate change reporting
 - 🚀 **Containerized**: Runs in Podman/Docker containers for easy deployment
 - 🔐 **MCP Integration**: Uses Model Context Protocol (MCP) for GitHub and Google Sheets access
 
@@ -68,7 +73,8 @@ graph TD
     CheckExceptions --> MergeUpdates
 
     MergeUpdates --> AnalyzeCombined[analyze_combined]
-    AnalyzeCombined --> SaveStateCache[save_state_cache]
+    AnalyzeCombined --> DetectChanges[detect_changes]
+    DetectChanges --> SaveStateCache[save_state_cache]
     SaveStateCache --> Scheduler
 
     AlertSummary -->|Alerts| SendNotifications[send_notifications]
@@ -88,6 +94,7 @@ graph TD
     style RunMonitoring fill:#FF9800,stroke:#F57C00,stroke-width:2px,color:#fff
     style MergeUpdates fill:#4CAF50,stroke:#388E3C,stroke-width:2px,color:#fff
     style AnalyzeCombined fill:#9C27B0,stroke:#7B1FA2,stroke-width:2px,color:#fff
+    style DetectChanges fill:#8BC34A,stroke:#689F38,stroke-width:2px,color:#fff
     style SaveStateCache fill:#673AB7,stroke:#512DA8,stroke-width:2px,color:#fff
     style UpdateSheets fill:#F44336,stroke:#D32F2F,stroke-width:2px,color:#fff
     style FetchVEPs fill:#00BCD4,stroke:#0097A7,stroke-width:2px,color:#fff
@@ -116,14 +123,19 @@ graph TD
 5. **Deterministic Merge**: `merge_vep_updates` applies raw context data to VEPs (no LLM needed)
 6. **Holistic Analysis**: `analyze_combined` (using powerful Pro model) performs ALL reasoning:
    - Cross-domain analysis (e.g., low activity + close deadline = URGENT)
-   - Generates alerts for issues needing attention
+   - Generates alerts using canonical types (deadline_violation, activity_issue, compliance_issue, exception_required, general_risk)
    - Updates VEP priority and recommended actions
-7. **State Cache**: After `analyze_combined`, `save_state_cache` saves state to `cache/state_cache.json` for fast debug cycles with `--use-state-cache`
-8. **Post-Analysis Actions**: After caching, routes back to `scheduler`, which automatically schedules both `update_sheets` and `alert_summary` in parallel:
+7. **Change Detection**: `detect_changes` compares current state to previous run:
+   - Identifies new/removed VEPs
+   - Detects status changes
+   - Tracks resolved vs new alerts
+   - Provides real "changes since last" data (not LLM-fabricated)
+8. **State Cache**: After change detection, `save_state_cache` saves state to `cache/state_cache.json` and historical snapshots to `cache/history/` for comparison
+9. **Post-Analysis Actions**: After caching, routes back to `scheduler`, which automatically schedules both `update_sheets` and `alert_summary` in parallel:
    - `update_sheets`: Updates Google Sheets with VEP status
-   - `alert_summary`: Formats alerts for notifications (limits to ~20 most significant)
-9. **Notifications**: `alert_summary` conditionally routes to `send_notifications` (if alerts exist) or back to `scheduler` (if no alerts). `send_notifications` fans out to `send_email` and `send_slack` in parallel
-10. **Wait Loop**: If no tasks, waits until next round hour (or next interval if `--immediate-start` is used) before returning to scheduler (continuous operation)
+   - `alert_summary`: Consolidates alerts (deduplicates by VEP + issue type), applies escalation logic, then formats for notifications
+10. **Notifications**: `alert_summary` conditionally routes to `send_notifications` (if alerts exist) or back to `scheduler` (if no alerts). `send_notifications` fans out to `send_email` and `send_slack` in parallel
+11. **Wait Loop**: If no tasks, waits until next round hour (or next interval if `--immediate-start` is used) before returning to scheduler (continuous operation)
 
 **Key Design Principles:**
 - **Separation of Concerns**: Fetch nodes gather raw data (Flash), merge node combines context (deterministic), analyze node does reasoning (Pro)
@@ -273,6 +285,7 @@ podman run --rm --pull=newer \
 - `--mock-analyzed-combined`: Skip LLM call in analyze_combined node and use naive analysis (faster testing)
 - `--mock-alert-summary`: Skip LLM call in alert_summary node and create mocked alerts (faster testing)
 - `--use-state-cache`: Use cached state from previous run on first cycle (skips fetch/analyze). Cache is created after each full analysis run. Useful for fast debug/test cycles.
+- `--clear-history`: Clear all history and caches (state_cache.json, index_cache.json, history snapshots, alert persistence) and exit. Useful for fresh starts.
 - `--debug MODE`: Enable debug mode (`discover-veps` or `test-sheets`)
 - `--index-cache-minutes MINUTES`: Maximum age of index cache in minutes (default: 60)
 - `--no-index-cache`: Disable index caching
@@ -392,9 +405,12 @@ The agent runs operations on configurable intervals. By default, all operations 
 The agent caches data in the `cache/` directory to avoid redundant API calls:
 - `cache/index_cache.json`: Indexed VEP data from GitHub
 - `cache/state_cache.json`: State snapshot for `--use-state-cache`
+- `cache/history/`: Timestamped snapshots for change detection (keeps last 24)
+- `cache/alert_persistence.json`: Tracks alert persistence for escalation logic
 - Default cache age: 60 minutes
 - Use `--no-index-cache` to disable index caching
 - Use `--index-cache-minutes` to adjust cache duration
+- Use `--clear-history` to clear all caches and history for a fresh start
 - Cache directory is mounted read-write in container while workspace stays read-only
 
 ## Troubleshooting
