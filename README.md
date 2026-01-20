@@ -444,7 +444,7 @@ If VEP discovery seems stale:
 
 ## Credits
 
-This project was developed with **heavy use of Cursor**, an AI-powered code editor. Cursor's advanced code generation, refactoring, and debugging capabilities were instrumental in implementing the complex agent logic, MCP integrations, and LangGraph orchestration. The iterative development process, prompt-driven code generation, and intelligent code completion provided by Cursor significantly accelerated the development of this agent.
+This project was developed with **heavy use of Cursor** and **Claude Code**, both AI-powered development tools. Cursor's advanced code generation, refactoring, and debugging capabilities, combined with Claude Code's intelligent codebase understanding and multi-file editing capabilities, were instrumental in implementing the complex agent logic, MCP integrations, and LangGraph orchestration. The iterative development process, prompt-driven code generation, and intelligent code completion significantly accelerated the development of this agent.
 
 The **GitHub Project V2 integration** and **implementation PR tracking** features were inspired by [vladikr/vepMonitoring](https://github.com/vladikr/vepMonitoring), which pioneered the use of GraphQL queries for project board data and VEP-to-PR mapping patterns.
 
