@@ -13,6 +13,7 @@ from state import VEPState
 from services.utils import log
 from services.llm_helper import invoke_llm_with_tools
 from pydantic import BaseModel
+from nodes.escalation import escalate_alerts
 
 
 class Alert(BaseModel):
@@ -37,6 +38,105 @@ class AlertSummaryResponse(BaseModel):
 # Severity priority for sorting
 SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 MAX_ALERTS = 20  # Limit alerts for notifications
+
+# Canonical alert types - map arbitrary LLM subjects to these
+CANONICAL_TYPES = {
+    # Deadline-related
+    "deadline_violation": ["deadline", "freeze", "missed freeze", "enhancement freeze",
+                           "code freeze", "post-freeze", "created post-freeze", "freeze violation",
+                           "ef violation", "cf violation", "deadline approaching", "deadline risk"],
+    # Activity-related
+    "activity_issue": ["activity", "stale", "inactive", "no activity", "low activity",
+                       "no updates", "dormant", "abandoned"],
+    # Compliance-related
+    "compliance_issue": ["compliance", "labels", "missing labels", "approval", "missing approval",
+                         "lgtm", "sign-off", "template", "docs", "documentation"],
+    # Exception-related
+    "exception_required": ["exception", "exception pending", "exception required",
+                           "post-freeze work", "needs exception"],
+    # General/cross-domain
+    "general_risk": ["risk", "blocker", "critical", "urgent", "cross-domain"],
+}
+
+
+def _normalize_subject(subject: str) -> str:
+    """Map arbitrary subject to canonical type."""
+    subject_lower = subject.lower().strip()
+
+    for canonical, keywords in CANONICAL_TYPES.items():
+        for keyword in keywords:
+            if keyword in subject_lower:
+                return canonical
+
+    # Default to general_risk if no match
+    return "general_risk"
+
+
+def _consolidate_alerts(alerts: List[Dict]) -> List[Dict]:
+    """Consolidate alerts by (vep_id, canonical_type).
+
+    Merges multiple alerts about the same VEP and issue type into one,
+    keeping the highest severity and combining messages.
+    """
+    if not alerts:
+        return []
+
+    # Group by (vep_id, canonical_type)
+    grouped: Dict[str, List[Dict]] = {}
+    for alert in alerts:
+        vep_id = alert.get("vep_id", 0)
+        canonical = _normalize_subject(alert.get("subject", ""))
+        key = f"{vep_id}:{canonical}"
+
+        if key not in grouped:
+            grouped[key] = []
+        grouped[key].append(alert)
+
+    # Merge each group into a single alert
+    consolidated = []
+    for key, group in grouped.items():
+        if len(group) == 1:
+            # Single alert - just normalize the subject
+            merged = group[0].copy()
+            merged["subject"] = _normalize_subject(merged.get("subject", ""))
+            consolidated.append(merged)
+        else:
+            # Multiple alerts - merge them
+            merged = _merge_alert_group(group)
+            consolidated.append(merged)
+
+    log(f"Consolidated {len(alerts)} alerts to {len(consolidated)}", node="alert_summary")
+    return consolidated
+
+
+def _merge_alert_group(group: List[Dict]) -> Dict:
+    """Merge a group of alerts about the same VEP/issue into one."""
+    # Use highest severity
+    severities = [a.get("severity", "low") for a in group]
+    best_severity = min(severities, key=lambda s: SEVERITY_ORDER.get(s, 3))
+
+    # Take first alert as base
+    base = group[0].copy()
+    base["severity"] = best_severity
+    base["subject"] = _normalize_subject(base.get("subject", ""))
+
+    # Combine unique titles/messages
+    titles = list(dict.fromkeys(a.get("title", "") for a in group if a.get("title")))
+    messages = list(dict.fromkeys(a.get("message", "") for a in group if a.get("message")))
+
+    if len(titles) > 1:
+        base["title"] = titles[0]  # Keep first, mention consolidation
+        base["message"] = f"{messages[0]} (+ {len(group) - 1} related issues)"
+    else:
+        base["title"] = titles[0] if titles else ""
+        base["message"] = messages[0] if messages else ""
+
+    # Track original count
+    base["metadata"] = base.get("metadata", {})
+    base["metadata"]["consolidated_count"] = len(group)
+    base["metadata"]["original_subjects"] = [a.get("subject", "") for a in group]
+
+    return base
 
 
 def alert_summary_node(state: VEPState) -> Any:
@@ -89,9 +189,17 @@ def alert_summary_node(state: VEPState) -> Any:
             "alert_summary_text": "Mock Alert Summary: Generated for testing.",
         }
 
+    # Consolidate alerts by (vep_id, canonical_type) to remove duplicates
+    consolidated_alerts = _consolidate_alerts(incoming_alerts)
+
+    # Apply escalation logic for persistent alerts
+    escalated_alerts, escalation_stats = escalate_alerts(consolidated_alerts)
+    if escalation_stats["escalated_count"] > 0:
+        log(f"Escalated {escalation_stats['escalated_count']} persistent alert(s)", node="alert_summary")
+
     # Sort and limit alerts
     sorted_alerts = sorted(
-        incoming_alerts,
+        escalated_alerts,
         key=lambda a: (
             SEVERITY_ORDER.get(a.get("severity", "low"), 3),
             a.get("vep_name", "zzz")
@@ -99,9 +207,9 @@ def alert_summary_node(state: VEPState) -> Any:
     )
     limited_alerts = sorted_alerts[:MAX_ALERTS]
 
-    # Count by severity
+    # Count by severity (use escalated alerts for accurate counts)
     severity_counts = {}
-    for alert in incoming_alerts:
+    for alert in escalated_alerts:
         sev = alert.get("severity", "low")
         severity_counts[sev] = severity_counts.get(sev, 0) + 1
 
@@ -116,10 +224,14 @@ Generate a concise, executive-style summary with these sections:
    - Immediate action needed (if any)
 
 2. CHANGES SINCE LAST REPORT:
-   - New VEPs added
-   - Status changes (merged, at-risk, etc.)
-   - Resolved issues
-   - If no changes, say "No significant changes"
+   IMPORTANT: Use ONLY the data in "detected_changes" field - DO NOT fabricate changes.
+   - detected_changes.new_veps: VEPs added since last run
+   - detected_changes.removed_veps: VEPs removed
+   - detected_changes.changed_veps: VEPs with status/field changes
+   - detected_changes.resolved_alerts: Alerts that are now resolved
+   - detected_changes.new_alerts: New alerts this run
+   - If detected_changes.is_first_run is true, say "First run - no prior data"
+   - If all change lists are empty, say "No significant changes"
 
 3. ALERT SUMMARY:
    Format alerts by severity (critical first):
@@ -134,17 +246,21 @@ Generate a concise, executive-style summary with these sections:
 Keep the entire summary under 50 lines. Be concise and actionable.
 Use plain text formatting suitable for both email and Slack."""
 
-    # Prepare context
+    # Prepare context with actual detected changes (not fabricated)
     release_schedule = state.get("release_schedule")
+    detected_changes = state.get("detected_changes") or {}
     context = {
         "veps": [vep.model_dump(mode='json') for vep in veps],
         "alerts": limited_alerts,
         "general_insights": general_insights,
         "severity_counts": severity_counts,
-        "total_alerts": len(incoming_alerts),
+        "raw_alert_count": len(incoming_alerts),  # Before consolidation
+        "total_alerts": len(escalated_alerts),  # After consolidation and escalation
         "showing_alerts": len(limited_alerts),
+        "escalation_stats": escalation_stats,  # How many alerts were escalated
         "release_schedule": release_schedule.model_dump(mode='json') if release_schedule else None,
         "current_release": state.get("current_release"),
+        "detected_changes": detected_changes,  # Real changes from detect_changes node
     }
 
     user_prompt = f"""Format this VEP governance data into an executive summary:
