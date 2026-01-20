@@ -5,7 +5,12 @@ An AI-powered governance agent for monitoring and managing KubeVirt [Virtualizat
 This agent continuously tracks VEP progress, monitors compliance, checks deadlines,
 and maintains a Google Sheets dashboard with real-time VEP status.
 
-It is largely inspired by @vladikr's work on https://github.com/vladikr/vepMonitoring.
+In short, this agent:
+- Maintains a Google Sheet that should reflect the current VEP status. This sheet can be found here: https://docs.google.com/spreadsheets/d/12evICwzi3Hpkbc3vWLp6pKEQNz7G3yFblWP2b764et4.
+- Sends Slack summary alerts about the current status.
+  - Currently, messages are being sent to the [#vep-agent-alerts](https://redhat.enterprise.slack.com/archives/C0A9XR9BRJM) channel. This channel is currently accessible only for Red Hatters, but I'm now working on migrating it to the CNCF slack to be fully open.
+- Sends e-mail summary alerts about the current status.
+  - Currently, messages are being sent to me only. Working to relax this limitation.
 
 ## Purpose
 
