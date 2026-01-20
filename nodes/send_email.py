@@ -196,13 +196,18 @@ def send_email_node(state: VEPState) -> Any:
             severity = alert.get("severity", "low")
             vep_id = alert.get("vep_id", "?")
             vep_name = alert.get("vep_name", "?")
+            vep_title = alert.get("vep_title", "")
+            # Truncate title to 40 chars for readability
+            if vep_title and len(vep_title) > 40:
+                vep_title = vep_title[:37] + "..."
             title = alert.get("title", "")
             message = alert.get("message", "")
             metadata = alert.get("metadata", {})
-            
+
+            vep_display = f"{vep_name} - {vep_title}" if vep_title else vep_name
             html_body += f"""
 <div class="alert {severity}">
-  <div class="vep-id">{vep_name} (#{vep_id})</div>
+  <div class="vep-id">{vep_display}</div>
   <div><strong>{title}</strong></div>
   <div>{message}</div>
   {f'<div class="metadata">Metadata: {json.dumps(metadata)}</div>' if metadata else ''}
@@ -225,11 +230,14 @@ def send_email_node(state: VEPState) -> Any:
         subject_title = subject_key.replace("_", " ").title()
         text_body += f"{subject_title} ({len(subject_alerts)} alert(s)):\n"
         for alert in subject_alerts:
-            vep_id = alert.get("vep_id", "?")
             vep_name = alert.get("vep_name", "?")
+            vep_title = alert.get("vep_title", "")
+            if vep_title and len(vep_title) > 40:
+                vep_title = vep_title[:37] + "..."
             title = alert.get("title", "")
             message = alert.get("message", "")
-            text_body += f"  - {vep_name} (#{vep_id}): {title}\n    {message}\n"
+            vep_display = f"{vep_name} ({vep_title})" if vep_title else vep_name
+            text_body += f"  - {vep_display}: {title}\n    {message}\n"
         text_body += "\n"
     
     # Send via Resend

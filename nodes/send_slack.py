@@ -47,10 +47,16 @@ def _format_slack_message(alerts: List[Dict[str, Any]], alert_summary_text: str)
         for alert in subject_alerts:
             vep_id = alert.get("vep_id", "?")
             vep_name = alert.get("vep_name", "?")
+            vep_title = alert.get("vep_title", "")
+            # Truncate title to 30 chars for readability
+            if vep_title and len(vep_title) > 30:
+                vep_title = vep_title[:27] + "..."
             title = alert.get("title", "")
             severity = alert.get("severity", "low")
             severity_emoji = {"critical": ":red_circle:", "high": ":large_orange_circle:", "medium": ":large_yellow_circle:", "low": ":white_circle:"}.get(severity, ":white_circle:")
-            alert_lines.append(f"  {severity_emoji} {vep_name} (#{vep_id}): {title}")
+            # Format: :emoji: vep-0181 (Short Title): alert headline
+            vep_display = f"{vep_name} ({vep_title})" if vep_title else vep_name
+            alert_lines.append(f"  {severity_emoji} {vep_display}: {title}")
 
     alert_text = "\n".join(alert_lines)
 

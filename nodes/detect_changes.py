@@ -115,6 +115,7 @@ def _simplify_alerts(alerts: List[Dict]) -> List[Dict]:
         {
             "vep_id": a.get("vep_id"),
             "vep_name": a.get("vep_name"),
+            "vep_title": a.get("vep_title"),
             "subject": a.get("subject"),
             "severity": a.get("severity"),
             "title": a.get("title"),

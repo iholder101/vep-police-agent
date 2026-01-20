@@ -22,6 +22,7 @@ class Alert(BaseModel):
     severity: str  # "low", "medium", "high", "critical"
     vep_id: int = 0  # VEP tracking issue ID (0 for general alerts)
     vep_name: str  # VEP identifier or "general"
+    vep_title: str = ""  # VEP title/description (truncated)
     title: str  # Alert headline
     message: str  # Detailed message
     metadata: Dict[str, Any] = {}
@@ -179,6 +180,7 @@ def alert_summary_node(state: VEPState) -> Any:
                 "severity": ["high", "medium", "high"][i % 3],
                 "vep_id": vep.tracking_issue_id,
                 "vep_name": vep.name,
+                "vep_title": vep.title[:40] if vep.title else "",
                 "title": f"Mock alert for {vep.name}",
                 "message": f"This is a mock alert for testing.",
                 "metadata": {"mock": True},
@@ -335,7 +337,12 @@ def _build_fallback_summary(alerts: List[Dict], veps: list, insights: List[str])
             if sev_alerts:
                 lines.append(f"\n{sev.upper()} ({len(sev_alerts)}):")
                 for alert in sev_alerts[:5]:
-                    lines.append(f"  - {alert.get('vep_name', '?')}: {alert.get('title', alert.get('message', 'No details'))}")
+                    vep_name = alert.get('vep_name', '?')
+                    vep_title = alert.get('vep_title', '')
+                    if vep_title and len(vep_title) > 30:
+                        vep_title = vep_title[:27] + "..."
+                    vep_display = f"{vep_name} ({vep_title})" if vep_title else vep_name
+                    lines.append(f"  - {vep_display}: {alert.get('title', alert.get('message', 'No details'))}")
     else:
         lines.append("No alerts - all VEPs on track.")
 

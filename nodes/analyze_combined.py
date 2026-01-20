@@ -134,6 +134,7 @@ IMPORTANT: Generate alerts in the `alerts` field for issues needing attention. E
 - severity: "low", "medium", "high", "critical"
 - vep_id: the tracking_issue_id (GitHub issue number, e.g. 181)
 - vep_name: which VEP identifier (e.g. "vep-0181")
+- vep_title: the VEP's title/description (e.g. "VPC Networking Support"), truncated to 40 chars if needed
 - title: brief alert headline
 - message: what's the issue and recommended action
 
