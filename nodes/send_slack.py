@@ -50,7 +50,7 @@ def _format_slack_message(alerts: List[Dict[str, Any]], alert_summary_text: str)
             title = alert.get("title", "")
             severity = alert.get("severity", "low")
             severity_emoji = {"critical": ":red_circle:", "high": ":large_orange_circle:", "medium": ":large_yellow_circle:", "low": ":white_circle:"}.get(severity, ":white_circle:")
-            alert_lines.append(f"  {severity_emoji} VEP {vep_id} ({vep_name}): {title}")
+            alert_lines.append(f"  {severity_emoji} {vep_name} (#{vep_id}): {title}")
 
     alert_text = "\n".join(alert_lines)
 

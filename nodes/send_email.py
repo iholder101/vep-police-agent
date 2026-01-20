@@ -202,7 +202,7 @@ def send_email_node(state: VEPState) -> Any:
             
             html_body += f"""
 <div class="alert {severity}">
-  <div class="vep-id">VEP {vep_id} ({vep_name})</div>
+  <div class="vep-id">{vep_name} (#{vep_id})</div>
   <div><strong>{title}</strong></div>
   <div>{message}</div>
   {f'<div class="metadata">Metadata: {json.dumps(metadata)}</div>' if metadata else ''}
@@ -229,7 +229,7 @@ def send_email_node(state: VEPState) -> Any:
             vep_name = alert.get("vep_name", "?")
             title = alert.get("title", "")
             message = alert.get("message", "")
-            text_body += f"  - VEP {vep_id} ({vep_name}): {title}\n    {message}\n"
+            text_body += f"  - {vep_name} (#{vep_id}): {title}\n    {message}\n"
         text_body += "\n"
     
     # Send via Resend
