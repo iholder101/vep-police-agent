@@ -4,8 +4,7 @@ AI-powered governance agent for monitoring KubeVirt [Virtualization Enhancement 
 
 **What it does:**
 - Maintains a [Google Sheet dashboard](https://docs.google.com/spreadsheets/d/12evICwzi3Hpkbc3vWLp6pKEQNz7G3yFblWP2b764et4) with real-time VEP status.
-- Sends [Slack alerts](https://redhat.enterprise.slack.com/archives/C0A9XR9BRJM) and email summaries.
-  - *Note: Slack channel currently Red Hat-only; migrating to CNCF Slack for open access.*
+- Sends [Slack alerts](https://cloud-native.slack.com/archives/C0A99UAFW1M) (#kubevirt-vep-agent-alerts) and email summaries.
 - Uses Gemini LLMs to analyze VEP data, check compliance, track deadlines, and flag risks.
 
 **Key capabilities:**
