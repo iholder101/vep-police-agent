@@ -44,7 +44,7 @@ EMAIL_RECIPIENTS: List[str] = [
 
 # Agent operation interval (in seconds)
 # After each fetch, the full pipeline runs: fetch_veps -> run_monitoring -> analyze_combined -> update_sheets -> alert_summary
-FETCH_VEPS_INTERVAL_SECONDS: int = 7200  # 2 hours
+FETCH_VEPS_INTERVAL_SECONDS: int = 4 * 60 * 60  # 4 hours
 
 # LLM rate limit retry configuration
 LLM_MAX_RETRIES: int = 3
