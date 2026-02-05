@@ -200,6 +200,7 @@ class VEPState(TypedDict):
     # Release tracking
     current_release: Optional[str]  # Active release version (e.g., "v1.8")
     release_schedule: Optional[ReleaseSchedule]  # Parsed schedule with EF/CF dates
+    release_phase: Optional[str]  # Current phase: "design", "development", "stabilization", "released"
 
     # VEP data
     veps: List[VEPInfo]  # All VEPs being tracked
