@@ -164,6 +164,7 @@ def fetch_veps_node(state: VEPState) -> Any:
             "last_check_times": last_check_times,
             "next_tasks": next_tasks,
             "sheets_need_update": True,  # Trigger sheets update
+            "release_phase": "development",  # Mock phase for testing
         }
     
     # Build system prompt
@@ -460,11 +461,16 @@ VERIFY before returning: count >= {max(len(vep_related_issues), len(vep_files_in
             sheets_need_update = True
             log("Skip-monitoring mode: Setting sheets_need_update to trigger analyze_combined", node="fetch_veps")
 
+        # Extract release phase from indexed context
+        release_phase = indexed_context.get("release_phase", "unknown")
+        log(f"Release phase: {release_phase}", node="fetch_veps")
+
         return {
             "last_check_times": last_check_times,
             "veps": merged_veps,  # Merged VEPs (updated + new)
             "next_tasks": next_tasks,
             "sheets_need_update": sheets_need_update,  # Set flag if skip_monitoring enabled
+            "release_phase": release_phase,  # Pass release phase to downstream nodes
         }
         
     except Exception as e:
