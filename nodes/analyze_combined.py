@@ -66,20 +66,62 @@ def analyze_combined_node(state: VEPState) -> Any:
             "sheets_need_update": skip_monitoring,
         }
 
+    # Get release phase for phase-aware prompting
+    release_phase = state.get("release_phase", "unknown")
+    current_release = state.get("current_release", "unknown")
+
     # Build system prompt for comprehensive analysis
-    system_prompt = """You are a VEP governance analyst. Your job is to analyze VEP status using ALL available context and generate actionable insights.
+    system_prompt = f"""You are a VEP governance analyst. Your job is to analyze VEP status using ALL available context and generate actionable insights.
+
+CURRENT RELEASE: {current_release}
+CURRENT RELEASE PHASE: {release_phase}
+(design=pre-EF, development=EF-to-CF, stabilization=post-CF, released=done)
 
 INPUT: Each VEP has raw context data from fetch nodes:
-- context.deadline: {days_until_ef, days_until_cf, ef_passed, cf_passed, vep_merged, target_release}
-- context.activity: {last_issue_update, last_pr_update, days_since_update, recent_comments, recent_commits}
-- context.compliance: {pr_state, has_lgtm, has_approved_label, sig_labels, implementation_prs, template sections}
-- context.exceptions: {exception_issue_number, exception_issue_state, has_post_ef_commits, has_post_cf_commits}
+- context.deadline: {{days_until_ef, days_until_cf, ef_passed, cf_passed, vep_merged, target_release}}
+- context.activity: {{last_issue_update, last_pr_update, days_since_update, recent_comments, recent_commits}}
+- context.compliance: {{pr_state, has_lgtm, has_approved_label, sig_labels, implementation_prs, template sections}}
+- context.exceptions: {{exception_issue_number, exception_issue_state, has_post_ef_commits, has_post_cf_commits}}
+
+═══════════════════════════════════════════════════════════════════════════════
+ALERT GENERATION RULES (CRITICAL - FOLLOW STRICTLY)
+═══════════════════════════════════════════════════════════════════════════════
+
+1. CURRENT PHASE + CURRENT RELEASE:
+   - Generate alerts freely for issues relevant to the current phase
+   - Use appropriate severity (low/medium/high/critical) based on urgency
+
+2. OTHER PHASES + CURRENT RELEASE:
+   - Be VERY selective - only generate alerts for truly significant issues
+   - Must be something that genuinely needs attention NOW
+   - Example: During "development", don't alert about past EF compliance
+   - If you must include, cap at "low" severity unless critical blocker
+
+3. FUTURE RELEASES (VEPs targeting releases AFTER {current_release}):
+   - Generate alerts ONLY for seriously major issues (critical blockers, security)
+   - Be extremely conservative - when in doubt, don't alert
+   - Even when alerting, keep to absolute minimum (1-2 per release max)
+   - Always use "low" severity for future release alerts
+   - Example: v1.9 VEP has security flaw → alert. v1.9 VEP is stale → skip.
+
+PHASE-SPECIFIC FOCUS:
+- design (pre-EF): Template completeness, SIG approvals, tracking status
+- development (EF-to-CF): Implementation progress, stale PRs, code reviews
+- stabilization (post-CF): Compliance gaps, exception handling, blocker resolution
+- released: Only critical post-release issues
+
+IMPORTANT - PAST DEADLINES:
+- After EF passes, do NOT generate "missed Enhancement Freeze" alerts
+- For VEPs that need post-freeze exception, use "exception_required" subject
+- Past deadlines are not actionable - focus on what can be fixed NOW
+
+═══════════════════════════════════════════════════════════════════════════════
 
 YOUR ANALYSIS TASKS:
 
 1. DEADLINE RISK ASSESSMENT:
    - Calculate risk level (low/medium/high/critical) based on days to freeze + current progress
-   - Flag VEPs at risk of missing deadlines
+   - Flag VEPs at risk of missing UPCOMING deadlines (not past ones)
    - Note if VEP is merged (safe) vs still pending
 
 2. ACTIVITY ANALYSIS:
@@ -124,7 +166,7 @@ YOUR ANALYSIS TASKS:
    - New compliance or exception issues
    Set to False if only minor internal updates.
 
-IMPORTANT: Generate alerts in the `alerts` field for issues needing attention. Each alert should have:
+ALERT FORMAT: Generate alerts in the `alerts` field for issues needing attention. Each alert:
 - subject: Use ONE of these canonical types:
   * "deadline_violation" - freeze deadlines missed/approaching
   * "activity_issue" - stale/inactive VEPs
@@ -146,7 +188,8 @@ and issue category - consolidate related issues into a single alert."""
     context = {
         "veps": [vep.model_dump(mode='json') for vep in veps],
         "release_schedule": release_schedule.model_dump(mode='json') if release_schedule else None,
-        "current_release": state.get("current_release"),
+        "current_release": current_release,
+        "release_phase": release_phase,
         "today": datetime.now().strftime("%Y-%m-%d"),
     }
 
