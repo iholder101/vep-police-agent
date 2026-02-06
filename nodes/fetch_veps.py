@@ -291,7 +291,7 @@ INDEXED DATA (use directly, no tool calls needed for this data):
 Release Info: {json.dumps(indexed_context.get("release_info"), indent=2, default=str) if indexed_context.get("release_info") else "Not available"}
 
 Release Phase: {indexed_context.get("release_phase", "unknown")}
-(design=pre-EF, development=EF-CF, stabilization=post-CF highest risk, released=done)
+(design=pre-EF, development=EF-CF, stabilization=post-CF highest risk, post_release=done)
 
 Enhancements README: {json.dumps(indexed_context.get("enhancements_readme"), indent=2, default=str) if indexed_context.get("enhancements_readme") else "Not available"}
 
