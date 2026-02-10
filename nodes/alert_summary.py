@@ -182,7 +182,7 @@ def alert_summary_node(state: VEPState) -> Any:
                 "vep_name": vep.name,
                 "vep_title": vep.title[:40] if vep.title else "",
                 "title": f"Mock alert for {vep.name}",
-                "message": f"This is a mock alert for testing.",
+                "message": "This is a mock alert for testing.",
                 "metadata": {"mock": True},
             })
         return {

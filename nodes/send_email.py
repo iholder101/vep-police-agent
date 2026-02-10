@@ -222,7 +222,7 @@ def send_email_node(state: VEPState) -> Any:
 """
     
     # Also create plain text version
-    text_body = f"VEP Governance Alerts\n"
+    text_body = "VEP Governance Alerts\n"
     text_body += f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
     
     if alert_summary_text:

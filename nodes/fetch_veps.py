@@ -384,7 +384,7 @@ VERIFY before returning: count >= {max(len(vep_related_issues), len(vep_files_in
         
         # Log comprehensive summary
         log("="*80, node="fetch_veps")
-        log(f"VEP DISCOVERY SUMMARY", node="fetch_veps")
+        log("VEP DISCOVERY SUMMARY", node="fetch_veps")
         log("="*80, node="fetch_veps")
         log(f"Total VEPs discovered: {discovered_count}", node="fetch_veps")
         log(f"  - Expected minimum: {expected_min} (based on {vep_files_count} VEP files and {vep_issues_count} VEP-related issues)", node="fetch_veps")
@@ -410,7 +410,7 @@ VERIFY before returning: count >= {max(len(vep_related_issues), len(vep_files_in
         
         if discovered_count < expected_min:
             log(f"  - ERROR: Discovered {discovered_count} VEPs but expected at least {expected_min} (missing {expected_min - discovered_count})", node="fetch_veps", level="ERROR")
-            log(f"  - This indicates the LLM did not process all VEP files or issues. Check the prompt and LLM response.", node="fetch_veps", level="ERROR")
+            log("  - This indicates the LLM did not process all VEP files or issues. Check the prompt and LLM response.", node="fetch_veps", level="ERROR")
         elif discovered_count < expected_target:
             log(f"  - WARNING: Discovered {discovered_count} VEPs but target was {expected_target} (missing {expected_target - discovered_count} issues without files)", node="fetch_veps", level="WARNING")
         

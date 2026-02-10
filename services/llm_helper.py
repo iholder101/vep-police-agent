@@ -100,7 +100,7 @@ def invoke_llm_with_tools(
         llm = get_model(model_name=model_name)
         if require_tools:
             llm_with_tools = llm.bind_tools(tools, tool_choice="any")
-            log(f"Tool choice set to 'any' - forcing LLM to use tools", node=operation_type, level="DEBUG")
+            log("Tool choice set to 'any' - forcing LLM to use tools", node=operation_type, level="DEBUG")
         else:
             llm_with_tools = llm.bind_tools(tools)
         

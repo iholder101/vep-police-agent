@@ -7,7 +7,7 @@ This creates pressure to resolve long-standing issues.
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 from services.utils import log
 
 # Escalation thresholds (cycles)

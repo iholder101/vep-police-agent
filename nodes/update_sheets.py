@@ -290,7 +290,7 @@ update_cells(
 
     except NoToolsCalledException as e:
         # LLM didn't call any tools - this means the sheet wasn't actually updated
-        log(f"Sheet update failed: LLM did not call any tools (likely hallucination)", node="update_sheets", level="ERROR")
+        log("Sheet update failed: LLM did not call any tools (likely hallucination)", node="update_sheets", level="ERROR")
 
         errors = state.get("errors", [])
         errors.append({
