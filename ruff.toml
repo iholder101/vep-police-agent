@@ -1,0 +1,8 @@
+[lint]
+ignore = [
+    "E741",  # ambiguous variable name (subjective)
+    "E722",  # bare except (common in scripts)
+]
+
+[lint.per-file-ignores]
+"__init__.py" = ["F401"]  # re-exports are intentional
