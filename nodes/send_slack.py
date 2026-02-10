@@ -1,6 +1,5 @@
 """Send Slack node - sends alerts via Slack Incoming Webhook."""
 
-import json
 import os
 import requests
 from datetime import datetime

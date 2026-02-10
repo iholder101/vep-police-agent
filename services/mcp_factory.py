@@ -3,11 +3,10 @@
 from typing import List, Any, Dict, Optional, Annotated
 import asyncio
 import os
-import json
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from langchain_core.tools import StructuredTool
-from pydantic import BaseModel, Field, create_model, WithJsonSchema
+from pydantic import Field, create_model, WithJsonSchema
 from services.utils import log
 
 # Custom types for arrays that produce Gemini-compatible schema but accept any input
@@ -239,7 +238,6 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[StructuredT
                             # This is a workaround for LLMs that use positional args
                             if tool_schema and 'properties' in tool_schema:
                                 properties = tool_schema['properties']
-                                required = tool_schema.get('required', [])
                                 param_names = list(properties.keys())
                                 
                                 # If kwargs has __arg1, __arg2, etc., map them to actual parameter names
@@ -560,7 +558,7 @@ def get_mcp_tools_by_name(*mcp_names: str) -> List[StructuredTool]:
                             if token_path.startswith("AIza"):
                                 log("GOOGLE_TOKEN appears to be an API key, not service account JSON. mcp-google-sheets requires service account JSON credentials. The MCP server will likely fail to start. Please provide service account JSON credentials.", node="mcp_factory", level="WARNING")
                             else:
-                                log(f"Google token is not valid JSON and not a valid file path. mcp-google-sheets requires service account JSON. The MCP server will likely fail to start.", node="mcp_factory", level="WARNING")
+                                log("Google token is not valid JSON and not a valid file path. mcp-google-sheets requires service account JSON. The MCP server will likely fail to start.", node="mcp_factory", level="WARNING")
                             # Don't set GOOGLE_APPLICATION_CREDENTIALS - it will fail anyway
             except FileNotFoundError:
                 # If token file doesn't exist, continue without it (will fail at runtime)

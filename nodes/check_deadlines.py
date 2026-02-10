@@ -6,12 +6,11 @@ Analysis is done by analyze_combined which has access to ALL context at once.
 
 import json
 from datetime import datetime
-from typing import Any, Optional, List
-from pydantic import BaseModel
+from typing import Any, Optional
 from state import VEPState, ReleaseSchedule
 from services.utils import log
 from services.llm_helper import invoke_llm_fetch
-from services.response_models import FetchResponse, VEPContextUpdate
+from services.response_models import FetchResponse
 
 
 class DeadlineFetchResponse(FetchResponse):

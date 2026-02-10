@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from typing import Any, Optional
+from typing import Optional
 
 from langgraph.graph.state import CompiledStateGraph
 

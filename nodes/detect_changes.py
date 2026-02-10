@@ -12,7 +12,6 @@ from services.utils import log
 from nodes.state_history import (
     load_previous_snapshot,
     compare_snapshots,
-    extract_vep_summary,
 )
 
 

@@ -694,7 +694,7 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
                         log(f"Parsed {len(issues)} issues from JSON string ({vep_related_count} VEP-related)", node="indexer")
                         return issues
                 except json.JSONDecodeError:
-                    log(f"Could not parse issues string as JSON, returning raw data", node="indexer", level="DEBUG")
+                    log("Could not parse issues string as JSON, returning raw data", node="indexer", level="DEBUG")
                 return [{"raw_data": issues_result[:15000]}]
             elif isinstance(issues_result, list):
                 issues = []
