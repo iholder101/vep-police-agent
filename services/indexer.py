@@ -10,7 +10,7 @@ import os
 import time
 from pathlib import Path
 from typing import Dict, List, Any, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from services.utils import log
 from services.mcp_factory import get_mcp_tools_by_name
 
@@ -100,6 +100,39 @@ def _sort_versions_numerically(versions: List[str]) -> List[str]:
     """Sort version strings numerically (v1.11 > v1.8, not alphabetically)."""
     return sorted(versions, key=_parse_version, reverse=True)
 
+def _process_schedule_content(schedule_content: Any, version: str, sorted_versions: List[str] | None = None) -> Dict[str, Any]:
+    """Common processing for schedule content from MCP tool."""
+    # MCP GitHub tool returns plain markdown in "content"
+    # Extract and unescape for proper table parsing
+    markdown_content = ""
+    if isinstance(schedule_content, dict):
+        markdown_content = schedule_content.get("content", "")
+        if not markdown_content:
+            # Fallback regex extraction from JSON string (rare case)
+            json_str = str(schedule_content)
+            content_match = re.search(r'"content"\s*:\s*"([^"]+)"', json_str, re.DOTALL)
+            if content_match:
+                markdown_content = content_match.group(1)
+    else:
+        markdown_content = str(schedule_content)
+
+    # Unescape JSON escapes (newlines, pipes, quotes)
+    full_content = markdown_content.replace('\\n', '\n').replace('\\|', '|').replace('\\"', '"')
+
+    log(f"Extracted markdown length for {version}: {len(full_content)}", node="indexer")
+
+    content_for_context = full_content[:10000] if len(full_content) > 10000 else full_content
+
+    phase, parsed_deadlines = compute_release_phase({"schedule_content": full_content})
+
+    return {
+        "current_release": version,
+        "schedule_path": f"releases/{version}/schedule.md",
+        "schedule_content": content_for_context,
+        "all_versions_found": sorted_versions or [],
+        "release_deadlines": parsed_deadlines,
+        "release_phase": phase,
+    }
 
 def index_release_schedule() -> Optional[Dict[str, Any]]:
     """Index the current release schedule from kubevirt/sig-release.
@@ -250,8 +283,9 @@ def index_release_schedule() -> Optional[Dict[str, Any]]:
             # Sort numerically (v1.11 > v1.8)
             sorted_versions = _sort_versions_numerically(found_versions)
             log(f"Found {len(sorted_versions)} release versions: {sorted_versions[:5]}...", node="indexer")
-            
+
             # Try the newest versions first
+            in_main_loop = True
             for version in sorted_versions:
                 try:
                     schedule_path = f"releases/{version}/schedule.md"
@@ -278,24 +312,19 @@ def index_release_schedule() -> Optional[Dict[str, Any]]:
                             )
                     
                     if schedule_content and len(str(schedule_content)) > 100:
-                        log(f"Found release schedule for {version} (newest available)", node="indexer")
-                        content_str = str(schedule_content)
-                        return {
-                            "current_release": version,
-                            "schedule_path": schedule_path,
-                            "schedule_content": content_str[:10000] if len(content_str) > 10000 else content_str,
-                            "all_versions_found": sorted_versions,
-                        }
+                        log(f"Found release schedule for {version} ({'newest available' if in_main_loop else 'fallback'})", node="indexer")
+                        return _process_schedule_content(schedule_content, version, sorted_versions if in_main_loop else None)
                 except Exception as e:
                     log(f"Error fetching schedule for {version}: {e}", node="indexer", level="DEBUG")
                     continue
         else:
             log("Could not extract version numbers from releases directory", node="indexer", level="WARNING")
-        
+
         # Fallback: try common recent versions if directory listing failed
         log("Falling back to trying common recent versions", node="indexer")
         fallback_versions = _sort_versions_numerically(["v1.11", "v1.10", "v1.9", "v1.8", "v1.7"])
-        
+
+        in_main_loop = False
         for version in fallback_versions:
             try:
                 schedule_path = f"releases/{version}/schedule.md"
@@ -306,13 +335,8 @@ def index_release_schedule() -> Optional[Dict[str, Any]]:
                 )
                 
                 if schedule_content and len(str(schedule_content)) > 100:
-                    log(f"Found release schedule for {version} (fallback)", node="indexer")
-                    content_str = str(schedule_content)
-                    return {
-                        "current_release": version,
-                        "schedule_path": schedule_path,
-                        "schedule_content": content_str[:10000] if len(content_str) > 10000 else content_str,
-                    }
+                    log(f"Found release schedule for {version} ({'newest available' if in_main_loop else 'fallback'})", node="indexer")
+                    return _process_schedule_content(schedule_content, version, sorted_versions if in_main_loop else None)
             except Exception:
                 continue
                     
@@ -1708,6 +1732,7 @@ def _parse_date_from_text(text: str) -> Optional[datetime]:
     # Try common date formats
     date_patterns = [
         r'(\d{4})-(\d{1,2})-(\d{1,2})',  # 2025-01-15
+        r'(\d{4})/(\d{1,2})/(\d{1,2})',  # 2025/01/15
         r'(\w+)\s+(\d{1,2}),?\s+(\d{4})',  # Jan 15, 2025 or January 15, 2025
         r'(\d{1,2})\s+(\w+)\s+(\d{4})',  # 15 Jan 2025
     ]
@@ -1720,9 +1745,11 @@ def _parse_date_from_text(text: str) -> Optional[datetime]:
         if match:
             groups = match.groups()
             try:
-                if pattern == date_patterns[0]:  # ISO-like
+                if pattern == date_patterns[0]:  # ISO-like with dashes
                     year, month, day = int(groups[0]), int(groups[1]), int(groups[2])
-                elif pattern == date_patterns[1]:  # Month Day, Year
+                elif pattern == date_patterns[1]:  # ISO-like with slashes
+                    year, month, day = int(groups[0]), int(groups[1]), int(groups[2])
+                elif pattern == date_patterns[2]:  # Month Day, Year
                     month_str, day, year = groups[0].lower(), int(groups[1]), int(groups[2])
                     month = month_names.get(month_str) or month_abbrs.get(month_str[:3])
                     if not month:
@@ -1738,65 +1765,99 @@ def _parse_date_from_text(text: str) -> Optional[datetime]:
 
     return None
 
-
-def compute_release_phase(release_info: Optional[Dict[str, Any]]) -> str:
-    """Compute current release phase based on schedule dates.
-
+def compute_release_phase(release_info: dict) -> tuple[str, dict[str, str | None]]:
+    """
     Parses the schedule_content markdown to find key dates:
     - Enhancement Freeze (EF)
     - Code Freeze (CF)
     - Release date
 
     Returns:
-        One of: "design", "development", "stabilization", "released", "unknown"
+        One of: "design", "development", "stabilization", "post_release", "unknown"
         - "design": Before Enhancement Freeze - focus on VEP tracking/approval
         - "development": Between EF and Code Freeze - focus on implementation
         - "stabilization": After Code Freeze - prioritize compliance
-        - "released": Post-release
+        - "post_release": Post-release
         - "unknown": Could not determine phase
     """
-    if not release_info:
-        return "unknown"
-
     schedule_content = release_info.get("schedule_content", "")
     if not schedule_content:
-        return "unknown"
+        return "unknown", {}
 
-    now = datetime.now()
+    dates = {
+        "enhancement_freeze": None,
+        "code_freeze": None,
+        "ga": None,
+    }
 
-    # Parse dates from markdown table
-    # Look for patterns like "| Enhancement Freeze | 2025-01-15 |"
-    ef_date = None
-    cf_date = None
-    release_date = None
+    for line in schedule_content.splitlines():
+        line_clean = line.replace("**", "").strip()
+        if not line_clean:
+            continue
 
-    lines = schedule_content.split('\n')
-    for line in lines:
-        line_lower = line.lower()
-        if 'enhancement freeze' in line_lower or 'enhancement_freeze' in line_lower:
-            ef_date = _parse_date_from_text(line)
-        elif 'code freeze' in line_lower or 'code_freeze' in line_lower:
-            cf_date = _parse_date_from_text(line)
-        elif ('kubevirt release' in line_lower or 'release date' in line_lower or
-              'kubevirt_release' in line_lower):
-            release_date = _parse_date_from_text(line)
-        elif 'ga release' in line_lower:
-            release_date = release_date or _parse_date_from_text(line)
+        # Try to parse date using flexible parser
+        parsed_date = _parse_date_from_text(line_clean)
+        if not parsed_date:
+            continue
+        date_obj = parsed_date.date()
 
-    log(f"Parsed dates: EF={ef_date}, CF={cf_date}, Release={release_date}", node="indexer", level="DEBUG")
+        line_lower = line_clean.lower()
 
-    # Determine phase
-    if ef_date and now < ef_date:
-        return "design"
-    elif cf_date and now < cf_date:
-        return "development"
-    elif release_date and now < release_date:
-        return "stabilization"
-    elif release_date and now >= release_date:
-        return "released"
+        # Match enhancement freeze with multiple patterns (fallback mechanism)
+        enhancement_patterns = [
+            "virtualization enhancement proposal (vep) freeze",
+            "vep freeze",
+            "enhancement freeze",
+            "enhancement_freeze"
+        ]
+        if not dates["enhancement_freeze"] and any(pattern in line_lower for pattern in enhancement_patterns):
+            dates["enhancement_freeze"] = date_obj
+            log(f"Matched Enhancement Freeze: {date_obj} on line: {line_clean[:100]}", node="indexer", level="DEBUG")
+
+        # Match code freeze with multiple patterns (fallback mechanism)
+        code_freeze_patterns = [
+            "kubevirt code freeze",
+            "code freeze",
+            "code_freeze"
+        ]
+        if not dates["code_freeze"] and any(pattern in line_lower for pattern in code_freeze_patterns):
+            dates["code_freeze"] = date_obj
+            log(f"Matched Code Freeze: {date_obj} on line: {line_clean[:100]}", node="indexer", level="DEBUG")
+
+        # Match GA/release with multiple patterns (fallback mechanism)
+        ga_patterns = [
+            "kubevirt ga",
+            "ga release",
+            "general availability",
+            "kubevirt release"
+        ]
+        if not dates["ga"] and any(pattern in line_lower for pattern in ga_patterns):
+            dates["ga"] = date_obj
+            log(f"Matched GA: {date_obj} on line: {line_clean[:100]}", node="indexer", level="DEBUG")
+
+    today = datetime.now(timezone.utc).date()
+
+    ef = dates["enhancement_freeze"]
+    cf = dates["code_freeze"]
+    ga = dates["ga"]
+
+    if ef and today < ef:
+        phase = "design"
+    elif cf and today < cf:
+        phase = "development"
+    elif ga and today < ga:
+        phase = "stabilization"
     else:
-        return "unknown"
+        phase = "post_release"
 
+    deadlines = {
+        key: date.isoformat() if date else None
+        for key, date in dates.items()
+    }
+
+    log(f"Final parsed deadlines: {deadlines}, phase: {phase}", node="indexer")
+
+    return phase, deadlines
 
 def compute_veps_missing_prs(
     project_board_items: Dict[int, Dict[str, Any]],
@@ -1887,12 +1948,9 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
     project_board_items = index_project_board_items(version=release_version)
     vep_to_pr_mappings = index_vep_pr_mappings(prs_index=prs_index)
 
-    # Compute release phase from schedule dates
-    release_phase = compute_release_phase(release_info)
-
     indexed_context = {
         "release_info": release_info,
-        "release_phase": release_phase,  # Current phase in release cycle
+        "current_release": release_version,
         "enhancements_readme": index_enhancements_readme(),
         "issues_index": index_enhancements_issues(days_back=days_back),
         "prs_index": prs_index,
@@ -1908,6 +1966,8 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
         "indexed_at": datetime.now().isoformat(),
         "days_back": days_back,
     }
+    indexed_context["release_phase"] = release_info.get("release_phase", "unknown") if release_info else "unknown"
+    indexed_context["release_deadlines"] = release_info.get("release_deadlines", {}) if release_info else {}
 
     # Log summary
     release = release_version if release_version else "unknown"
@@ -1919,8 +1979,10 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
     vep_pr_mappings_count = len(indexed_context["vep_to_pr_mappings"])
     approved_vep_prs_count = len(indexed_context["approved_vep_prs"])
     veps_missing_prs_count = len(indexed_context["veps_missing_prs"])
+    phase = indexed_context["release_phase"]
+    deadlines = indexed_context["release_deadlines"]
 
-    log(f"Indexed context created: release={release}, phase={release_phase}, readme={readme_available}, issues={issues_count}, prs={prs_count}, vep_files={vep_files_count}", node="indexer")
+    log(f"Indexed context created: release={release}, readme={readme_available}, issues={issues_count}, prs={prs_count}, vep_files={vep_files_count}, phase={phase}, deadlines={deadlines}", node="indexer")
     log(f"  - Project board items: {board_items_count}, VEP-to-PR mappings: {vep_pr_mappings_count}, approved-vep PRs: {approved_vep_prs_count}, VEPs missing PRs: {veps_missing_prs_count}", node="indexer")
 
     # Diagnostic: log issues excluded as non-VEP related
