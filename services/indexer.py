@@ -899,7 +899,7 @@ def index_enhancements_prs(days_back: Optional[int] = 365) -> List[Dict[str, Any
                 try:
                     prs_result = json.loads(prs_result)
                 except json.JSONDecodeError:
-                    log(f"Could not parse PRs result", node="indexer", level="WARNING")
+                    log("Could not parse PRs result", node="indexer", level="WARNING")
                     return []
 
             # Extract PR data

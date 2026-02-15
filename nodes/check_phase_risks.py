@@ -8,7 +8,7 @@ Uses indexed_context (release_phase, release_deadlines, board_veps) for efficien
 """
 
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List
+from typing import Any, Dict
 from state import VEPState
 from services.utils import log
 from services.indexer import create_indexed_context
@@ -98,8 +98,6 @@ def _check_design_phase_risks(
     Returns:
         Dict mapping VEP issue number -> risk data
     """
-    import re
-
     # Get enhancement freeze deadline (with extension)
     ef_deadline_str = release_deadlines.get("enhancement_freeze")
     if not ef_deadline_str:
@@ -214,7 +212,6 @@ def _check_development_phase_risks(
     # Get kubevirt PRs and VEP-to-PR mappings
     prs_index = indexed_context.get("prs_index", [])
     vep_to_pr_mappings = indexed_context.get("vep_to_pr_mappings", {})
-    approved_vep_prs = indexed_context.get("approved_vep_prs", [])
 
     risks_by_vep = {}
 
