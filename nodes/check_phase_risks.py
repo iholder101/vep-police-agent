@@ -52,17 +52,20 @@ def check_phase_risks_node(state: VEPState) -> Any:
     log(f"Release phase: {release_phase}, Board VEPs: {len(board_veps)}", node="check_phase_risks")
 
     risks_by_vep = {}
+    risk_type = "unknown"
 
     if release_phase == "design":
         # Design phase: check proposal PRs in enhancements repo
         risks_by_vep = _check_design_phase_risks(
             indexed_context, release_deadlines, board_veps
         )
+        risk_type = "design"
     elif release_phase == "development":
         # Development phase: check implementation PRs in kubevirt repo
         risks_by_vep = _check_development_phase_risks(
             indexed_context, release_deadlines, board_veps
         )
+        risk_type = "development"
     else:
         log(f"Phase '{release_phase}' has no specific risk checks", node="check_phase_risks")
 
@@ -74,7 +77,10 @@ def check_phase_risks_node(state: VEPState) -> Any:
     }
 
     risk_count = sum(1 for risks in risks_by_vep.values() if risks.get("has_risks"))
-    log(f"Detected phase-specific risks for {risk_count} VEP(s)", node="check_phase_risks")
+    if risk_count > 0:
+        log(f"Detected {risk_count} {risk_type} phase risk(s)", node="check_phase_risks")
+    else:
+        log(f"No {risk_type} phase risks detected", node="check_phase_risks")
 
     return {
         "last_check_times": last_check_times,
@@ -108,30 +114,29 @@ def _check_design_phase_risks(
     log(f"EF deadline (with extension): {ef_with_extension.date()}, days remaining: {days_to_ef}", node="check_phase_risks")
 
     # Get enhancements PRs from indexed context
-    # Note: We need to index these if not already present
     enhancements_prs = indexed_context.get("enhancements_prs", [])
 
     if not enhancements_prs:
-        log("No enhancements PRs indexed, using issues as fallback", node="check_phase_risks", level="DEBUG")
-        # Fallback: check issues_index for open issues
-        enhancements_prs = []
+        log("No enhancements PRs indexed", node="check_phase_risks", level="DEBUG")
+        return {}
+
+    # Filter to PRs that reference VEPs on the board (more precise)
+    board_vep_numbers = set(board_veps.keys())
+    filtered_prs = []
+    for pr in enhancements_prs:
+        if pr.get("state") != "open":
+            continue
+        vep_issue_num = pr.get("vep_issue_number")
+        if vep_issue_num and vep_issue_num in board_vep_numbers:
+            filtered_prs.append(pr)
+
+    log(f"Checking {len(filtered_prs)} open proposal PRs linked to board VEPs", node="check_phase_risks", level="DEBUG")
 
     risks_by_vep = {}
 
     # Check each PR for staleness and review status
-    for pr in enhancements_prs:
-        if pr.get("state") != "open":
-            continue
-
-        # Extract VEP number from PR body
-        vep_issue_num = _extract_vep_issue_number(pr.get("body", ""))
-        if not vep_issue_num:
-            continue
-
-        # Check if this VEP is on the board
-        if vep_issue_num not in board_veps:
-            continue
-
+    for pr in filtered_prs:
+        vep_issue_num = pr.get("vep_issue_number")
         board_vep = board_veps[vep_issue_num]
         status = board_vep.get("fields", {}).get("Status", "")
 
@@ -172,6 +177,7 @@ def _check_design_phase_risks(
                     "is_stale": is_stale,
                     "low_reviews": low_reviews,
                 },
+                "days_to_deadline": days_to_ef,
                 "days_to_ef": days_to_ef,
                 "near_deadline": near_deadline,
                 "risk_level": "high" if (near_deadline and low_reviews) else "medium",
@@ -234,6 +240,7 @@ def _check_development_phase_risks(
                 "has_risks": True,
                 "phase": "development",
                 "missing_impl_prs": True,
+                "days_to_deadline": days_to_cf,
                 "days_to_cf": days_to_cf,
                 "near_deadline": days_to_cf <= DEVELOPMENT_PHASE_THRESHOLDS["deadline_extension_days"],
                 "risk_level": "high" if days_to_cf <= 7 else "medium",
@@ -283,6 +290,7 @@ def _check_development_phase_risks(
                 "has_risks": True,
                 "phase": "development",
                 "stale_impl_prs": stale_prs,
+                "days_to_deadline": days_to_cf,
                 "days_to_cf": days_to_cf,
                 "near_deadline": near_deadline,
                 "risk_level": "high" if near_deadline else "medium",
