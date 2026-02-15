@@ -831,6 +831,142 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
     return []
 
 
+def index_enhancements_prs(days_back: Optional[int] = 365) -> List[Dict[str, Any]]:
+    """Index PRs in kubevirt/enhancements repository.
+
+    Indexes proposal PRs that create or modify VEP documents.
+    Extracts VEP issue references from PR bodies to link PRs to tracking issues.
+
+    Args:
+        days_back: Only include PRs from last N days (None = all PRs)
+
+    Returns:
+        List of PR summaries with VEP issue references
+    """
+    log(f"Indexing PRs from kubevirt/enhancements (days_back={days_back})", node="indexer")
+
+    try:
+        tools = get_mcp_tools_by_name("github")
+
+        # Find list_pull_requests tool
+        list_prs_tool = None
+        tool_names_to_try = [
+            "mcp_GitHub_list_pull_requests",
+            "list_pull_requests",
+            "list_pulls",
+            "search_pull_requests",
+        ]
+
+        for tool in tools:
+            if tool.name in tool_names_to_try:
+                list_prs_tool = tool
+                break
+
+        if not list_prs_tool:
+            for tool in tools:
+                tool_name_lower = tool.name.lower()
+                if any(name.lower() in tool_name_lower and ("pull" in tool_name_lower or "pr" in tool_name_lower) for name in tool_names_to_try):
+                    list_prs_tool = tool
+                    break
+
+        if not list_prs_tool:
+            log("Could not find PR listing tool for enhancements repo", node="indexer", level="WARNING")
+            return []
+
+        try:
+            # Try different parameter formats
+            try:
+                prs_result = list_prs_tool.func(
+                    owner="kubevirt",
+                    repo="enhancements",
+                    state="all"
+                )
+            except TypeError:
+                try:
+                    prs_result = list_prs_tool.func(
+                        repo="kubevirt/enhancements",
+                        state="all"
+                    )
+                except TypeError:
+                    prs_result = list_prs_tool.func(
+                        owner="kubevirt",
+                        repo="enhancements"
+                    )
+
+            # Parse result
+            import json
+            if isinstance(prs_result, str):
+                try:
+                    prs_result = json.loads(prs_result)
+                except json.JSONDecodeError:
+                    log(f"Could not parse PRs result", node="indexer", level="WARNING")
+                    return []
+
+            # Extract PR data
+            prs = []
+            if isinstance(prs_result, list):
+                for pr in prs_result:
+                    if not isinstance(pr, dict):
+                        continue
+
+                    # Get basic fields
+                    pr_number = pr.get("number")
+                    title = pr.get("title", "")
+                    state = pr.get("state", "")
+                    body = pr.get("body", "")
+                    url = pr.get("url") or pr.get("html_url", "")
+                    created_at = pr.get("created_at")
+                    updated_at = pr.get("updated_at")
+
+                    # Extract VEP issue number from body
+                    vep_issue_num = None
+                    if body:
+                        # Pattern 1: Full issue URL
+                        issue_url_match = re.search(r'github\.com/kubevirt/enhancements/issues/(\d+)', body)
+                        if issue_url_match:
+                            vep_issue_num = int(issue_url_match.group(1))
+                        else:
+                            # Pattern 2: Issue reference
+                            issue_ref_match = re.search(r'(?:tracking issue|issue|fixes|closes)[\s:]+#(\d+)', body, re.IGNORECASE)
+                            if issue_ref_match:
+                                vep_issue_num = int(issue_ref_match.group(1))
+
+                    # Get review count (approximation from review_comments count)
+                    review_count = pr.get("review_comments", 0)
+                    if pr.get("comments"):
+                        review_count = max(review_count, pr.get("comments", 0) // 2)
+
+                    prs.append({
+                        "number": pr_number,
+                        "title": title,
+                        "state": state,
+                        "body": body[:1000],  # First 1000 chars
+                        "url": url,
+                        "html_url": pr.get("html_url", url),
+                        "created_at": created_at,
+                        "updated_at": updated_at,
+                        "vep_issue_number": vep_issue_num,
+                        "review_count": review_count,
+                    })
+
+                # Filter by date if requested
+                if days_back is not None:
+                    original_count = len(prs)
+                    prs = _filter_by_date(prs, days_back)
+                    log(f"Filtered enhancements PRs: {original_count} -> {len(prs)} (last {days_back} days)", node="indexer")
+
+                log(f"Indexed {len(prs)} PRs from kubevirt/enhancements", node="indexer")
+                return prs
+
+        except Exception as e:
+            log(f"Error listing enhancements PRs: {e}", node="indexer", level="WARNING")
+            return []
+
+    except Exception as e:
+        log(f"Error in index_enhancements_prs: {e}", node="indexer", level="WARNING")
+        return []
+
+
 def index_kubevirt_prs(days_back: Optional[int] = 365, fetch_reviews: bool = True) -> List[Dict[str, Any]]:
     """Index PRs in kubevirt/kubevirt repository.
 
@@ -2086,6 +2222,7 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
 
     # Fetch PRs once and reuse for mappings
     prs_index = index_kubevirt_prs(days_back=days_back)
+    enhancements_prs = index_enhancements_prs(days_back=days_back)
 
     # Fetch project board items and VEP-to-PR mappings (needed for compute_veps_missing_prs)
     project_board_items = index_project_board_items(version=release_version)
@@ -2097,6 +2234,7 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
         "enhancements_readme": index_enhancements_readme(),
         "issues_index": index_enhancements_issues(days_back=days_back),
         "prs_index": prs_index,
+        "enhancements_prs": enhancements_prs,
         "vep_files_index": index_vep_files(),
         # Project board items with all field metadata (legacy, kept for compatibility)
         "project_board_items": project_board_items,
@@ -2119,6 +2257,7 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
     readme_available = "yes" if indexed_context["enhancements_readme"] else "no"
     issues_count = len(indexed_context["issues_index"])
     prs_count = len(indexed_context["prs_index"])
+    enhancements_prs_count = len(indexed_context["enhancements_prs"])
     vep_files_count = len(indexed_context["vep_files_index"])
     board_items_count = len(indexed_context["project_board_items"])
     vep_pr_mappings_count = len(indexed_context["vep_to_pr_mappings"])
@@ -2127,7 +2266,7 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
     phase = indexed_context["release_phase"]
     deadlines = indexed_context["release_deadlines"]
 
-    log(f"Indexed context created: release={release}, readme={readme_available}, issues={issues_count}, prs={prs_count}, vep_files={vep_files_count}, phase={phase}, deadlines={deadlines}", node="indexer")
+    log(f"Indexed context created: release={release}, readme={readme_available}, issues={issues_count}, prs={prs_count}, enhancements_prs={enhancements_prs_count}, vep_files={vep_files_count}, phase={phase}, deadlines={deadlines}", node="indexer")
     log(f"  - Project board items: {board_items_count}, VEP-to-PR mappings: {vep_pr_mappings_count}, approved-vep PRs: {approved_vep_prs_count}, VEPs missing PRs: {veps_missing_prs_count}", node="indexer")
 
     # Diagnostic: log issues excluded as non-VEP related
