@@ -1469,18 +1469,122 @@ def index_vep_files() -> List[Dict[str, Any]]:
     return []
 
 
+def _find_active_release_project(current_release: str) -> Optional[int]:
+    """Discover active release project board ID by title matching.
+
+    Searches for a project board with title matching the current release
+    (e.g., "KubeVirt v1.8 Release Tracking").
+
+    Args:
+        current_release: Release version string (e.g., "v1.8")
+
+    Returns:
+        Project board number if found, None otherwise
+    """
+    from services.graphql_client import find_project_by_title
+
+    if not current_release:
+        return None
+
+    # Normalize version string (ensure it has 'v' prefix)
+    version = current_release if current_release.startswith('v') else f'v{current_release}'
+
+    # Search pattern: version + "release" + "tracking"
+    # This should match boards like "KubeVirt v1.8 Release Tracking"
+    search_pattern = f"{version} release tracking"
+
+    try:
+        project_num = find_project_by_title(org_name="kubevirt", title_pattern=search_pattern)
+        if project_num:
+            log(f"Auto-discovered project board for {version}: #{project_num}", node="indexer")
+        return project_num
+    except Exception as e:
+        log(f"Error auto-discovering project board: {e}", node="indexer", level="WARNING")
+        return None
+
+
+def _parse_impl_prs_from_text(text: str) -> List[Dict[str, Any]]:
+    """Parse implementation PR references from text content.
+
+    Extracts PR numbers from patterns like:
+    - https://github.com/kubevirt/kubevirt/pull/12345
+    - Implementation: #1234
+    - Implements: #1234
+    - impl: #1234
+    - PR: #1234
+    - pull #1234
+
+    Args:
+        text: Text content to parse (issue body, notes, etc.)
+
+    Returns:
+        List of dicts with {number: int, url: str}
+    """
+    if not text:
+        return []
+
+    impl_prs = []
+    seen_numbers = set()
+
+    # Pattern 1: Full PR URLs
+    url_pattern = re.compile(r'https?://github\.com/kubevirt/kubevirt/pull/(\d+)')
+    for match in url_pattern.finditer(text):
+        pr_num = int(match.group(1))
+        if pr_num not in seen_numbers:
+            seen_numbers.add(pr_num)
+            impl_prs.append({
+                "number": pr_num,
+                "url": match.group(0),
+            })
+
+    # Pattern 2: PR references like "Implementation: #1234", "implements #1234", "impl: #1234", etc.
+    ref_pattern = re.compile(
+        r'(?:Implementation|Implements|impl|PR|pull)[\s:]+#(\d+)',
+        re.IGNORECASE
+    )
+    for match in ref_pattern.finditer(text):
+        pr_num = int(match.group(1))
+        if pr_num not in seen_numbers:
+            seen_numbers.add(pr_num)
+            impl_prs.append({
+                "number": pr_num,
+                "url": f"https://github.com/kubevirt/kubevirt/pull/{pr_num}",
+            })
+
+    # Pattern 3: Standalone #numbers that might be PR references
+    # (only if they appear after keywords like "implementation", "implements", "impl:", or "pr")
+    context_pattern = re.compile(
+        r'(?:implementation|implements|impl|pr|pull).*?#(\d+)',
+        re.IGNORECASE | re.DOTALL
+    )
+    for match in context_pattern.finditer(text):
+        pr_num = int(match.group(1))
+        if pr_num not in seen_numbers:
+            seen_numbers.add(pr_num)
+            impl_prs.append({
+                "number": pr_num,
+                "url": f"https://github.com/kubevirt/kubevirt/pull/{pr_num}",
+            })
+
+    return impl_prs
+
+
 def index_project_board_items(version: Optional[str] = None) -> Dict[int, Dict[str, Any]]:
     """Index VEP items from the kubevirt GitHub Project V2 board.
 
     Fetches all VEPs from the project board for the given release version,
     including all custom field metadata (Status, Priority, dates, etc.).
+    Also extracts implementation PR references from issue bodies and text fields.
 
     Args:
         version: Release version string (e.g., "v1.8" or "1.8").
                  If None, will try to auto-detect from release schedule.
 
     Returns:
-        Dict mapping issue_number -> {title, url, state, fields: {...}}
+        Dict mapping issue_number -> {
+            title, url, state, fields: {...},
+            impl_prs: [{number, url}, ...]
+        }
         Empty dict if board cannot be fetched.
     """
     from config import get_project_board_for_version
@@ -1488,15 +1592,40 @@ def index_project_board_items(version: Optional[str] = None) -> Dict[int, Dict[s
 
     log(f"Indexing project board items for version: {version}", node="indexer")
 
-    # Get board number for this version
-    board_number = get_project_board_for_version(version)
+    # Try auto-discovery first
+    board_number = _find_active_release_project(version) if version else None
+
+    # Fallback to config mapping
     if board_number is None:
-        log(f"No project board configured for version: {version}", node="indexer", level="WARNING")
+        board_number = get_project_board_for_version(version)
+
+    if board_number is None:
+        log(f"No project board found for version: {version}", node="indexer", level="WARNING")
         return {}
 
     try:
         veps = get_veps_from_project_board(project_number=board_number)
-        log(f"Indexed {len(veps)} VEPs from project board #{board_number}", node="indexer")
+
+        # Enhance each VEP with implementation PR data
+        for issue_num, vep_data in veps.items():
+            impl_prs = []
+
+            # Parse implementation PRs from issue body
+            body = vep_data.get("body", "")
+            if body:
+                impl_prs.extend(_parse_impl_prs_from_text(body))
+
+            # Also check text fields (Notes, Implementation PRs, etc.)
+            fields = vep_data.get("fields", {})
+            for field_name, field_value in fields.items():
+                if isinstance(field_value, str):
+                    impl_prs.extend(_parse_impl_prs_from_text(field_value))
+
+            # Store unique implementation PRs
+            vep_data["impl_prs"] = impl_prs
+
+        pr_count = sum(len(v.get("impl_prs", [])) for v in veps.values())
+        log(f"Indexed {len(veps)} VEPs from project board #{board_number} with {pr_count} impl PR references", node="indexer")
         return veps
     except Exception as e:
         log(f"Error indexing project board: {e}", node="indexer", level="WARNING")
@@ -1868,9 +1997,14 @@ def compute_veps_missing_prs(
     VEPs with status "Tracked" or "At risk" should have implementation PRs.
     This function identifies VEPs on the project board that are missing PRs.
 
+    Prioritizes board data (impl_prs from issue body/fields) over label-based
+    VEP-to-PR mappings for more accurate tracking.
+
     Args:
         project_board_items: Dict mapping issue number to board item data
+            (includes impl_prs field if parsed from board)
         vep_to_pr_mappings: Dict mapping VEP number (string) to list of PRs
+            (from label-based matching as fallback)
 
     Returns:
         List of VEPs that are tracked but have no implementation PRs
@@ -1885,9 +2019,18 @@ def compute_veps_missing_prs(
 
         # Only check VEPs that are actively tracked
         if status in ["Tracked", "At risk"]:
-            # VEP number in mappings is stored as string
-            vep_num = str(issue_num)
-            if vep_num not in vep_to_pr_mappings or len(vep_to_pr_mappings[vep_num]) == 0:
+            # Check board data first (impl_prs from issue body/fields)
+            board_impl_prs = item.get("impl_prs", [])
+            has_impl_prs = len(board_impl_prs) > 0
+
+            # Fallback to label-based mappings if no board data
+            if not has_impl_prs:
+                vep_num = str(issue_num)
+                label_prs = vep_to_pr_mappings.get(vep_num, [])
+                has_impl_prs = len(label_prs) > 0
+
+            # VEP is missing PRs if neither source has any
+            if not has_impl_prs:
                 missing.append({
                     "issue_number": issue_num,
                     "title": item.get("title"),
@@ -1955,8 +2098,10 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
         "issues_index": index_enhancements_issues(days_back=days_back),
         "prs_index": prs_index,
         "vep_files_index": index_vep_files(),
-        # Project board items with all field metadata
+        # Project board items with all field metadata (legacy, kept for compatibility)
         "project_board_items": project_board_items,
+        # Enhanced board data with impl_prs (source-of-truth for targeted VEPs)
+        "board_veps": project_board_items,
         # Pre-computed VEP-to-PR mappings
         "vep_to_pr_mappings": vep_to_pr_mappings,
         # PRs with approved-vep label
