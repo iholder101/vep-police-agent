@@ -1,0 +1,25 @@
+name: Notify rebase needed
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  check-conflicts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check open PRs for merge conflicts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          sleep 5  # let GitHub compute mergeability
+          gh pr list --state open --json number,mergeable \
+            --jq '.[] | select(.mergeable == "CONFLICTING") | .number' | \
+          while read -r pr; do
+            last_comment=$(gh pr view "$pr" --json comments \
+              --jq '[.comments[] | select(.body | test("needs a rebase"))] | last | .body // ""')
+            if [ -z "$last_comment" ]; then
+              gh pr comment "$pr" --body "This PR has merge conflicts and needs a rebase."
+            fi
+          done
