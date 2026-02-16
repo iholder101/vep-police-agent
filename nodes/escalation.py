@@ -53,10 +53,16 @@ def _save_persistence(data: Dict[str, Dict[str, Any]]) -> None:
 
 
 def _make_alert_key(alert: Dict) -> str:
-    """Create a unique key for an alert based on VEP and issue type."""
+    """Create a unique key for an alert based on VEP and canonical issue type.
+
+    Uses canonical types to ensure LLM text variations don't create duplicate
+    persistence entries (e.g., "deadline" and "missed freeze" both map to
+    "deadline_violation").
+    """
+    from nodes.alert_summary import _normalize_subject
     vep_id = alert.get("vep_id", 0)
-    subject = alert.get("subject", "unknown")
-    return f"{vep_id}:{subject}"
+    canonical = _normalize_subject(alert.get("subject", ""))
+    return f"{vep_id}:{canonical}"
 
 
 def escalate_alerts(alerts: List[Dict]) -> Tuple[List[Dict], Dict[str, Any]]:
