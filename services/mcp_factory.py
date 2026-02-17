@@ -133,7 +133,7 @@ MCP_CONFIGS = {
         # Note: @modelcontextprotocol/server-github is deprecated but still functional
         # @ama-mcp/github doesn't work (Connection closed errors)
         # Redirect stderr to suppress startup messages; errors come through MCP protocol
-        "args": ["-c", "exec npx --yes @modelcontextprotocol/server-github 2>/dev/null"],
+        "args": ["-c", "exec npx --yes @modelcontextprotocol/server-github"],
         "env": {}  # Add GITHUB_TOKEN to env if needed
     },
 
@@ -489,7 +489,8 @@ def get_mcp_tools_by_config(*mcp_configs: Dict[str, Any]) -> List[StructuredTool
             mcp_names = [config.get("name", "unknown") for config in mcp_configs]
             # Get a simplified error message (first meaningful error)
             first_error = error_messages[0] if error_messages else str(e)
-            log(f"MCP server(s) {', '.join(mcp_names)} not available (package may not exist, not installed, or connection failed): {first_error}", node="mcp_factory", level="WARNING")
+            log(f"MCP server(s) {', '.join(mcp_names)} failed to start: {first_error}", node="mcp_factory", level="ERROR")
+            log(f"All MCP errors: {all_errors}", node="mcp_factory", level="DEBUG")
             return []
         # Re-raise other exceptions
         raise
