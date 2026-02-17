@@ -221,10 +221,19 @@ else
     echo ""
 fi
 
+# Resolve latest GitHub MCP Server version for the build
+echo "Resolving latest GitHub MCP Server version..."
+GITHUB_MCP_VERSION=$(curl -sI https://github.com/github/github-mcp-server/releases/latest 2>/dev/null | grep -i '^location:' | grep -oP 'v[\d.]+' | tail -1)
+if [ -z "${GITHUB_MCP_VERSION}" ]; then
+    echo "WARNING: Could not resolve latest GitHub MCP Server version, falling back to v0.30.3"
+    GITHUB_MCP_VERSION="v0.30.3"
+fi
+echo "  GitHub MCP Server: ${GITHUB_MCP_VERSION}"
+
 # Build the image (from parent directory, using Containerfile in container/)
 echo "Building container image..."
 cd "$(dirname "$0")/.." || exit 1
-podman build -f container/Containerfile -t "${FULL_IMAGE_NAME}" .
+podman build --build-arg "GITHUB_MCP_VERSION=${GITHUB_MCP_VERSION}" -f container/Containerfile -t "${FULL_IMAGE_NAME}" .
 
 if [ $? -ne 0 ]; then
     echo "ERROR: Failed to build container image"

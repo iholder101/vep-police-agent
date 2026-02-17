@@ -129,12 +129,10 @@ MCP_CONFIGS = {
     "github":
     {
         "name": "github",
-        "command": "sh",
-        # Note: @modelcontextprotocol/server-github is deprecated but still functional
-        # @ama-mcp/github doesn't work (Connection closed errors)
-        # Redirect stderr to suppress startup messages; errors come through MCP protocol
-        "args": ["-c", "exec npx --yes @modelcontextprotocol/server-github"],
-        "env": {}  # Add GITHUB_TOKEN to env if needed
+        "command": "github-mcp-server",
+        # Official Go binary from github/github-mcp-server, installed in Containerfile
+        "args": ["stdio", "--read-only"],
+        "env": {}
     },
 
     "google-sheets":
