@@ -3,11 +3,31 @@
 from typing import List, Any, Dict, Optional, Annotated
 import asyncio
 import os
+from contextlib import asynccontextmanager
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from langchain_core.tools import StructuredTool
 from pydantic import Field, create_model, WithJsonSchema
 from services.utils import log
+
+
+@asynccontextmanager
+async def _safe_stdio_client(server_params):
+    """Wrap stdio_client to suppress BrokenResourceError on cleanup.
+
+    The Go-based github-mcp-server closes stdout immediately on exit,
+    causing the MCP client's stdout_reader task to raise
+    BrokenResourceError during context manager teardown.  The session
+    data is already fully read at that point, so it's safe to ignore.
+    """
+    try:
+        async with stdio_client(server_params) as streams:
+            yield streams
+    except BaseExceptionGroup as eg:
+        import anyio
+        _, unhandled = eg.split(lambda e: isinstance(e, (anyio.BrokenResourceError, anyio.ClosedResourceError)))
+        if unhandled:
+            raise unhandled
 
 # Custom types for arrays that produce Gemini-compatible schema but accept any input
 # FlexibleArray: for simple arrays (recipients, etc.)
@@ -187,7 +207,7 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[StructuredT
         )
         
         # Use context manager to ensure proper cleanup
-        async with stdio_client(server_params) as (read, write):
+        async with _safe_stdio_client(server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 
@@ -269,7 +289,7 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[StructuredT
                                 env=env
                             )
                             
-                            async with stdio_client(server_params) as (read, write):
+                            async with _safe_stdio_client(server_params) as (read, write):
                                 async with ClientSession(read, write) as sess:
                                     await sess.initialize()
                                     try:
