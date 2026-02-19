@@ -54,6 +54,7 @@ fi
 # Mount workspace as read-only, but cache directory as read-write for persistence
 podman run --rm --pull=newer \
     -e PYTHONUNBUFFERED=1 \
+    --network=host \
     -v "$PROJECT_ROOT:/workspace:ro" \
     -v "$PROJECT_ROOT/cache:/workspace/cache:rw" \
     -w /workspace \

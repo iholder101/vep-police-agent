@@ -1,11 +1,18 @@
 FROM python:3.11-slim
 
-# Install Node.js (required for npx and MCP servers)
+# Install Node.js (required for npx and MCP servers) and curl
 RUN apt-get update && apt-get install -y curl && \
     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && \
     npm install -g npm@latest && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install GitHub MCP Server (official Go binary from github/github-mcp-server).
+# Version is resolved by the build script and passed as --build-arg.
+# Docker layer is cached unless the version changes.
+ARG GITHUB_MCP_VERSION
+RUN curl -fsSL "https://github.com/github/github-mcp-server/releases/download/${GITHUB_MCP_VERSION}/github-mcp-server_Linux_x86_64.tar.gz" \
+    | tar -xz -C /usr/local/bin github-mcp-server
 
 WORKDIR /app
 
