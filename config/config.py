@@ -34,13 +34,9 @@ NODE_MODELS: Dict[str, str] = {
     "check_exceptions": FAST_MODEL,
     "merge_vep_updates": FAST_MODEL,  # Simple context merge, no deep reasoning
 
-    # Utility nodes
-    "send_email": FAST_MODEL,
-    "send_slack": FAST_MODEL,
-    "send_notifications": FAST_MODEL,
-    "save_state_cache": FAST_MODEL,
-    "scheduler": FAST_MODEL,
-    "run_monitoring": FAST_MODEL,
+    # Utility/orchestration nodes omitted - they don't invoke LLMs.
+    # (send_email, send_slack, send_notifications, save_state_cache, scheduler, run_monitoring)
+    # If added here they'd just fall back to DEFAULT_MODEL via get_model_for_node(), which is unused.
 }
 
 # Email notification configuration
