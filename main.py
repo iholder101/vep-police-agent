@@ -279,7 +279,7 @@ def parse_args():
     parser.add_argument(
         "--fastest-model",
         action="store_true",
-        help="Force all nodes to use GEMINI_3_FLASH_PREVIEW (fastest model) regardless of node configuration"
+        help="Force all nodes to use FAST_MODEL (fastest model) regardless of node configuration"
     )
     parser.add_argument(
         "--skip-monitoring",
@@ -406,7 +406,7 @@ def setup_credentials(args):
     if args.fastest_model:
         import config
         config.set_fastest_model(True)
-        log("Fastest model mode enabled: all nodes will use GEMINI_3_FLASH_PREVIEW", node="main")
+        log("Fastest model mode enabled: all nodes will use FAST_MODEL", node="main")
 
 
 def main():

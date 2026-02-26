@@ -10,13 +10,6 @@ from .config import (
 
 # Re-export constants
 from .util import (
-    GEMINI_3_PRO_PREVIEW,
-    GEMINI_3_FLASH_PREVIEW,
-    GEMINI_2_5_FLASH,
-    GEMINI_2_5_FLASH_LITE,
-    GEMINI_2_5_PRO,
-    GEMINI_2_0_FLASH,
-    GEMINI_2_0_FLASH_LITE,
     DEFAULT_MODEL,
     AVAILABLE_MODELS,
     FAST_MODEL,
