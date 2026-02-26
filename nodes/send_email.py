@@ -7,6 +7,11 @@ from datetime import datetime
 from typing import Any, List
 from state import VEPState
 from services.utils import log
+from services.indexer import create_indexed_context
+from nodes.alert_formatting import (
+    build_markdown_table,
+    get_phase_context_summary,
+)
 import config
 
 
@@ -154,9 +159,25 @@ def send_email_node(state: VEPState) -> Any:
             "last_check_times": last_check_times,
         }
     
-    # Format email content
-    subject = f"VEP Governance Alerts - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-    
+    # Get indexed context for phase-aware formatting
+    indexed_context = create_indexed_context(cache_max_age_minutes=60)
+    phase_ctx = get_phase_context_summary(indexed_context)
+
+    # Get pre-built table from analyze_combined (avoids redundant computation)
+    table_rows = state.get("vep_summary_table", [])
+
+    # Count high-risk VEPs
+    high_risk_count = sum(1 for row in table_rows if row["urgency"] == "RED")
+
+    # Log what we're sending
+    log(f"Email will include VEP summary table: {len(table_rows)} VEPs, {high_risk_count} at HIGH RISK", node="send_email")
+
+    # Format email subject with phase context
+    if phase_ctx["deadline_text"]:
+        subject = f"KubeVirt {phase_ctx['release']} {phase_ctx['phase_display']}: {phase_ctx['deadline_text']} – {high_risk_count} VEPs at high risk"
+    else:
+        subject = f"KubeVirt {phase_ctx['release']} VEP Governance Alerts - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+
     # Group alerts by subject and severity (use "subject" field, not "type")
     alerts_by_subject = {}
     for alert in alerts:
@@ -171,6 +192,15 @@ def send_email_node(state: VEPState) -> Any:
   body {{ font-family: Arial, sans-serif; margin: 20px; }}
   h1 {{ color: #333; }}
   h2 {{ color: #666; margin-top: 20px; }}
+  .phase-banner {{ background-color: #e3f2fd; padding: 15px; border-left: 4px solid #1976d2; margin-bottom: 20px; }}
+  .phase-banner strong {{ color: #1976d2; }}
+  .vep-table {{ border-collapse: collapse; width: 100%; margin: 20px 0; }}
+  .vep-table th {{ background-color: #1976d2; color: white; padding: 10px; text-align: left; }}
+  .vep-table td {{ padding: 8px; border-bottom: 1px solid #ddd; }}
+  .vep-table tr:hover {{ background-color: #f5f5f5; }}
+  .urgency-red {{ color: #d32f2f; font-weight: bold; }}
+  .urgency-yellow {{ color: #f57c00; font-weight: bold; }}
+  .urgency-green {{ color: #388e3c; font-weight: bold; }}
   .alert {{ margin: 10px 0; padding: 10px; border-left: 4px solid #ccc; }}
   .critical {{ border-left-color: #d32f2f; background-color: #ffebee; }}
   .high {{ border-left-color: #f57c00; background-color: #fff3e0; }}
@@ -182,10 +212,50 @@ def send_email_node(state: VEPState) -> Any:
 <body>
 <h1>VEP Governance Alerts</h1>
 <p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+
+<div class="phase-banner">
+  <strong>{phase_ctx['release']} {phase_ctx['phase_display']}</strong>
+  {f' | {phase_ctx["deadline_text"]}' if phase_ctx['deadline_text'] else ''}
+  {f' | {high_risk_count} VEPs at HIGH RISK' if high_risk_count > 0 else ' | All VEPs on track'}
+</div>
 """
-    
+
     if alert_summary_text:
         html_body += f"<h2>Summary</h2><p>{alert_summary_text.replace(chr(10), '<br>')}</p>"
+
+    # Add VEP Summary Table
+    if table_rows:
+        html_body += "<h2>VEP Status Summary</h2>"
+        html_body += '<table class="vep-table">'
+        html_body += "<tr><th>VEP #</th><th>Title</th><th>Proposal PR(s)</th><th>Impl PR(s)</th><th>Urgency</th><th>Status Comment</th></tr>"
+
+        for row in table_rows:
+            urgency_class = f"urgency-{row['urgency_color']}"
+            urgency_emoji = {"RED": "🔴", "YELLOW": "🟡", "GREEN": "🟢"}.get(row["urgency"], "⚪")
+
+            # Format PR links
+            proposal_links = []
+            for pr in row["proposal_prs"]:
+                proposal_links.append(f'<a href="{pr["url"]}">#{pr["number"]}</a>')
+            proposal_cell = ", ".join(proposal_links) if proposal_links else "-"
+
+            impl_links = []
+            for pr in row["impl_prs"]:
+                impl_links.append(f'<a href="{pr["url"]}">#{pr["number"]}</a>')
+            impl_cell = ", ".join(impl_links) if impl_links else "-"
+
+            vep_url = f"https://github.com/kubevirt/enhancements/issues/{row['vep_number']}"
+
+            html_body += f"""<tr>
+              <td><a href="{vep_url}">{row['vep_number']}</a></td>
+              <td>{row['title']}</td>
+              <td>{proposal_cell}</td>
+              <td>{impl_cell}</td>
+              <td class="{urgency_class}">{urgency_emoji} {row['urgency']}</td>
+              <td>{row['status_comment']}</td>
+            </tr>"""
+
+        html_body += "</table>"
     
     # Add alerts grouped by subject
     for subject_key, subject_alerts in alerts_by_subject.items():
@@ -224,9 +294,22 @@ def send_email_node(state: VEPState) -> Any:
     # Also create plain text version
     text_body = "VEP Governance Alerts\n"
     text_body += f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-    
+
+    text_body += f"{phase_ctx['release']} {phase_ctx['phase_display']}\n"
+    if phase_ctx['deadline_text']:
+        text_body += f"{phase_ctx['deadline_text']}\n"
+    if high_risk_count > 0:
+        text_body += f"{high_risk_count} VEPs at HIGH RISK\n"
+    text_body += "\n"
+
     if alert_summary_text:
         text_body += f"Summary:\n{alert_summary_text}\n\n"
+
+    # Add VEP Summary Table (markdown format for plain text)
+    if table_rows:
+        text_body += "VEP Status Summary:\n"
+        text_body += build_markdown_table(table_rows)
+        text_body += "\n\n"
     
     for subject_key, subject_alerts in alerts_by_subject.items():
         subject_title = subject_key.replace("_", " ").title()
