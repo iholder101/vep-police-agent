@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 
 # Model tier constants for node configuration
 FAST_MODEL = "gemini-3-flash-preview"
-HEAVY_MODEL = "gemini-3-pro-preview"
+HEAVY_MODEL = "gemini-3.1-pro-preview"
 
 DEFAULT_MODEL = FAST_MODEL
 
