@@ -83,21 +83,13 @@ def invoke_llm_with_tools(
         
         if not tools:
             log(f"No MCP tools available for {operation_type}", node=operation_type, level="ERROR")
-            # Return empty response - build defaults for required fields
-            defaults = {}
-            if hasattr(response_model, 'model_fields'):
-                for field_name, field_info in response_model.model_fields.items():
-                    if field_info.is_required():
-                        field_type = str(field_info.annotation) if hasattr(field_info, 'annotation') else ''
-                        if 'List' in field_type or field_name in ['updated_veps', 'alerts']:
-                            defaults[field_name] = []
-                        elif field_name == 'success':
-                            defaults[field_name] = False
-                        elif 'Dict' in field_type:
-                            defaults[field_name] = {}
-                        else:
-                            defaults[field_name] = None
-            return response_model(**defaults)
+            # Return empty response with proper structure
+            try:
+                return response_model()
+            except Exception as e:
+                # If model requires fields, try with empty defaults
+                log(f"Could not create empty {response_model.__name__}: {e}", node=operation_type, level="WARNING")
+                return response_model(**{})
 
         # Get model for this operation type (node)
         import config

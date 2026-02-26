@@ -17,6 +17,25 @@ GRAPHQL_API_URL = "https://api.github.com/graphql"
 # Hardcoded repository names
 ENHANCEMENTS_REPO = "kubevirt/enhancements"
 
+# GraphQL query to list all projects for an organization
+_LIST_PROJECTS_QUERY = """
+query($orgName: String!, $cursor: String) {
+  organization(login: $orgName) {
+    projectsV2(first: 20, after: $cursor) {
+      nodes {
+        id
+        number
+        title
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+    }
+  }
+}
+"""
+
 # GraphQL query to fetch all items from a Project V2 board with ALL field types
 _PROJECT_BOARD_QUERY = """
 query($orgName: String!, $projectNumber: Int!, $cursor: String) {
@@ -33,6 +52,7 @@ query($orgName: String!, $projectNumber: Int!, $cursor: String) {
               title
               url
               state
+              body
               repository {
                 nameWithOwner
               }
@@ -42,6 +62,7 @@ query($orgName: String!, $projectNumber: Int!, $cursor: String) {
               title
               url
               state
+              body
               repository {
                 nameWithOwner
               }
@@ -137,6 +158,71 @@ query($orgName: String!, $projectNumber: Int!, $cursor: String) {
   }
 }
 """
+
+
+def find_project_by_title(
+    org_name: str = "kubevirt",
+    title_pattern: str = "",
+) -> Optional[int]:
+    """Find a GitHub Project V2 by title pattern.
+
+    Searches for projects in the organization that match the given title pattern.
+    Pattern matching is case-insensitive and checks if all pattern words appear in title.
+
+    Args:
+        org_name: GitHub organization name (default: "kubevirt")
+        title_pattern: Pattern to match in project title (e.g., "v1.8 release tracking")
+
+    Returns:
+        Project number if found, None otherwise
+    """
+    if not title_pattern:
+        return None
+
+    log(f"Searching for project matching pattern: '{title_pattern}'", node="graphql")
+
+    pattern_lower = title_pattern.lower()
+    pattern_words = pattern_lower.split()
+
+    variables = {
+        "orgName": org_name,
+        "cursor": None,
+    }
+    has_next_page = True
+
+    while has_next_page:
+        try:
+            result = execute_graphql_query(_LIST_PROJECTS_QUERY, variables)
+        except Exception as e:
+            log(f"GraphQL query failed while searching projects: {e}", node="graphql", level="ERROR")
+            return None
+
+        if "errors" in result:
+            log(f"GraphQL errors while searching projects: {result['errors']}", node="graphql", level="ERROR")
+            return None
+
+        data = (
+            result.get("data", {})
+            .get("organization", {})
+            .get("projectsV2", {})
+        )
+
+        for project in data.get("nodes", []):
+            title = project.get("title", "")
+            title_lower = title.lower()
+
+            # Check if all pattern words appear in the title
+            if all(word in title_lower for word in pattern_words):
+                project_num = project.get("number")
+                log(f"Found matching project: '{title}' (number: {project_num})", node="graphql")
+                return project_num
+
+        page_info = data.get("pageInfo", {})
+        has_next_page = page_info.get("hasNextPage", False)
+        variables["cursor"] = page_info.get("endCursor")
+
+    log(f"No project found matching pattern: '{title_pattern}'", node="graphql", level="WARNING")
+    return None
 
 
 def execute_graphql_query(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
@@ -312,6 +398,7 @@ def get_project_board_items(
                 "title": content.get("title"),
                 "url": content.get("url"),
                 "state": content.get("state"),
+                "body": content.get("body"),
                 "content_type": content_type,
                 "repository": repo,
                 "fields": fields,
@@ -355,6 +442,7 @@ def get_veps_from_project_board(
                     "title": item.get("title"),
                     "url": item.get("url"),
                     "state": item.get("state"),
+                    "body": item.get("body"),
                     "fields": item.get("fields", {}),
                 }
 

@@ -132,7 +132,7 @@ class VEPContext(BaseModel):
     """Raw context data fetched by monitoring nodes.
 
     This stores raw data fetched by the lightweight fetch nodes (check_deadlines,
-    check_activity, check_compliance, check_exceptions). The data here is NOT analyzed -
+    check_activity, check_compliance, check_exceptions, check_phase_risks). The data here is NOT analyzed -
     analysis is done by analyze_combined which has access to ALL context at once.
 
     Each field corresponds to data fetched by a specific check node.
@@ -145,6 +145,8 @@ class VEPContext(BaseModel):
     compliance: Dict[str, Any] = Field(default_factory=dict)
     # From check_exceptions - exception-related raw data
     exceptions: Dict[str, Any] = Field(default_factory=dict)
+    # From check_phase_risks - phase-specific risk data
+    phase_risks: Dict[str, Any] = Field(default_factory=dict)
 
 
 class VEPInfo(BaseModel):
@@ -199,7 +201,6 @@ class VEPState(TypedDict):
     # Release tracking
     current_release: Optional[str]  # Active release version (e.g., "v1.8")
     release_schedule: Optional[ReleaseSchedule]  # Parsed schedule with EF/CF dates
-    release_phase: Optional[str]  # Current phase: "design", "development", "stabilization", "released"
 
     # VEP data
     veps: List[VEPInfo]  # All VEPs being tracked
