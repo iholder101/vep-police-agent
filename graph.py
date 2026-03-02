@@ -12,6 +12,7 @@ from nodes.check_deadlines import check_deadlines_node
 from nodes.check_activity import check_activity_node
 from nodes.check_compliance import check_compliance_node
 from nodes.check_exceptions import check_exceptions_node
+from nodes.check_phase_risks import check_phase_risks_node
 from nodes.analyze_combined import analyze_combined_node
 from nodes.merge_vep_updates import merge_vep_updates_node
 from nodes.save_state_cache import save_state_cache_node
@@ -52,6 +53,7 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     workflow.add_node("check_activity", check_activity_node)
     workflow.add_node("check_compliance", check_compliance_node)
     workflow.add_node("check_exceptions", check_exceptions_node)
+    workflow.add_node("check_phase_risks", check_phase_risks_node)
     workflow.add_node("merge_vep_updates", merge_vep_updates_node)
     workflow.add_node("analyze_combined", analyze_combined_node)
     workflow.add_node("detect_changes", detect_changes_node)
@@ -87,12 +89,14 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     workflow.add_edge("run_monitoring", "check_activity")
     workflow.add_edge("run_monitoring", "check_compliance")
     workflow.add_edge("run_monitoring", "check_exceptions")
-    
+    workflow.add_edge("run_monitoring", "check_phase_risks")
+
     # All monitoring checks complete → merge_vep_updates (merges parallel updates)
     workflow.add_edge("check_deadlines", "merge_vep_updates")
     workflow.add_edge("check_activity", "merge_vep_updates")
     workflow.add_edge("check_compliance", "merge_vep_updates")
     workflow.add_edge("check_exceptions", "merge_vep_updates")
+    workflow.add_edge("check_phase_risks", "merge_vep_updates")
     
     # After merging, analyze combined results
     workflow.add_edge("merge_vep_updates", "analyze_combined")

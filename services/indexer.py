@@ -475,7 +475,7 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
                         try:
                             result = _call_with_retry(
                                 search_issues_tool.func,
-                                q=query,
+                                query=query,
                                 per_page=per_page,
                                 page=page,
                             )
@@ -483,7 +483,7 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
                             # Tool doesn't support pagination params, try without
                             result = _call_with_retry(
                                 search_issues_tool.func,
-                                q=query,
+                                query=query,
                             )
                             # If we already got results, break (no pagination support)
                             if all_items:
@@ -698,11 +698,12 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
                                     "title": issue.get("title"),
                                     "labels": labels,
                                     "state": issue.get("state"),
-                                    "url": issue.get("url") or issue.get("html_url"),
+                                    "url": issue.get("html_url") or issue.get("url"),
                                     "created_at": issue.get("created_at"),
                                     "updated_at": issue.get("updated_at"),
                                     "is_vep_related": is_vep_related,
-                                    "body_preview": body[:500] if body else "",
+                                    "body": body if body else "",  # Store full body for PR URL extraction
+                                    "body_preview": body[:500] if body else "",  # Keep preview for debugging
                                     "assignee": assignee,  # Person assigned to the issue (primary owner)
                                     "author": author,  # Person who created/opened the issue (fallback owner)
                                 })
@@ -798,11 +799,12 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
                             "title": issue.get("title"),
                             "labels": labels,
                             "state": issue.get("state"),
-                            "url": issue.get("url") or issue.get("html_url"),
+                            "url": issue.get("html_url") or issue.get("url"),
                             "created_at": issue.get("created_at"),
                             "updated_at": issue.get("updated_at"),
                             "is_vep_related": is_vep_related,
-                            "body_preview": body[:500] if body else "",  # First 500 chars for VEP number detection
+                            "body": body if body else "",  # Store full body for PR URL extraction
+                            "body_preview": body[:500] if body else "",  # Keep preview for debugging
                             "assignee": assignee,  # Person assigned to the issue (primary owner)
                             "author": author,  # Person who created/opened the issue (fallback owner)
                         })
@@ -829,6 +831,337 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
         return []
     
     return []
+
+
+def _extract_vep_issue_number(title: str, body: str) -> Optional[int]:
+    """Extract VEP tracking issue number from PR title and body.
+
+    Searches for patterns like:
+    - https://github.com/kubevirt/enhancements/issues/80
+    - Tracking issue: #80
+    - VEP Tracker: #21
+    - Tracker: #80
+    - fixes #N, closes #N
+    - VEP number in title (e.g., "VEP 165: ..." → issue 165)
+
+    Returns:
+        Issue number or None
+    """
+    text_to_search = f"{title} {body}"
+    if not text_to_search.strip():
+        return None
+
+    # Pattern 1: Full issue URL (most reliable)
+    issue_url_match = re.search(r'github\.com/kubevirt/enhancements/issues/(\d+)', text_to_search)
+    if issue_url_match:
+        return int(issue_url_match.group(1))
+
+    # Pattern 2: Specific tracking issue keywords (ordered by specificity)
+    specific_patterns = [
+        r'tracking\s+issue[\s:]+#?(\d+)',
+        r'vep\s+tracker[\s:]+#?(\d+)',
+        r'tracker[\s:]+#?(\d+)',
+        r'vep\s+issue[\s:]+#?(\d+)',
+    ]
+    for pattern in specific_patterns:
+        match = re.search(pattern, text_to_search, re.IGNORECASE)
+        if match:
+            return int(match.group(1))
+
+    # Pattern 3: Generic keywords
+    generic_match = re.search(r'(?:fixes|closes)[\s:]+#?(\d+)', text_to_search, re.IGNORECASE)
+    if generic_match:
+        return int(generic_match.group(1))
+
+    # Pattern 4: VEP number in title as fallback
+    # In the enhancements repo, VEP numbers typically match issue numbers
+    # e.g., "VEP 165: ContainerPath Volumes" → issue #165
+    # e.g., "VEP-183: NetworkDevicesWithDRA" → issue #183
+    # e.g., "VEP #156: Expose Memory Overhead" → issue #156
+    # e.g., "VEP0176: kubevirt-redfish" → issue #176
+    if title:
+        vep_title_match = re.search(r'VEP[- #]*0*(\d+)', title, re.IGNORECASE)
+        if vep_title_match:
+            return int(vep_title_match.group(1))
+
+    return None
+
+
+def index_enhancements_prs(days_back: Optional[int] = 365) -> List[Dict[str, Any]]:
+    """Index PRs in kubevirt/enhancements repository.
+
+    Indexes proposal PRs that create or modify VEP documents.
+    Extracts VEP issue references from PR bodies to link PRs to tracking issues.
+
+    Args:
+        days_back: Only include PRs from last N days (None = all PRs)
+
+    Returns:
+        List of PR summaries with VEP issue references
+    """
+    log(f"Indexing PRs from kubevirt/enhancements (days_back={days_back})", node="indexer")
+
+    try:
+        tools = get_mcp_tools_by_name("github")
+
+        # Find list_pull_requests tool
+        list_prs_tool = None
+        tool_names_to_try = [
+            "mcp_GitHub_list_pull_requests",
+            "list_pull_requests",
+            "list_pulls",
+            "search_pull_requests",
+        ]
+
+        for tool in tools:
+            if tool.name in tool_names_to_try:
+                list_prs_tool = tool
+                break
+
+        if not list_prs_tool:
+            for tool in tools:
+                tool_name_lower = tool.name.lower()
+                if any(name.lower() in tool_name_lower and ("pull" in tool_name_lower or "pr" in tool_name_lower) for name in tool_names_to_try):
+                    list_prs_tool = tool
+                    break
+
+        if not list_prs_tool:
+            log("Could not find PR listing tool for enhancements repo", node="indexer", level="WARNING")
+            return []
+
+        try:
+            # Fetch all pages of PRs
+            import json
+            all_pr_items = []
+            page = 1
+            max_pages = 10  # Safety limit
+
+            while page <= max_pages:
+                log(f"Fetching enhancements PRs page {page}", node="indexer", level="DEBUG")
+                try:
+                    prs_result = _call_with_retry(
+                        list_prs_tool.func,
+                        owner="kubevirt",
+                        repo="enhancements",
+                        state="all",
+                        page=page,
+                        per_page=100,
+                    )
+                except TypeError:
+                    # Tool may not support page/per_page, try without
+                    if page > 1:
+                        break
+                    try:
+                        prs_result = _call_with_retry(
+                            list_prs_tool.func,
+                            owner="kubevirt",
+                            repo="enhancements",
+                            state="all",
+                        )
+                    except TypeError:
+                        prs_result = _call_with_retry(
+                            list_prs_tool.func,
+                            repo="kubevirt/enhancements",
+                            state="all",
+                        )
+
+                # Parse result
+                if isinstance(prs_result, str):
+                    try:
+                        prs_result = json.loads(prs_result)
+                    except json.JSONDecodeError:
+                        log("Could not parse PRs result", node="indexer", level="WARNING")
+                        break
+
+                if isinstance(prs_result, list):
+                    if not prs_result:
+                        break  # No more results
+                    all_pr_items.extend(prs_result)
+                    log(f"  Got {len(prs_result)} PRs on page {page} (total so far: {len(all_pr_items)})", node="indexer", level="DEBUG")
+                    if len(prs_result) < 30:
+                        break  # Last page
+                    page += 1
+                else:
+                    break
+
+            log(f"Fetched {len(all_pr_items)} total PRs from kubevirt/enhancements across {page} page(s)", node="indexer")
+
+            # Extract PR data
+            prs = []
+            if all_pr_items:
+                prs_result = all_pr_items
+            if isinstance(prs_result, list):
+                for pr in prs_result:
+                    if not isinstance(pr, dict):
+                        continue
+
+                    # Get basic fields
+                    pr_number = pr.get("number")
+                    title = pr.get("title", "")
+                    state = pr.get("state", "")
+                    body = pr.get("body", "")
+                    url = pr.get("html_url") or pr.get("url", "")
+                    created_at = pr.get("created_at")
+                    updated_at = pr.get("updated_at")
+
+                    # Extract VEP issue number from body and title
+                    vep_issue_num = _extract_vep_issue_number(title, body)
+                    log(f"  Enhancements PR #{pr_number}: title='{title[:60]}', body_len={len(body)}, vep_issue={vep_issue_num}", node="indexer", level="DEBUG")
+
+                    # Get review count (approximation from review_comments count)
+                    review_count = pr.get("review_comments", 0)
+                    if pr.get("comments"):
+                        review_count = max(review_count, pr.get("comments", 0) // 2)
+
+                    prs.append({
+                        "number": pr_number,
+                        "title": title,
+                        "state": state,
+                        "body": body,  # Full body for tracking issue reference extraction
+                        "url": url,
+                        "html_url": pr.get("html_url", url),
+                        "created_at": created_at,
+                        "updated_at": updated_at,
+                        "vep_issue_number": vep_issue_num,
+                        "review_count": review_count,
+                    })
+
+                # Filter by date if requested
+                if days_back is not None:
+                    original_count = len(prs)
+                    prs = _filter_by_date(prs, days_back)
+                    log(f"Filtered enhancements PRs: {original_count} -> {len(prs)} (last {days_back} days)", node="indexer")
+
+                # Log VEP-linked PRs
+                vep_linked = [p for p in prs if p.get("vep_issue_number")]
+                no_vep = [p for p in prs if not p.get("vep_issue_number")]
+                log(f"Indexed {len(prs)} PRs from kubevirt/enhancements ({len(vep_linked)} linked to VEP issues)", node="indexer")
+                for p in vep_linked:
+                    log(f"  Enhancements PR #{p['number']} -> VEP issue #{p['vep_issue_number']}", node="indexer", level="DEBUG")
+                if no_vep:
+                    log(f"  Unlinked enhancements PRs: {[p['number'] for p in no_vep]}", node="indexer", level="DEBUG")
+                return prs
+
+        except Exception as e:
+            log(f"Error listing enhancements PRs: {e}", node="indexer", level="WARNING")
+            return []
+
+    except Exception as e:
+        log(f"Error in index_enhancements_prs: {e}", node="indexer", level="WARNING")
+        return []
+
+
+def _search_kubevirt_prs_referencing_veps() -> List[Dict[str, Any]]:
+    """Search kubevirt/kubevirt PRs that reference enhancements tracking issues.
+
+    Uses GitHub search API which indexes PR bodies, making it reliable
+    for finding VEP references even when list_pull_requests doesn't
+    return full bodies.
+
+    Returns:
+        List of PR dicts with vep_issue_number set
+    """
+    log("Searching kubevirt PRs referencing VEP tracking issues", node="indexer")
+
+    try:
+        tools = get_mcp_tools_by_name("github")
+        search_tool = None
+        for tool in tools:
+            if "search_issues" in tool.name.lower():
+                search_tool = tool
+                break
+
+        if not search_tool:
+            log("search_issues tool not found, skipping VEP PR search", node="indexer", level="WARNING")
+            return []
+
+        all_prs = []
+
+        # Search for PRs that reference enhancements issues
+        search_queries = [
+            'repo:kubevirt/kubevirt is:pr "kubevirt/enhancements/issues"',
+            'repo:kubevirt/kubevirt is:pr "Tracking issue:"',
+            'repo:kubevirt/kubevirt is:pr "VEP Tracker:"',
+        ]
+
+        seen_numbers = set()
+
+        for search_query in search_queries:
+            page = 1
+            max_pages = 25  # Need enough pages to cover all VEP-referencing PRs (~655 total, ~30/page)
+
+            while page <= max_pages:
+                try:
+                    result = _call_with_retry(
+                        search_tool.func,
+                        query=search_query,
+                        per_page=100,
+                        page=page,
+                    )
+                except TypeError:
+                    try:
+                        result = _call_with_retry(search_tool.func, query=search_query)
+                    except Exception:
+                        break
+                    if page > 1:
+                        break
+
+                # Parse result
+                items = []
+                if isinstance(result, str):
+                    try:
+                        result = json.loads(result)
+                    except json.JSONDecodeError:
+                        break
+
+                if isinstance(result, dict):
+                    items = result.get("items", [])
+                elif isinstance(result, list):
+                    items = result
+
+                if not items:
+                    break
+
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    pr_num = item.get("number")
+                    if not pr_num or pr_num in seen_numbers:
+                        continue
+                    seen_numbers.add(pr_num)
+
+                    body = item.get("body") or ""
+                    title = item.get("title") or ""
+                    vep_issue_num = _extract_vep_issue_number(title, body)
+
+                    if vep_issue_num:
+                        is_merged = "pull_request" in item and item.get("pull_request", {}).get("merged_at") is not None
+                        all_prs.append({
+                            "number": pr_num,
+                            "title": title,
+                            "state": "merged" if is_merged else item.get("state", ""),
+                            "merged": is_merged,
+                            "url": item.get("html_url") or item.get("url", ""),
+                            "html_url": item.get("html_url", ""),
+                            "created_at": item.get("created_at"),
+                            "updated_at": item.get("updated_at"),
+                            "body_preview": body[:500] if body else "",
+                            "vep_issue_number": vep_issue_num,
+                        })
+
+                if len(items) < 30:
+                    break
+                page += 1
+
+        log(f"Found {len(all_prs)} kubevirt PRs referencing VEP issues via search", node="indexer")
+        for pr in sorted(all_prs, key=lambda x: x["number"], reverse=True)[:30]:
+            log(f"  Search: kubevirt PR #{pr['number']} -> VEP issue #{pr['vep_issue_number']} (merged={pr['merged']})", node="indexer", level="DEBUG")
+
+        return all_prs
+
+    except Exception as e:
+        log(f"Error searching kubevirt PRs: {e}", node="indexer", level="WARNING")
+        return []
 
 
 def index_kubevirt_prs(days_back: Optional[int] = 365, fetch_reviews: bool = True) -> List[Dict[str, Any]]:
@@ -891,49 +1224,88 @@ def index_kubevirt_prs(days_back: Optional[int] = 365, fetch_reviews: bool = Tru
                 log("Could not find PR reviews tool, review counts will be None", node="indexer", level="DEBUG")
 
         try:
-            # Try different parameter formats
-            try:
-                prs_result = list_prs_tool.func(
-                    owner="kubevirt",
-                    repo="kubevirt",
-                    state="all"
-                )
-            except TypeError:
+            # Fetch all pages of PRs
+            all_pr_items = []
+            page = 1
+            max_pages = 40  # kubevirt/kubevirt has ~13k PRs, ~30/page from MCP → ~1200 PRs
+
+            while page <= max_pages:
+                log(f"Fetching kubevirt PRs page {page}", node="indexer", level="DEBUG")
                 try:
-                    prs_result = list_prs_tool.func(
-                        repo="kubevirt/kubevirt",
-                        state="all"
+                    prs_result = _call_with_retry(
+                        list_prs_tool.func,
+                        owner="kubevirt",
+                        repo="kubevirt",
+                        state="all",
+                        page=page,
+                        per_page=100,
                     )
                 except TypeError:
-                    # Try with different parameter name
-                    prs_result = list_prs_tool.func(
-                        owner="kubevirt",
-                        repo="kubevirt"
-                    )
+                    # Tool may not support page/per_page, try without
+                    if page > 1:
+                        break
+                    try:
+                        prs_result = _call_with_retry(
+                            list_prs_tool.func,
+                            owner="kubevirt",
+                            repo="kubevirt",
+                            state="all",
+                        )
+                    except TypeError:
+                        prs_result = _call_with_retry(
+                            list_prs_tool.func,
+                            repo="kubevirt/kubevirt",
+                            state="all",
+                        )
 
-            # Parse result
-            if isinstance(prs_result, str):
-                # Check if it's an error message
-                if len(prs_result) < 500 or prs_result.lower().startswith(("error", "failed", "cannot", "unable")):
-                    log(f"Received error or suspiciously short response (length: {len(prs_result)}): {prs_result[:500]}", node="indexer", level="WARNING")
-                    log(f"Available tools: {[t.name for t in tools]}", node="indexer", level="DEBUG")
-                    return []
-                log(f"Retrieved PRs data as string (length: {len(prs_result)})", node="indexer")
-                return [{"raw_data": prs_result[:15000]}]
-            elif isinstance(prs_result, list):
+                # Parse JSON string if needed
+                if isinstance(prs_result, str):
+                    try:
+                        prs_result = json.loads(prs_result)
+                    except json.JSONDecodeError:
+                        log(f"Could not parse kubevirt PRs page {page}", node="indexer", level="WARNING")
+                        break
+
+                if isinstance(prs_result, list):
+                    if not prs_result:
+                        break  # No more results
+                    all_pr_items.extend(prs_result)
+                    log(f"  Got {len(prs_result)} PRs on page {page} (total so far: {len(all_pr_items)})", node="indexer", level="DEBUG")
+                    if len(prs_result) < 30:
+                        break  # Last page
+                    page += 1
+                else:
+                    break
+
+            log(f"Fetched {len(all_pr_items)} total PRs from kubevirt/kubevirt across {page} page(s)", node="indexer")
+            prs_result = all_pr_items
+
+            # prs_result is now a list from pagination above
+            if isinstance(prs_result, list):
                 prs = []
                 for pr in prs_result:
                     if isinstance(pr, dict):
+                        body = pr.get("body") or ""
+                        title = pr.get("title") or ""
+
+                        # Extract VEP issue number from PR body
+                        vep_issue_num = _extract_vep_issue_number(title, body)
+
+                        # Detect merged status: check both "merged" boolean and "merged_at" datetime
+                        # GitHub list PRs endpoint returns merged_at but not merged boolean
+                        is_merged = pr.get("merged", False) or (pr.get("merged_at") is not None)
+
                         pr_data = {
                             "number": pr.get("number"),
-                            "title": pr.get("title"),
+                            "title": title,
                             "labels": [l.get("name") if isinstance(l, dict) else l for l in pr.get("labels", [])],
-                            "state": pr.get("state"),
-                            "merged": pr.get("merged", False),
-                            "url": pr.get("url") or pr.get("html_url"),
+                            "state": "merged" if is_merged else pr.get("state"),
+                            "merged": is_merged,
+                            "url": pr.get("html_url") or pr.get("url"),
                             "created_at": pr.get("created_at"),
                             "updated_at": pr.get("updated_at"),
-                            "body": (pr.get("body") or "")[:500],  # First 500 chars of body for VEP references
+                            "body_preview": body[:500] if body else "",  # Truncated for VEP pattern matching
+                            "vep_issue_number": vep_issue_num,  # Extracted VEP issue number
                             "review_count": None,  # Will be populated below if fetch_reviews=True
                         }
                         prs.append(pr_data)
@@ -967,7 +1339,12 @@ def index_kubevirt_prs(days_back: Optional[int] = 365, fetch_reviews: bool = Tru
                             except Exception as e:
                                 log(f"Error fetching reviews for PR #{pr_number}: {e}", node="indexer", level="DEBUG")
 
-                log(f"Indexed {len(prs)} PRs", node="indexer")
+                # Log VEP-linked PRs
+                vep_linked = [p for p in prs if p.get("vep_issue_number")]
+                log(f"Indexed {len(prs)} PRs from kubevirt/kubevirt ({len(vep_linked)} linked to VEP issues)", node="indexer")
+                if vep_linked:
+                    for p in vep_linked[:20]:  # Log first 20
+                        log(f"  kubevirt PR #{p['number']} -> VEP issue #{p['vep_issue_number']}", node="indexer", level="DEBUG")
                 return prs
             else:
                 return [{"raw_data": str(prs_result)[:15000]}]
@@ -1425,7 +1802,7 @@ def index_vep_files() -> List[Dict[str, Any]]:
                         # If still no VEP number found, use filename as fallback
                         if not vep_number:
                             vep_number = filename.replace('.md', '')
-                        
+
                         vep_data.append({
                             "filename": filename,
                             "path": vep_file_path,  # Full path for reference
@@ -1469,18 +1846,133 @@ def index_vep_files() -> List[Dict[str, Any]]:
     return []
 
 
+def _find_active_release_project(current_release: str) -> Optional[int]:
+    """Discover active release project board ID by title matching.
+
+    Searches for a project board with title matching the current release
+    (e.g., "KubeVirt v1.8 Release Tracking").
+
+    Args:
+        current_release: Release version string (e.g., "v1.8")
+
+    Returns:
+        Project board number if found, None otherwise
+    """
+    from services.graphql_client import find_project_by_title
+
+    if not current_release:
+        return None
+
+    # Normalize version string (ensure it has 'v' prefix)
+    version = current_release if current_release.startswith('v') else f'v{current_release}'
+
+    # Search pattern: version + "release" + "tracking"
+    # This should match boards like "KubeVirt v1.8 Release Tracking"
+    search_pattern = f"{version} release tracking"
+
+    try:
+        project_num = find_project_by_title(org_name="kubevirt", title_pattern=search_pattern)
+        if project_num:
+            log(f"Auto-discovered project board for {version}: #{project_num}", node="indexer")
+        return project_num
+    except Exception as e:
+        log(f"Error auto-discovering project board: {e}", node="indexer", level="WARNING")
+        return None
+
+
+def _parse_impl_prs_from_text(text: str) -> List[Dict[str, Any]]:
+    """Parse implementation PR references from text content.
+
+    Extracts PR numbers from patterns like:
+    - https://github.com/kubevirt/kubevirt/pull/12345
+    - Implementation: #1234
+    - Implements: #1234
+    - impl: #1234
+    - PR: #1234
+    - pull #1234
+
+    IMPORTANT: Excludes PRs from kubevirt/enhancements (those are proposal PRs, not impl PRs)
+
+    Args:
+        text: Text content to parse (issue body, notes, etc.)
+
+    Returns:
+        List of dicts with {number: int, url: str}
+    """
+    if not text:
+        return []
+
+    impl_prs = []
+    seen_numbers = set()
+
+    # First, find all enhancements PR numbers to EXCLUDE (those are proposal PRs, not impl PRs)
+    enhancements_pr_numbers = set()
+    enhancements_url_pattern = re.compile(r'github\.com/kubevirt/enhancements/pull/(\d+)')
+    for match in enhancements_url_pattern.finditer(text):
+        enhancements_pr_numbers.add(int(match.group(1)))
+
+    # Pattern 1: Full PR URLs from kubevirt/kubevirt repo ONLY
+    url_pattern = re.compile(r'https?://github\.com/kubevirt/kubevirt/pull/(\d+)')
+    for match in url_pattern.finditer(text):
+        pr_num = int(match.group(1))
+        if pr_num not in seen_numbers and pr_num not in enhancements_pr_numbers:
+            seen_numbers.add(pr_num)
+            impl_prs.append({
+                "number": pr_num,
+                "url": match.group(0),
+            })
+
+    # Pattern 2: PR references like "Implementation: #1234", "implements #1234", "impl: #1234", etc.
+    # ONLY if the PR number is not from enhancements repo
+    ref_pattern = re.compile(
+        r'(?:Implementation|Implements|impl)[\s:]+#(\d+)',
+        re.IGNORECASE
+    )
+    for match in ref_pattern.finditer(text):
+        pr_num = int(match.group(1))
+        if pr_num not in seen_numbers and pr_num not in enhancements_pr_numbers:
+            seen_numbers.add(pr_num)
+            impl_prs.append({
+                "number": pr_num,
+                "url": f"https://github.com/kubevirt/kubevirt/pull/{pr_num}",
+            })
+
+    # Pattern 3: Standalone #numbers that might be PR references
+    # (only if they appear after keywords like "implementation", "implements", "impl:")
+    # EXCLUDE generic "PR" and "pull" keywords to avoid false positives with proposal PRs
+    # NOTE: No re.DOTALL — .*? must NOT span newlines to avoid matching unrelated #numbers
+    context_pattern = re.compile(
+        r'(?:implementation|implements|impl).*?#(\d+)',
+        re.IGNORECASE
+    )
+    for match in context_pattern.finditer(text):
+        pr_num = int(match.group(1))
+        if pr_num not in seen_numbers and pr_num not in enhancements_pr_numbers:
+            seen_numbers.add(pr_num)
+            impl_prs.append({
+                "number": pr_num,
+                "url": f"https://github.com/kubevirt/kubevirt/pull/{pr_num}",
+            })
+
+    return impl_prs
+
+
 def index_project_board_items(version: Optional[str] = None) -> Dict[int, Dict[str, Any]]:
     """Index VEP items from the kubevirt GitHub Project V2 board.
 
     Fetches all VEPs from the project board for the given release version,
     including all custom field metadata (Status, Priority, dates, etc.).
+    Also extracts implementation PR references from issue bodies and text fields.
 
     Args:
         version: Release version string (e.g., "v1.8" or "1.8").
                  If None, will try to auto-detect from release schedule.
 
     Returns:
-        Dict mapping issue_number -> {title, url, state, fields: {...}}
+        Dict mapping issue_number -> {
+            title, url, state, fields: {...},
+            impl_prs: [{number, url}, ...]
+        }
         Empty dict if board cannot be fetched.
     """
     from config import get_project_board_for_version
@@ -1488,15 +1980,40 @@ def index_project_board_items(version: Optional[str] = None) -> Dict[int, Dict[s
 
     log(f"Indexing project board items for version: {version}", node="indexer")
 
-    # Get board number for this version
-    board_number = get_project_board_for_version(version)
+    # Try auto-discovery first
+    board_number = _find_active_release_project(version) if version else None
+
+    # Fallback to config mapping
     if board_number is None:
-        log(f"No project board configured for version: {version}", node="indexer", level="WARNING")
+        board_number = get_project_board_for_version(version)
+
+    if board_number is None:
+        log(f"No project board found for version: {version}", node="indexer", level="WARNING")
         return {}
 
     try:
         veps = get_veps_from_project_board(project_number=board_number)
-        log(f"Indexed {len(veps)} VEPs from project board #{board_number}", node="indexer")
+
+        # Enhance each VEP with implementation PR data
+        for issue_num, vep_data in veps.items():
+            impl_prs = []
+
+            # Parse implementation PRs from issue body
+            body = vep_data.get("body", "")
+            if body:
+                impl_prs.extend(_parse_impl_prs_from_text(body))
+
+            # Also check text fields (Notes, Implementation PRs, etc.)
+            fields = vep_data.get("fields", {})
+            for field_name, field_value in fields.items():
+                if isinstance(field_value, str):
+                    impl_prs.extend(_parse_impl_prs_from_text(field_value))
+
+            # Store unique implementation PRs
+            vep_data["impl_prs"] = impl_prs
+
+        pr_count = sum(len(v.get("impl_prs", [])) for v in veps.values())
+        log(f"Indexed {len(veps)} VEPs from project board #{board_number} with {pr_count} impl PR references", node="indexer")
         return veps
     except Exception as e:
         log(f"Error indexing project board: {e}", node="indexer", level="WARNING")
@@ -1546,7 +2063,7 @@ def index_vep_pr_mappings(prs_index: Optional[List[Dict[str, Any]]] = None) -> D
                 "title": pr.get("title"),
                 "state": pr.get("state"),
                 "merged": pr.get("merged", False),
-                "url": pr.get("url"),
+                "url": pr.get("html_url") or pr.get("url"),
                 "labels": pr.get("labels", []),
                 "updated_at": pr.get("updated_at"),
             })
@@ -1554,6 +2071,28 @@ def index_vep_pr_mappings(prs_index: Optional[List[Dict[str, Any]]] = None) -> D
     total_prs = sum(len(prs) for prs in mappings.values())
     log(f"Mapped {total_prs} PRs to {len(mappings)} VEPs", node="indexer")
     return mappings
+
+
+def _extract_proposal_prs_from_issue(issue_body: str) -> List[int]:
+    """Extract proposal PR numbers from tracking issue body.
+
+    The tracking issue is the authoritative source for proposal PRs.
+    Looks for enhancements PR URLs in the issue body.
+
+    Returns:
+        List of PR numbers
+    """
+    if not issue_body:
+        return []
+
+    pr_numbers = set()
+
+    # Pattern for enhancements PR URLs (most reliable)
+    pr_url_pattern = re.compile(r'github\.com/kubevirt/enhancements/pull/(\d+)')
+    for match in pr_url_pattern.finditer(issue_body):
+        pr_numbers.add(int(match.group(1)))
+
+    return sorted(list(pr_numbers))
 
 
 def index_approved_vep_prs(prs_index: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
@@ -1625,7 +2164,7 @@ def index_approved_vep_prs(prs_index: Optional[List[Dict[str, Any]]] = None) -> 
                 "number": pr.get("number"),
                 "title": pr.get("title"),
                 "state": pr.get("state"),
-                "url": pr.get("url"),
+                "url": pr.get("html_url") or pr.get("url"),
                 "labels": labels,
                 "updated_at": updated_at,
                 "days_since_update": days_since_update,
@@ -1868,9 +2407,14 @@ def compute_veps_missing_prs(
     VEPs with status "Tracked" or "At risk" should have implementation PRs.
     This function identifies VEPs on the project board that are missing PRs.
 
+    Prioritizes board data (impl_prs from issue body/fields) over label-based
+    VEP-to-PR mappings for more accurate tracking.
+
     Args:
         project_board_items: Dict mapping issue number to board item data
+            (includes impl_prs field if parsed from board)
         vep_to_pr_mappings: Dict mapping VEP number (string) to list of PRs
+            (from label-based matching as fallback)
 
     Returns:
         List of VEPs that are tracked but have no implementation PRs
@@ -1885,9 +2429,18 @@ def compute_veps_missing_prs(
 
         # Only check VEPs that are actively tracked
         if status in ["Tracked", "At risk"]:
-            # VEP number in mappings is stored as string
-            vep_num = str(issue_num)
-            if vep_num not in vep_to_pr_mappings or len(vep_to_pr_mappings[vep_num]) == 0:
+            # Check board data first (impl_prs from issue body/fields)
+            board_impl_prs = item.get("impl_prs", [])
+            has_impl_prs = len(board_impl_prs) > 0
+
+            # Fallback to label-based mappings if no board data
+            if not has_impl_prs:
+                vep_num = str(issue_num)
+                label_prs = vep_to_pr_mappings.get(vep_num, [])
+                has_impl_prs = len(label_prs) > 0
+
+            # VEP is missing PRs if neither source has any
+            if not has_impl_prs:
                 missing.append({
                     "issue_number": issue_num,
                     "title": item.get("title"),
@@ -1919,7 +2472,7 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
         - issues_index: List of issues in enhancements repo
         - prs_index: List of PRs in kubevirt repo
         - vep_files_index: List of VEP files in veps/ directory
-        - project_board_items: VEPs from GitHub Project V2 board with all fields
+        - board_veps: VEPs from GitHub Project V2 board with all fields
         - vep_to_pr_mappings: Pre-computed VEP number to implementation PR mappings
         - approved_vep_prs: PRs with 'approved-vep' label
     """
@@ -1941,8 +2494,56 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
     release_info = index_release_schedule()
     release_version = release_info.get("current_release") if release_info else None
 
-    # Fetch PRs once and reuse for mappings
-    prs_index = index_kubevirt_prs(days_back=days_back)
+    # Compute PR lookback: ~30 days before enhancement freeze (start of dev cycle)
+    # This covers the full development window without fetching years of old PRs
+    pr_days_back = 365  # Default: 1 year
+    if release_info:
+        deadlines = release_info.get("release_deadlines", {})
+        ef_str = deadlines.get("enhancement_freeze")
+        if ef_str:
+            try:
+                ef_date = datetime.fromisoformat(ef_str.replace('Z', '+00:00'))
+                if ef_date.tzinfo is None:
+                    ef_date = ef_date.replace(tzinfo=timezone.utc)
+                days_since_ef = (datetime.now(timezone.utc) - ef_date).days
+                # 30 days before EF + time since EF
+                pr_days_back = max(days_since_ef + 30, 90)  # At least 90 days
+                log(f"PR lookback: {pr_days_back} days (EF was {days_since_ef} days ago)", node="indexer")
+            except (ValueError, AttributeError):
+                pass
+
+    prs_index = index_kubevirt_prs(days_back=pr_days_back)
+
+    # Also search for kubevirt PRs referencing VEP issues via GitHub search API
+    # list_pull_requests may not return full PR bodies, so search is more reliable
+    # for finding PRs that reference enhancements tracking issues
+    search_prs = _search_kubevirt_prs_referencing_veps()
+    if search_prs:
+        existing_pr_nums = {pr.get("number") for pr in prs_index if isinstance(pr, dict)}
+        new_count = 0
+        updated_count = 0
+        for pr in search_prs:
+            pr_num = pr.get("number")
+            if pr_num not in existing_pr_nums:
+                prs_index.append(pr)
+                existing_pr_nums.add(pr_num)
+                new_count += 1
+            else:
+                # Update existing entry with vep_issue_number/merged if missing
+                for existing in prs_index:
+                    if isinstance(existing, dict) and existing.get("number") == pr_num:
+                        if not existing.get("vep_issue_number") and pr.get("vep_issue_number"):
+                            existing["vep_issue_number"] = pr["vep_issue_number"]
+                            updated_count += 1
+                        if not existing.get("merged") and pr.get("merged"):
+                            existing["merged"] = pr["merged"]
+                            existing["state"] = "merged"
+                        break
+        log(f"Search merge: {new_count} new PRs added, {updated_count} existing PRs updated with VEP issue numbers", node="indexer")
+
+    # Get ALL enhancements PRs (proposal PRs can be very old - VEPs exist for years)
+    # Don't filter by date for proposal PRs
+    enhancements_prs = index_enhancements_prs(days_back=None)
 
     # Fetch project board items and VEP-to-PR mappings (needed for compute_veps_missing_prs)
     project_board_items = index_project_board_items(version=release_version)
@@ -1954,9 +2555,10 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
         "enhancements_readme": index_enhancements_readme(),
         "issues_index": index_enhancements_issues(days_back=days_back),
         "prs_index": prs_index,
+        "enhancements_prs": enhancements_prs,
         "vep_files_index": index_vep_files(),
-        # Project board items with all field metadata
-        "project_board_items": project_board_items,
+        # Board data with impl_prs (source-of-truth for targeted VEPs)
+        "board_veps": project_board_items,
         # Pre-computed VEP-to-PR mappings
         "vep_to_pr_mappings": vep_to_pr_mappings,
         # PRs with approved-vep label
@@ -1974,15 +2576,16 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
     readme_available = "yes" if indexed_context["enhancements_readme"] else "no"
     issues_count = len(indexed_context["issues_index"])
     prs_count = len(indexed_context["prs_index"])
+    enhancements_prs_count = len(indexed_context["enhancements_prs"])
     vep_files_count = len(indexed_context["vep_files_index"])
-    board_items_count = len(indexed_context["project_board_items"])
+    board_items_count = len(indexed_context["board_veps"])
     vep_pr_mappings_count = len(indexed_context["vep_to_pr_mappings"])
     approved_vep_prs_count = len(indexed_context["approved_vep_prs"])
     veps_missing_prs_count = len(indexed_context["veps_missing_prs"])
     phase = indexed_context["release_phase"]
     deadlines = indexed_context["release_deadlines"]
 
-    log(f"Indexed context created: release={release}, readme={readme_available}, issues={issues_count}, prs={prs_count}, vep_files={vep_files_count}, phase={phase}, deadlines={deadlines}", node="indexer")
+    log(f"Indexed context created: release={release}, readme={readme_available}, issues={issues_count}, prs={prs_count}, enhancements_prs={enhancements_prs_count}, vep_files={vep_files_count}, phase={phase}, deadlines={deadlines}", node="indexer")
     log(f"  - Project board items: {board_items_count}, VEP-to-PR mappings: {vep_pr_mappings_count}, approved-vep PRs: {approved_vep_prs_count}, VEPs missing PRs: {veps_missing_prs_count}", node="indexer")
 
     # Diagnostic: log issues excluded as non-VEP related

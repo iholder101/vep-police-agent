@@ -7,6 +7,8 @@ from pydantic import BaseModel
 from state import VEPState
 from services.utils import log
 from services.llm_helper import invoke_llm_with_tools, NoToolsCalledException
+from services.indexer import create_indexed_context
+from nodes.alert_formatting import build_vep_summary_table, format_pr_links_plain
 
 
 class UpdateSheetsResponse(BaseModel):
@@ -106,7 +108,7 @@ REQUIREMENTS:
 2. Column A = "VEP ID" containing tracking_issue_id (GitHub issue number)
 3. Row count (excluding header) must equal VEP count
 
-COLUMNS: VEP ID, Name, Title, Owner, SIG, Status, Target Release, Days Inactive, Milestone Status
+COLUMNS: VEP ID, Name, Title, Owner, SIG, Status, Target Release, Proposal PRs, Impl PRs, Urgency, Merge Probability, Sentiment, Status Comment
 
 WORKFLOW:
 1. Call update_cells with spreadsheet_id, range="Sheet1!A1", and values as 2D array
@@ -114,9 +116,23 @@ WORKFLOW:
 
 Return: table_schema, sheet_id, rows_updated, rows_added."""
     
-    # Prepare simplified VEP data for the sheet (essential fields + analysis from analyze_combined)
+    # Get indexed context for rich VEP summary data
+    indexed_context = create_indexed_context(cache_max_age_minutes=60)
+    table_rows = build_vep_summary_table(veps, indexed_context)
+
+    # Build lookup for table row data
+    table_data_by_id = {row["vep_number"]: row for row in table_rows}
+
+    # Prepare simplified VEP data for the sheet (essential fields + analysis + rich summary)
     simplified_veps = []
     for vep in veps:
+        table_row = table_data_by_id.get(vep.tracking_issue_id, {})
+
+        # Get risk assessment data
+        risk_assessment = {}
+        if hasattr(vep, 'analysis') and vep.analysis:
+            risk_assessment = vep.analysis.get("risk_assessment", {})
+
         simplified_veps.append({
             "tracking_issue_id": vep.tracking_issue_id,
             "name": vep.name,
@@ -126,6 +142,14 @@ Return: table_schema, sheet_id, rows_updated, rows_added."""
             "status": vep.status,
             "target_release": vep.target_release,
             "last_updated": str(vep.last_updated),
+            # Rich summary data
+            "proposal_prs": format_pr_links_plain(table_row.get("proposal_prs", [])),
+            "impl_prs": format_pr_links_plain(table_row.get("impl_prs", [])),
+            "urgency": table_row.get("urgency", "UNKNOWN"),
+            "merge_probability": risk_assessment.get("merge_probability", "N/A"),
+            "sentiment": risk_assessment.get("reviewer_sentiment", "N/A"),
+            "status_comment": table_row.get("status_comment", "No assessment"),
+            # Legacy fields for backward compatibility
             "compliance": {
                 "template_complete": vep.compliance.template_complete,
                 "all_sigs_signed_off": vep.compliance.all_sigs_signed_off,
@@ -161,8 +185,8 @@ update_cells(
   spreadsheet_id="{sheet_id}",
   range="VEP Information!A1",
   values=[
-    ["VEP ID", "Name", "Title", "Owner", "SIG", "Status", "Target Release", "Days Inactive", "Milestone"],
-    [181, "vep-0181", "Example Title", "owner1", "compute", "Tracked", "v1.5", 5, "Complete"],
+    ["VEP ID", "Name", "Title", "Owner", "SIG", "Status", "Target Release", "Proposal PRs", "Impl PRs", "Urgency", "Merge Probability", "Sentiment", "Status Comment"],
+    [181, "vep-0181", "Example Title", "owner1", "compute", "Tracked", "v1.5", "#123", "#456, #457", "GREEN", 85, "positive", "Likely to merge (85%) - positive"],
     ...
   ]
 )"""
@@ -196,12 +220,13 @@ update_cells(
             error_msg = f"Google Sheets update failed: {', '.join(result.errors) if hasattr(result, 'errors') and result.errors else 'Unknown error'}"
             log(error_msg, node="update_sheets", level="WARNING")
             
-            # Check if it's a permission/API/quota error - don't retry indefinitely
+            # Check if it's a permanent error - don't retry indefinitely
             error_text = error_msg.lower()
-            if ("insufficient permission" in error_text or "permission denied" in error_text or 
+            if ("insufficient permission" in error_text or "permission denied" in error_text or
                 "api has not been used" in error_text or "api.*disabled" in error_text or
                 "enable it by visiting" in error_text or "quota has been exceeded" in error_text or
-                "storage quota" in error_text):
+                "storage quota" in error_text or "unknown error" in error_text or
+                "no mcp tools" in error_text or "connection closed" in error_text):
                 log("API/permission/quota error detected - clearing sheets_need_update flag to prevent infinite retries. Please check Google Cloud APIs, permissions, and Drive storage quota.", node="update_sheets", level="WARNING")
                 return {
                     "last_check_times": last_check_times,

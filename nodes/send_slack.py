@@ -6,6 +6,11 @@ from datetime import datetime
 from typing import Any, List, Dict
 from state import VEPState
 from services.utils import log
+from services.indexer import create_indexed_context
+from nodes.alert_formatting import (
+    build_slack_table,
+    get_phase_context_summary,
+)
 
 
 # Severity color mapping for Slack attachments
@@ -17,11 +22,23 @@ SEVERITY_COLORS = {
 }
 
 
-def _format_slack_message(alerts: List[Dict[str, Any]], alert_summary_text: str) -> Dict[str, Any]:
+def _format_slack_message(alerts: List[Dict[str, Any]], alert_summary_text: str, table_rows: List[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Format alerts as a Slack Block Kit message with color-coded attachments.
+
+    Args:
+        alerts: List of alert dicts
+        alert_summary_text: Summary text from alert_summary node
+        table_rows: Pre-built VEP summary table rows from analyze_combined
 
     Returns a Slack message payload with attachments for severity-based coloring.
     """
+    # Get phase context
+    indexed_context = create_indexed_context(cache_max_age_minutes=60)
+    phase_ctx = get_phase_context_summary(indexed_context)
+    if table_rows is None:
+        table_rows = []
+    high_risk_count = sum(1 for row in table_rows if row["urgency"] == "RED")
+
     # Group alerts by severity to determine the overall color
     severity_priority = {"critical": 0, "high": 1, "medium": 2, "low": 3}
     highest_severity = "low"
@@ -61,50 +78,72 @@ def _format_slack_message(alerts: List[Dict[str, Any]], alert_summary_text: str)
 
     alert_text = "\n".join(alert_lines)
 
-    # Build the message with attachments for color
-    message = {
-        "attachments": [{
-            "color": SEVERITY_COLORS.get(highest_severity, "#388e3c"),
-            "blocks": [
-                {
-                    "type": "header",
-                    "text": {
-                        "type": "plain_text",
-                        "text": "VEP Governance Alerts",
-                        "emoji": True
-                    }
-                },
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": f"*{len(alerts)} alert(s)* generated at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-                    }
-                },
-                {
-                    "type": "divider"
-                },
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": alert_text[:3000]  # Slack has a 3000 char limit per text block
-                    }
-                }
-            ]
-        }]
-    }
+    # Build phase context text
+    phase_text = f"*{phase_ctx['release']} {phase_ctx['phase_display']}*"
+    if phase_ctx['deadline_text']:
+        phase_text += f" | {phase_ctx['deadline_text']}"
+    if high_risk_count > 0:
+        phase_text += f" | :red_circle: {high_risk_count} VEPs at HIGH RISK"
 
-    # Add summary if provided
-    if alert_summary_text:
-        summary_block = {
+    # Build the message with attachments for color
+    blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": "VEP Governance Alerts",
+                "emoji": True
+            }
+        },
+        {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"*Summary:*\n{alert_summary_text[:2000]}"  # Truncate if too long
+                "text": phase_text
             }
+        },
+        {
+            "type": "divider"
+        },
+    ]
+
+    # Add VEP Summary Table
+    if table_rows:
+        vep_table_text = build_slack_table(table_rows)
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*VEP Status Summary ({len(table_rows)} VEPs):*\n\n{vep_table_text[:2900]}"  # Slack char limit
+            }
+        })
+        blocks.append({"type": "divider"})
+
+    # Add summary if provided
+    if alert_summary_text:
+        blocks.append({
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*Summary:*\n{alert_summary_text[:2000]}"
+            }
+        })
+
+    # Add detailed alerts
+    blocks.append({
+        "type": "section",
+        "text": {
+            "type": "mrkdwn",
+            "text": f"*Detailed Alerts ({len(alerts)} alert(s)):*\n{alert_text[:2900]}"
         }
-        message["attachments"][0]["blocks"].insert(3, summary_block)
+    })
+
+    message = {
+        "attachments": [{
+            "color": SEVERITY_COLORS.get(highest_severity, "#388e3c"),
+            "blocks": blocks
+        }]
+    }
 
     return message
 
@@ -194,8 +233,15 @@ def send_slack_node(state: VEPState) -> Any:
             "last_check_times": last_check_times,
         }
 
+    # Get pre-built table from analyze_combined (avoids redundant computation)
+    table_rows = state.get("vep_summary_table", [])
+    high_risk_count = sum(1 for row in table_rows if row["urgency"] == "RED")
+
+    # Log what we're sending
+    log(f"Slack will include VEP summary table: {len(table_rows)} VEPs, {high_risk_count} at HIGH RISK", node="send_slack")
+
     # Format and send Slack message
-    message = _format_slack_message(alerts, alert_summary_text)
+    message = _format_slack_message(alerts, alert_summary_text, table_rows)
 
     log("Sending Slack message via webhook...", node="send_slack", level="INFO")
     if _send_via_webhook(webhook_url, message):

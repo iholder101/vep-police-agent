@@ -3,6 +3,12 @@
 from typing import Dict, List
 from .util import FAST_MODEL, HEAVY_MODEL
 
+# Default release version (used when release cannot be auto-detected)
+DEFAULT_RELEASE: str = "v1.8"
+
+# Known SIGs in the kubevirt project
+KNOWN_SIGS: List[str] = ["compute", "network", "storage"]
+
 # Project board numbers by release version
 # Each kubevirt release has its own GitHub Project V2 board
 VERSION_PROJECT_BOARDS: Dict[str, int] = {
