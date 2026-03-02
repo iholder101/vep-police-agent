@@ -3,29 +3,15 @@
 import os
 from typing import Dict, List, Optional
 
-# Gemini Model constants
-GEMINI_3_PRO_PREVIEW = "gemini-3-pro-preview"
-GEMINI_3_FLASH_PREVIEW = "gemini-3-flash-preview"
-GEMINI_2_5_FLASH = "gemini-2.5-flash"
-GEMINI_2_5_FLASH_LITE = "gemini-2.5-flash-lite"
-GEMINI_2_5_PRO = "gemini-2.5-pro"
-GEMINI_2_0_FLASH = "gemini-2.0-flash"
-GEMINI_2_0_FLASH_LITE = "gemini-2.0-flash-lite"
-
 # Model tier constants for node configuration
-FAST_MODEL = GEMINI_3_FLASH_PREVIEW
-HEAVY_MODEL = GEMINI_3_PRO_PREVIEW
+FAST_MODEL = "gemini-3-flash-preview"
+HEAVY_MODEL = "gemini-3.1-pro-preview"
 
-DEFAULT_MODEL = GEMINI_3_FLASH_PREVIEW
+DEFAULT_MODEL = FAST_MODEL
 
 AVAILABLE_MODELS = [
-    GEMINI_3_PRO_PREVIEW,
-    GEMINI_3_FLASH_PREVIEW,
-    GEMINI_2_5_FLASH,
-    GEMINI_2_5_FLASH_LITE,
-    GEMINI_2_5_PRO,
-    GEMINI_2_0_FLASH,
-    GEMINI_2_0_FLASH_LITE,
+    FAST_MODEL,
+    HEAVY_MODEL,
 ]
 
 # Global flag for fastest model mode
@@ -47,7 +33,7 @@ def get_model_for_node(node_name: str) -> str:
     """Get the model name for a specific node."""
     from .config import NODE_MODELS
     if _USE_FASTEST_MODEL:
-        return GEMINI_3_FLASH_PREVIEW
+        return FAST_MODEL
     return NODE_MODELS.get(node_name, DEFAULT_MODEL)
 
 
