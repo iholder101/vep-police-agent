@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from services.utils import get_model, log
 from services.mcp_factory import get_mcp_tools_by_name
-from config.config import LLM_MAX_RETRIES, LLM_INITIAL_DELAY, LLM_MAX_TIMEOUT
+from config.config import LLM_MAX_RETRIES, LLM_INITIAL_DELAY, LLM_MAX_TIMEOUT, TOOL_RESULT_MAX_CHARS
 
 T = TypeVar('T', bound=BaseModel)
 
@@ -173,9 +173,24 @@ def invoke_llm_with_tools(
                     tool_result = f"Tool {tool_name} not found"
                     log(f"Tool {tool_name} not found in available tools: {[t.name for t in tools]}", node=operation_type, level="WARNING")
                 
-                # Create tool message
+                # Truncate large tool results to prevent context window exhaustion
+                result_content = str(tool_result)
+                if len(result_content) > TOOL_RESULT_MAX_CHARS:
+                    original_len = len(result_content)
+                    # Cut at last newline before limit to avoid breaking mid-line/mid-JSON
+                    cut_point = result_content.rfind('\n', 0, TOOL_RESULT_MAX_CHARS)
+                    if cut_point <= 0:
+                        cut_point = TOOL_RESULT_MAX_CHARS
+                    result_content = (
+                        result_content[:cut_point]
+                        + f"\n[TRUNCATED: {cut_point} of {original_len} chars shown."
+                        + " Make more specific queries to get the data you need.]"
+                    )
+                    log(f"Truncating {tool_name} result from {original_len} to {cut_point} chars",
+                        node=operation_type, level="WARNING")
+
                 tool_messages.append(ToolMessage(
-                    content=str(tool_result),
+                    content=result_content,
                     tool_call_id=tool_call.get("id", "")
                 ))
             

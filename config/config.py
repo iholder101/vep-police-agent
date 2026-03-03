@@ -52,3 +52,7 @@ FETCH_VEPS_INTERVAL_SECONDS: int = 4 * 60 * 60  # 4 hours
 LLM_MAX_RETRIES: int = 3
 LLM_INITIAL_DELAY: int = 2  # seconds
 LLM_MAX_TIMEOUT: int = 180  # seconds - abort if exceeded
+
+# Tool result truncation - prevents context window exhaustion from large GitHub API responses
+# accumulating across iterations in the tool-calling loop
+TOOL_RESULT_MAX_CHARS: int = 8000
