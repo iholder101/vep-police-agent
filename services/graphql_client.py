@@ -201,13 +201,20 @@ def find_project_by_title(
             log(f"GraphQL errors while searching projects: {result['errors']}", node="graphql", level="ERROR")
             return None
 
-        data = (
-            result.get("data", {})
-            .get("organization", {})
-            .get("projectsV2", {})
-        )
+        # Use `or {}` instead of default arg — .get() returns None (not the
+        # default) when the key exists with a null value, which happens when
+        # the GitHub token lacks the 'read:project' scope.
+        org = (result.get("data") or {}).get("organization") or {}
+        data = org.get("projectsV2") or {}
+
+        if not org.get("projectsV2"):
+            log("Cannot read project boards — ensure the GitHub token has 'read:project' scope",
+                node="graphql", level="WARNING")
+            return None
 
         for project in data.get("nodes", []):
+            if not project:
+                continue
             title = project.get("title", "")
             title_lower = title.lower()
 
@@ -364,12 +371,14 @@ def get_project_board_items(
             log(f"GraphQL errors: {result['errors']}", node="graphql", level="ERROR")
             return items
 
-        data = (
-            result.get("data", {})
-            .get("organization", {})
-            .get("projectV2", {})
-            .get("items", {})
-        )
+        org = (result.get("data") or {}).get("organization") or {}
+        project = org.get("projectV2") or {}
+        data = project.get("items") or {}
+
+        if not org.get("projectV2"):
+            log(f"Project board #{project_number} not accessible — ensure the GitHub token "
+                "has 'read:project' scope", node="graphql", level="WARNING")
+            return items
 
         for item in data.get("nodes", []):
             content = item.get("content")
