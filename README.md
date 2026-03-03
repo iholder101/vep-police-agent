@@ -251,6 +251,11 @@ Two-tier approach configured in `config.py`:
 - **Flash** (fast): Fetch nodes (`fetch_veps`, `check_*`).
 - **Pro** (powerful): Analysis nodes (`analyze_combined`, `update_sheets`, `alert_summary`).
 
+Override models via environment variables:
+- `FAST_MODEL` (default: `gemini-3-flash-preview`)
+- `HEAVY_MODEL` (default: `gemini-3.1-pro-preview`)
+- `DEFAULT_MODEL` (default: same as `FAST_MODEL`)
+
 Use `--fastest-model` to force Flash everywhere for testing.
 
 ### Google Sheets
