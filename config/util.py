@@ -3,11 +3,11 @@
 import os
 from typing import Dict, List, Optional
 
-# Model tier constants for node configuration
-FAST_MODEL = "gemini-3-flash-preview"
-HEAVY_MODEL = "gemini-3.1-pro-preview"
+# Model tier constants for node configuration (overridable via env vars)
+FAST_MODEL = os.getenv("FAST_MODEL", "gemini-3-flash-preview")
+HEAVY_MODEL = os.getenv("HEAVY_MODEL", "gemini-3.1-pro-preview")
 
-DEFAULT_MODEL = FAST_MODEL
+DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", FAST_MODEL)
 
 AVAILABLE_MODELS = [
     FAST_MODEL,
