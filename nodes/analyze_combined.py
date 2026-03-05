@@ -321,6 +321,33 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
 
             batch_updated = result.updated_veps
 
+            # Carry over fields from original VEPs that the LLM can't produce.
+            # The LLM returns fresh VEPInfo objects with analysis filled in,
+            # but without implementation_prs, enhancement_prs, board_fields, etc.
+            originals_by_id = {vep.tracking_issue_id: vep for vep in batch_veps}
+            for updated_vep in batch_updated:
+                original = originals_by_id.get(updated_vep.tracking_issue_id)
+                if not original:
+                    continue
+                if not updated_vep.implementation_prs and original.implementation_prs:
+                    updated_vep.implementation_prs = original.implementation_prs
+                if not updated_vep.enhancement_prs and original.enhancement_prs:
+                    updated_vep.enhancement_prs = original.enhancement_prs
+                if not updated_vep.board_fields and original.board_fields:
+                    updated_vep.board_fields = original.board_fields
+                if not updated_vep.context.deadline and original.context.deadline:
+                    updated_vep.context.deadline = original.context.deadline
+                if not updated_vep.context.activity and original.context.activity:
+                    updated_vep.context.activity = original.context.activity
+                if not updated_vep.context.compliance and original.context.compliance:
+                    updated_vep.context.compliance = original.context.compliance
+                if not updated_vep.context.exceptions and original.context.exceptions:
+                    updated_vep.context.exceptions = original.context.exceptions
+                if not updated_vep.context.phase_risks and original.context.phase_risks:
+                    updated_vep.context.phase_risks = original.context.phase_risks
+                if updated_vep.tracking_issue is None and original.tracking_issue is not None:
+                    updated_vep.tracking_issue = original.tracking_issue
+
             # Preserve VEPs that LLM might have dropped within this batch
             if len(batch_updated) < len(batch_veps):
                 log(f"Batch {batch_num}: LLM returned {len(batch_updated)}/{len(batch_veps)} VEPs, preserving dropped", node="analyze_combined", level="WARNING")
