@@ -72,7 +72,7 @@ def load_state_cache() -> Optional[Dict[str, Any]]:
         return None
 
 
-def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False, skip_monitoring: bool = False, skip_sheets: bool = False, skip_send_email: bool = False, skip_send_slack: bool = False, mock_veps: bool = False, mock_analyzed_combined: bool = False, mock_alert_summary: bool = False, immediate_start: bool = False, use_state_cache: bool = False):
+def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False, skip_monitoring: bool = False, skip_sheets: bool = False, skip_update_board: bool = False, skip_send_email: bool = False, skip_send_slack: bool = False, mock_veps: bool = False, mock_analyzed_combined: bool = False, mock_alert_summary: bool = False, immediate_start: bool = False, use_state_cache: bool = False):
     """Create initial state for the agent."""
     sheet_config = {
         "sheet_name": "VEP Status",  # Optional: name for the sheet/tab
@@ -95,6 +95,7 @@ def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int =
         "next_tasks": [],
         "alerts": [],
         "alert_summary_text": None,
+        "vep_summary_table": [],
         "general_insights": [],
         "sheets_need_update": False,
         "errors": [],
@@ -105,6 +106,7 @@ def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int =
         "one_cycle": one_cycle,  # Flag to exit after one cycle
         "skip_monitoring": skip_monitoring,  # Flag to skip monitoring checks
         "skip_sheets": skip_sheets,  # Flag to skip sheet updates
+        "skip_update_board": skip_update_board,  # Flag to skip writing to GitHub project board
         "skip_send_email": skip_send_email,  # Flag to skip sending email alerts
         "skip_send_slack": skip_send_slack,  # Flag to skip sending Slack alerts
         "mock_veps": mock_veps,  # Flag to use mock VEPs instead of fetching from GitHub
@@ -175,6 +177,8 @@ def log_startup_flags(args, index_cache_minutes: int) -> None:
         flags.append("  --skip-monitoring: enabled")
     if args.skip_sheets:
         flags.append("  --skip-sheets: enabled")
+    if args.skip_update_board:
+        flags.append("  --skip-update-board: enabled")
     if args.skip_send_email:
         flags.append("  --skip-send-email: enabled")
     if args.skip_send_slack:
@@ -206,6 +210,8 @@ def log_startup_flags(args, index_cache_minutes: int) -> None:
         log("Skip-monitoring mode: monitoring checks (deadlines, activity, compliance, exceptions) will be skipped", node="main")
     if args.skip_sheets:
         log("Skip-sheets mode: Google Sheets updates will be skipped", node="main")
+    if args.skip_update_board:
+        log("Skip-update-board mode: GitHub project board updates will be skipped", node="main")
     if args.mock_veps:
         log("Mock VEPs mode: will use mock VEPs instead of fetching from GitHub", node="main")
     if args.mock_analyzed_combined:
@@ -290,6 +296,11 @@ def parse_args():
         "--skip-sheets",
         action="store_true",
         help="Skip Google Sheets updates. Useful for debugging email alerts. When combined with --skip-monitoring, focuses on email notification only."
+    )
+    parser.add_argument(
+        "--skip-update-board",
+        action="store_true",
+        help="Skip writing summary data back to the GitHub project board. Useful when testing without project write scope."
     )
     parser.add_argument(
         "--skip-send-email",
@@ -470,7 +481,7 @@ def main():
     log("Graph created successfully", node="main")
     
     # Initialize state
-    initial_state = get_initial_state(sheet_id=args.sheet_id, index_cache_minutes=index_cache_minutes, one_cycle=args.one_cycle, skip_monitoring=args.skip_monitoring, skip_sheets=args.skip_sheets, skip_send_email=args.skip_send_email, skip_send_slack=args.skip_send_slack, mock_veps=args.mock_veps, mock_analyzed_combined=args.mock_analyzed_combined, mock_alert_summary=args.mock_alert_summary, immediate_start=args.immediate_start, use_state_cache=args.use_state_cache)
+    initial_state = get_initial_state(sheet_id=args.sheet_id, index_cache_minutes=index_cache_minutes, one_cycle=args.one_cycle, skip_monitoring=args.skip_monitoring, skip_sheets=args.skip_sheets, skip_update_board=args.skip_update_board, skip_send_email=args.skip_send_email, skip_send_slack=args.skip_send_slack, mock_veps=args.mock_veps, mock_analyzed_combined=args.mock_analyzed_combined, mock_alert_summary=args.mock_alert_summary, immediate_start=args.immediate_start, use_state_cache=args.use_state_cache)
 
     # Load state cache if requested
     if args.use_state_cache:

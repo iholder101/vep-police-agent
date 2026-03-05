@@ -22,6 +22,7 @@ from nodes.alert_summary import alert_summary_node
 from nodes.send_notifications import send_notifications_node
 from nodes.send_email import send_email_node
 from nodes.send_slack import send_slack_node
+from nodes.update_project_board import update_project_board_node
 from nodes.wait import wait_node
 
 def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
@@ -63,6 +64,7 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     workflow.add_node("send_notifications", send_notifications_node)
     workflow.add_node("send_email", send_email_node)
     workflow.add_node("send_slack", send_slack_node)
+    workflow.add_node("update_project_board", update_project_board_node)
     workflow.add_node("wait", wait_node)
     
     # Set entry point
@@ -78,6 +80,7 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
             "fetch_veps": "fetch_veps",
             "run_monitoring": "run_monitoring",
             "update_sheets": "update_sheets",
+            "update_project_board": "update_project_board",
             "alert_summary": "alert_summary",
             "wait": "wait",
         }
@@ -120,8 +123,9 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     workflow.add_edge("send_notifications", "send_email")
     workflow.add_edge("send_notifications", "send_slack")
 
-    # Both update_sheets, send_email, and send_slack go back to scheduler
+    # update_sheets, update_project_board, send_email, and send_slack go back to scheduler
     workflow.add_edge("update_sheets", "scheduler")
+    workflow.add_edge("update_project_board", "scheduler")
     workflow.add_edge("send_email", "scheduler")
     workflow.add_edge("send_slack", "scheduler")
     
@@ -134,13 +138,14 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     return workflow.compile()
 
 
-def route_scheduler_operations(state: VEPState) -> Literal["fetch_veps", "run_monitoring", "update_sheets", "alert_summary", "wait"]:
+def route_scheduler_operations(state: VEPState) -> Literal["fetch_veps", "run_monitoring", "update_sheets", "update_project_board", "alert_summary", "wait"]:
     """Route based on scheduler's next_tasks.
     
     Routes to the first task in the queue. The scheduler can queue:
     - "fetch_veps" (discovers/updates VEPs from GitHub)
     - "run_monitoring" (triggers all checks in parallel) - only if not skip_monitoring
     - "update_sheets" (updates Google Sheets)
+    - "update_project_board" (writes summary data to GitHub project board)
     - "alert_summary" (checks if alerts need to be sent)
     - "wait" (wait until next round hour)
     
@@ -174,7 +179,7 @@ def route_scheduler_operations(state: VEPState) -> Literal["fetch_veps", "run_mo
             return "wait"
     
     # Validate it's a known task, otherwise wait
-    valid_tasks = {"fetch_veps", "run_monitoring", "update_sheets", "alert_summary", "wait"}
+    valid_tasks = {"fetch_veps", "run_monitoring", "update_sheets", "update_project_board", "alert_summary", "wait"}
     return task if task in valid_tasks else "wait"
 
 

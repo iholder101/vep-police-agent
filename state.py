@@ -213,6 +213,7 @@ class VEPState(TypedDict):
     alerts: Annotated[List[Dict[str, Any]], concat_list_reducer]  # Alerts queued for notification (deadline warnings, compliance issues, etc.) - concatenated from parallel nodes
     alert_summary_text: Optional[str]  # Human-readable summary text for email alerts
     general_insights: Annotated[List[str], concat_list_reducer]  # General insights and patterns across all VEPs (overall release health, trends, cross-VEP patterns) - each insight as a separate string
+    vep_summary_table: List[Dict[str, Any]]  # Per-VEP summary table (urgency, status, PR links) built by analyze_combined
     detected_changes: Optional[Dict[str, Any]]  # Changes detected vs previous run (from detect_changes node)
     sheets_need_update: bool  # Flag indicating Google Sheets needs syncing
     errors: List[Dict[str, Any]]  # Errors encountered during processing
@@ -228,6 +229,7 @@ class VEPState(TypedDict):
     _exit_after_sheets: Optional[bool]  # Internal flag to signal exit after sheets update
     skip_monitoring: bool  # Flag to skip monitoring checks for faster debugging
     skip_sheets: bool  # Flag to skip sheet updates for faster debugging
+    skip_update_board: bool  # Flag to skip writing to GitHub project board
     skip_send_email: bool  # Flag to skip sending email alerts
     skip_send_slack: bool  # Flag to skip sending Slack alerts
     mock_veps: bool  # Flag to use mock VEPs instead of fetching from GitHub

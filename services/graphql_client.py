@@ -1,7 +1,8 @@
-"""GitHub GraphQL client for Project V2 board queries.
+"""GitHub GraphQL client for Project V2 board queries and mutations.
 
 Provides functions to query kubevirt GitHub Project V2 boards and extract
 VEP metadata including status, priority, dates, and other custom fields.
+Also supports writing field values back to the board via GraphQL mutations.
 
 Inspired by vladikr/vepMonitoring project.
 """
@@ -158,6 +159,46 @@ query($orgName: String!, $projectNumber: Int!, $cursor: String) {
   }
 }
 """
+
+# GraphQL query to fetch project node ID and all field definitions
+_PROJECT_FIELDS_QUERY = """
+query($orgName: String!, $projectNumber: Int!) {
+  organization(login: $orgName) {
+    projectV2(number: $projectNumber) {
+      id
+      fields(first: 50) {
+        nodes {
+          ... on ProjectV2Field {
+            id
+            name
+            dataType
+          }
+          ... on ProjectV2SingleSelectField {
+            id
+            name
+            dataType
+            options { id name }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+# GraphQL mutation to update a single field value on a project item
+_UPDATE_FIELD_MUTATION = """
+mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: ProjectV2FieldValue!) {
+  updateProjectV2ItemFieldValue(
+    input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: $value }
+  ) {
+    projectV2Item { id }
+  }
+}
+"""
+
+# Module-level cache for field metadata (keyed by project_number)
+_field_metadata_cache: Dict[int, Dict[str, Any]] = {}
 
 
 def find_project_by_title(
@@ -403,6 +444,7 @@ def get_project_board_items(
                     fields[field_name] = field_value
 
             items.append({
+                "item_id": item.get("id"),
                 "number": content.get("number"),
                 "title": content.get("title"),
                 "url": content.get("url"),
@@ -448,6 +490,7 @@ def get_veps_from_project_board(
             issue_number = item.get("number")
             if issue_number:
                 veps[issue_number] = {
+                    "item_id": item.get("item_id"),
                     "title": item.get("title"),
                     "url": item.get("url"),
                     "state": item.get("state"),
@@ -457,3 +500,155 @@ def get_veps_from_project_board(
 
     log(f"Found {len(veps)} VEPs on project board #{project_number}", node="graphql")
     return veps
+
+
+def get_project_field_metadata(
+    project_number: int,
+    org_name: str = "kubevirt",
+) -> Dict[str, Any]:
+    """Fetch project node ID and all field definitions from a Project V2 board.
+
+    Results are cached per project_number for the lifetime of the process
+    (field definitions don't change within a single run).
+
+    Args:
+        project_number: GitHub Project V2 number (e.g., 19)
+        org_name: GitHub organization name (default: "kubevirt")
+
+    Returns:
+        Dict with:
+        - project_id: The project node ID (e.g., "PVT_...")
+        - fields: Dict mapping field_name -> {"id": "PVTF_...", "type": "TEXT", ...}
+        Empty dict on error.
+    """
+    if project_number in _field_metadata_cache:
+        return _field_metadata_cache[project_number]
+
+    log(f"Fetching field metadata for project board #{project_number}", node="graphql")
+
+    variables = {
+        "orgName": org_name,
+        "projectNumber": project_number,
+    }
+
+    try:
+        result = execute_graphql_query(_PROJECT_FIELDS_QUERY, variables)
+    except Exception as e:
+        log(f"GraphQL field metadata query failed: {e}", node="graphql", level="ERROR")
+        return {}
+
+    if "errors" in result:
+        log(f"GraphQL errors fetching field metadata: {result['errors']}", node="graphql", level="ERROR")
+        return {}
+
+    org = (result.get("data") or {}).get("organization") or {}
+    project = org.get("projectV2") or {}
+
+    if not project:
+        log(f"Project board #{project_number} not accessible for field metadata", node="graphql", level="WARNING")
+        return {}
+
+    project_id = project.get("id")
+    fields_data = project.get("fields", {}).get("nodes", [])
+
+    fields = {}
+    for field in fields_data:
+        if not field:
+            continue
+        name = field.get("name")
+        field_id = field.get("id")
+        if name and field_id:
+            field_info = {
+                "id": field_id,
+                "type": field.get("dataType", "UNKNOWN"),
+            }
+            # Include options for single-select fields
+            if "options" in field:
+                field_info["options"] = field["options"]
+            fields[name] = field_info
+
+    metadata = {
+        "project_id": project_id,
+        "fields": fields,
+    }
+
+    _field_metadata_cache[project_number] = metadata
+    log(f"Cached field metadata for project #{project_number}: {len(fields)} fields (project_id={project_id})", node="graphql")
+    return metadata
+
+
+def update_project_item_field(
+    project_id: str,
+    item_id: str,
+    field_id: str,
+    value: Dict[str, Any],
+) -> bool:
+    """Update a single field value on a project board item.
+
+    Args:
+        project_id: Project node ID (e.g., "PVT_...")
+        item_id: Item node ID (e.g., "PVTI_...")
+        field_id: Field node ID (e.g., "PVTF_...")
+        value: Field value dict, e.g. {"text": "GREEN"} for text fields,
+               {"singleSelectOptionId": "..."} for single-select fields
+
+    Returns:
+        True on success, False on error
+    """
+    variables = {
+        "projectId": project_id,
+        "itemId": item_id,
+        "fieldId": field_id,
+        "value": value,
+    }
+
+    try:
+        result = execute_graphql_query(_UPDATE_FIELD_MUTATION, variables)
+    except Exception as e:
+        log(f"GraphQL mutation failed for field {field_id}: {e}", node="graphql", level="ERROR")
+        return False
+
+    if "errors" in result:
+        log(f"GraphQL mutation errors for field {field_id}: {result['errors']}", node="graphql", level="ERROR")
+        return False
+
+    return True
+
+
+def update_project_item_fields(
+    project_id: str,
+    item_id: str,
+    field_updates: Dict[str, str],
+    field_metadata: Dict[str, Any],
+) -> int:
+    """Update multiple fields on a project board item.
+
+    Looks up field IDs from metadata and calls update_project_item_field()
+    for each field. All target fields are expected to be TEXT type.
+
+    Args:
+        project_id: Project node ID (e.g., "PVT_...")
+        item_id: Item node ID (e.g., "PVTI_...")
+        field_updates: Dict mapping field_name -> text_value
+                       e.g. {"Agent Urgency": "GREEN", "Agent Comment": "On track"}
+        field_metadata: Field metadata from get_project_field_metadata(),
+                        specifically the "fields" sub-dict
+
+    Returns:
+        Count of successfully updated fields
+    """
+    success_count = 0
+
+    for field_name, text_value in field_updates.items():
+        field_info = field_metadata.get(field_name)
+        if not field_info:
+            log(f"Field '{field_name}' not found in project metadata, skipping", node="graphql", level="WARNING")
+            continue
+
+        field_id = field_info["id"]
+        value = {"text": text_value}
+
+        if update_project_item_field(project_id, item_id, field_id, value):
+            success_count += 1
+
+    return success_count
