@@ -7,6 +7,7 @@ Provides utilities to build per-VEP summary tables with:
 - Status comments from LLM risk assessment
 """
 
+import re
 from typing import List, Dict, Any, Tuple
 from services.indexer import create_indexed_context
 from services.utils import log
@@ -84,7 +85,6 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
     for vep in veps:
         # Get proposal PRs for this VEP from multiple sources
         proposal_pr_numbers = set()
-        import re
 
         # Extract VEP number from VEP name (e.g., "vep-0016" -> 16)
         vep_number = None
@@ -183,12 +183,20 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
                     })
 
         # Source 3: Match from vep_to_pr_mappings (PRs with "vep-62" etc. in title/body)
+        # Skip PRs whose title clearly indicates a different VEP (body-only mentions
+        # are often references/dependencies, not implementations).
         vep_to_pr_mappings = indexed_context.get("vep_to_pr_mappings", {})
         vep_key = str(vep.tracking_issue_id)
+        title_vep_pattern = re.compile(r'vep[-\s#]?0*(\d+)', re.IGNORECASE)
         for pr in vep_to_pr_mappings.get(vep_key, []):
             pr_num = pr.get("number")
             pr_url = pr.get("url", f"https://github.com/kubevirt/kubevirt/pull/{pr_num}")
             if "enhancements" in pr_url:
+                continue
+            # Skip if PR title references a different VEP number
+            pr_title = pr.get("title", "")
+            title_vep_matches = title_vep_pattern.findall(pr_title)
+            if title_vep_matches and vep_key not in title_vep_matches:
                 continue
             if pr_num and pr_num not in impl_pr_numbers:
                 impl_pr_numbers.add(pr_num)
