@@ -346,12 +346,21 @@ def fetch_veps_node(state: VEPState) -> Any:
                         vep_info.implementation_prs.append(pr)
 
             # Also add implementation PRs from vep_to_pr_mappings (maps PRs by "vep-62" patterns in title/body)
+            # Note: vep_to_pr_mappings matches VEP mentions in both title AND body.
+            # Body mentions can be false positives (e.g., "depends on VEP-104" in a VEP-141 PR).
+            # Skip PRs whose title clearly indicates a DIFFERENT VEP.
             vep_to_pr_mappings = indexed_context.get("vep_to_pr_mappings", {})
             vep_key = str(issue_number)
+            title_vep_pattern = re.compile(r'vep[-\s#]?0*(\d+)', re.IGNORECASE)
             for pr_data in vep_to_pr_mappings.get(vep_key, []):
                 pr_num = pr_data.get("number")
                 pr_url = pr_data.get("url", "")
                 if "enhancements" in pr_url:
+                    continue
+                # Skip if PR title references a different VEP number
+                pr_title = pr_data.get("title", "")
+                title_vep_matches = title_vep_pattern.findall(pr_title)
+                if title_vep_matches and str(issue_number) not in title_vep_matches:
                     continue
                 if pr_num and pr_num not in existing_pr_numbers:
                     existing_pr_numbers.add(pr_num)
