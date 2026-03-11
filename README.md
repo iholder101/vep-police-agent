@@ -29,22 +29,25 @@ graph TD
     Start([Start]) --> Scheduler[scheduler]
 
     Scheduler -->|Periodic| FetchVEPs[fetch_veps]
-    Scheduler -->|Need analysis| FetchVEPs
+    Scheduler -->|Need analysis| RunMonitoring[run_monitoring]
     Scheduler -->|Sheets due| UpdateSheets[update_sheets]
+    Scheduler -->|Board due| UpdateBoard[update_project_board]
     Scheduler -->|Alerts due| AlertSummary[alert_summary]
     Scheduler -->|No tasks| Wait[wait]
 
-    FetchVEPs --> RunMonitoring[run_monitoring]
+    FetchVEPs --> Scheduler
 
     RunMonitoring --> CheckDeadlines[check_deadlines]
     RunMonitoring --> CheckActivity[check_activity]
     RunMonitoring --> CheckCompliance[check_compliance]
     RunMonitoring --> CheckExceptions[check_exceptions]
+    RunMonitoring --> CheckPhaseRisks[check_phase_risks]
 
     CheckDeadlines --> MergeUpdates[merge_vep_updates]
     CheckActivity --> MergeUpdates
     CheckCompliance --> MergeUpdates
     CheckExceptions --> MergeUpdates
+    CheckPhaseRisks --> MergeUpdates
 
     MergeUpdates --> AnalyzeCombined[analyze_combined]
     AnalyzeCombined --> DetectChanges[detect_changes]
@@ -58,6 +61,7 @@ graph TD
     SendNotifications --> SendSlack[send_slack]
 
     UpdateSheets --> Scheduler
+    UpdateBoard --> Scheduler
     SendEmail --> Scheduler
     SendSlack --> Scheduler
     Wait --> Scheduler
@@ -71,11 +75,13 @@ graph TD
     style DetectChanges fill:#8BC34A,stroke:#689F38,stroke-width:2px,color:#fff
     style SaveStateCache fill:#673AB7,stroke:#512DA8,stroke-width:2px,color:#fff
     style UpdateSheets fill:#F44336,stroke:#D32F2F,stroke-width:2px,color:#fff
+    style UpdateBoard fill:#F44336,stroke:#D32F2F,stroke-width:2px,color:#fff
     style FetchVEPs fill:#00BCD4,stroke:#0097A7,stroke-width:2px,color:#fff
     style CheckDeadlines fill:#795548,stroke:#5D4037,stroke-width:2px,color:#fff
     style CheckActivity fill:#607D8B,stroke:#455A64,stroke-width:2px,color:#fff
     style CheckCompliance fill:#9E9E9E,stroke:#616161,stroke-width:2px,color:#fff
     style CheckExceptions fill:#FFC107,stroke:#F57C00,stroke-width:2px,color:#000
+    style CheckPhaseRisks fill:#795548,stroke:#5D4037,stroke-width:2px,color:#fff
     style AlertSummary fill:#E91E63,stroke:#C2185B,stroke-width:2px,color:#fff
     style SendNotifications fill:#FF5722,stroke:#E64A19,stroke-width:2px,color:#fff
     style SendEmail fill:#FF5722,stroke:#E64A19,stroke-width:2px,color:#fff
@@ -85,12 +91,12 @@ graph TD
 
 **Flow Summary:**
 1. `scheduler` coordinates all operations on configurable intervals.
-2. `fetch_veps` discovers VEPs from GitHub, then triggers the analysis pipeline.
-3. Four parallel fetch nodes gather context (deadlines, activity, compliance, exceptions) using Flash model.
+2. `fetch_veps` discovers VEPs from GitHub and returns to scheduler.
+3. Scheduler routes to `run_monitoring`, which fans out to five parallel check nodes (deadlines, activity, compliance, exceptions, phase risks) using Flash model.
 4. `merge_vep_updates` combines context data (deterministic, no LLM).
 5. `analyze_combined` (Pro model) does cross-domain reasoning and generates alerts.
 6. `detect_changes` compares to previous run for accurate change reporting.
-7. `update_sheets` and `alert_summary` run in parallel; alerts fan out to email and Slack.
+7. `update_sheets`, `update_project_board`, and `alert_summary` run on schedule; alerts fan out to email and Slack.
 
 ## Requirements
 

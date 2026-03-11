@@ -133,6 +133,8 @@ def scheduler_node(state: VEPState) -> Any:
             log(f"Using cached state ({len(veps)} VEPs), skipping fetch/analysis pipeline", node="scheduler")
             if not state.get("skip_sheets", False):
                 next_tasks.append("update_sheets")
+            if not state.get("skip_update_board", False):
+                next_tasks.append("update_project_board")
             next_tasks.append("alert_summary")
             # Set last_check_times for fetch_veps so the interval check doesn't
             # immediately schedule fetch_veps on the next scheduler call
@@ -160,9 +162,11 @@ def scheduler_node(state: VEPState) -> Any:
                 next_tasks.append("run_monitoring")
             else:
                 log("First run: Skip-monitoring enabled, skipping analysis pipeline", node="scheduler")
-        # Schedule update_sheets and alert_summary after analysis (or immediately if skip_monitoring)
-        log("First run: Scheduling update_sheets and alert_summary", node="scheduler")
+        # Schedule update_sheets, update_project_board, and alert_summary after analysis
+        log("First run: Scheduling update_sheets, update_project_board, and alert_summary", node="scheduler")
         next_tasks.append("update_sheets")
+        if not state.get("skip_update_board", False):
+            next_tasks.append("update_project_board")
         next_tasks.append("alert_summary")
     else:
         # If immediate_start is enabled, don't check for round hour - use interval-based timing
@@ -215,11 +219,12 @@ def scheduler_node(state: VEPState) -> Any:
         else:
             log("sheets_need_update flag is set, but VEPs need analysis first - will schedule after analyze_combined", node="scheduler")
     
-    # After analyze_combined completes, schedule update_sheets and alert_summary
+    # After analyze_combined completes, schedule update_sheets, update_project_board, and alert_summary
     # But only if they haven't run since analyze_combined completed
     analyze_combined_time = last_check_times.get("analyze_combined")
     if analyze_combined_time:
         update_sheets_time = last_check_times.get("update_sheets")
+        update_board_time = last_check_times.get("update_project_board")
         alert_summary_time = last_check_times.get("alert_summary")
 
         # Schedule update_sheets if it hasn't run since analyze_combined
@@ -227,6 +232,12 @@ def scheduler_node(state: VEPState) -> Any:
             if update_sheets_time is None or update_sheets_time < analyze_combined_time:
                 log("analyze_combined completed, scheduling update_sheets", node="scheduler")
                 next_tasks.append("update_sheets")
+
+        # Schedule update_project_board if it hasn't run since analyze_combined
+        if "update_project_board" not in next_tasks and not state.get("skip_update_board", False):
+            if update_board_time is None or update_board_time < analyze_combined_time:
+                log("analyze_combined completed, scheduling update_project_board", node="scheduler")
+                next_tasks.append("update_project_board")
 
         # Schedule alert_summary if it hasn't run since analyze_combined
         if "alert_summary" not in next_tasks:
