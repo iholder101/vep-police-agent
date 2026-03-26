@@ -294,9 +294,15 @@ def fetch_veps_node(state: VEPState) -> Any:
         )
         if vep_info:
             # Enrich implementation PRs with actual state from kubevirt prs_index
+            # and filter out backport PRs (targeting non-main branches)
+            enriched_impl_prs = []
             for pr in vep_info.implementation_prs:
                 pr_data = kubevirt_prs_by_number.get(pr.number)
                 if pr_data:
+                    # Skip backport PRs (PRs targeting non-main branches like release-1.x)
+                    base_ref = pr_data.get("base_ref")
+                    if base_ref and base_ref not in ("main", "master"):
+                        continue
                     pr.state = "merged" if pr_data.get("merged") else pr_data.get("state", pr.state)
                     pr.title = pr_data.get("title", pr.title)
                     pr.author = pr_data.get("author") or pr.author
@@ -312,6 +318,8 @@ def fetch_veps_node(state: VEPState) -> Any:
                             pr.updated_at = datetime.fromisoformat(pr_data["updated_at"].replace('Z', '+00:00'))
                         except (ValueError, AttributeError):
                             pass
+                enriched_impl_prs.append(pr)
+            vep_info.implementation_prs = enriched_impl_prs
 
             # Also add implementation PRs discovered via vep_issue_number in prs_index
             existing_pr_numbers = {pr.number for pr in vep_info.implementation_prs}
@@ -321,6 +329,10 @@ def fetch_veps_node(state: VEPState) -> Any:
                     pr_url = pr_data.get("html_url") or pr_data.get("url", "")
                     # Skip enhancements PRs (they are proposal PRs, not implementation PRs)
                     if "enhancements" in pr_url:
+                        continue
+                    # Skip backport PRs (PRs targeting non-main branches like release-1.x)
+                    base_ref = pr_data.get("base_ref")
+                    if base_ref and base_ref not in ("main", "master"):
                         continue
                     if pr_num and pr_num not in existing_pr_numbers:
                         existing_pr_numbers.add(pr_num)
@@ -356,6 +368,10 @@ def fetch_veps_node(state: VEPState) -> Any:
                 pr_num = pr_data.get("number")
                 pr_url = pr_data.get("url", "")
                 if "enhancements" in pr_url:
+                    continue
+                # Skip backport PRs (PRs targeting non-main branches like release-1.x)
+                base_ref = pr_data.get("base_ref")
+                if base_ref and base_ref not in ("main", "master"):
                     continue
                 # Skip if PR title references a different VEP number
                 pr_title = pr_data.get("title", "")
