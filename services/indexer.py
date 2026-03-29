@@ -1295,6 +1295,10 @@ def index_kubevirt_prs(days_back: Optional[int] = 365, fetch_reviews: bool = Tru
                         # GitHub list PRs endpoint returns merged_at but not merged boolean
                         is_merged = pr.get("merged", False) or (pr.get("merged_at") is not None)
 
+                        # Extract base branch (target branch for the PR)
+                        base = pr.get("base")
+                        base_ref = base.get("ref") if isinstance(base, dict) else None
+
                         pr_data = {
                             "number": pr.get("number"),
                             "title": title,
@@ -1307,6 +1311,7 @@ def index_kubevirt_prs(days_back: Optional[int] = 365, fetch_reviews: bool = Tru
                             "body_preview": body[:500] if body else "",  # Truncated for VEP pattern matching
                             "vep_issue_number": vep_issue_num,  # Extracted VEP issue number
                             "review_count": None,  # Will be populated below if fetch_reviews=True
+                            "base_ref": base_ref,  # Target branch (e.g. "main", "release-1.8")
                         }
                         prs.append(pr_data)
 
