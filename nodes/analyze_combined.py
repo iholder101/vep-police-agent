@@ -303,10 +303,11 @@ For VEPs with context.phase_risks.has_risks = true:
 9. Store in vep.analysis["risk_assessment"] with recent_progress and days_inactive fields
 
 For VEPs where ALL implementation PRs are merged:
-- Set merge_probability to 90-100%
+- If the VEP proposal is also merged OR we are past the relevant freeze: set merge_probability to 100%
+- Otherwise: set merge_probability to 95%
 - Set reviewer_sentiment to "positive"
 - Set recent_progress to true
-- These VEPs are ON TRACK
+- These VEPs are ON TRACK or FULLY LANDED
 
 REMEMBER: Recency matters. Stale PRs with no activity should generally have lower probability,
 but use your judgment — a well-reviewed PR awaiting a routine merge is different from an abandoned one.
@@ -389,12 +390,16 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
                 all_merged = all_merged and any_confirmed
 
             if all_merged and has_impl_prs:
+                # Determine if VEP is definitively done (proposal merged or past freeze)
+                vep_merged = getattr(vep.compliance, 'vep_merged', False) or vep.context.deadline.get("vep_merged", False)
+                past_freeze = vep.context.deadline.get("ef_passed", False) or vep.context.deadline.get("cf_passed", False)
+                prob = 100 if (vep_merged or past_freeze) else 95
                 vep.analysis["risk_assessment"] = {
-                    "merge_probability": 95,
+                    "merge_probability": prob,
                     "reviewer_sentiment": "positive",
                     "recent_progress": True,
                     "days_inactive": 0,
-                    "reasoning": "All implementation PRs are merged.",
+                    "reasoning": "All implementation PRs are merged." + (" VEP is fully landed." if prob == 100 else ""),
                     "recommend_escalation": False,
                     "escalation_actions": [],
                 }
@@ -444,8 +449,21 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
         ra = vep.analysis["risk_assessment"]
         prob = ra.get("merge_probability", 100)
 
-        # All PRs merged/closed (none open) but LLM gave low probability — correct it
-        if all_merged and prob < 80:
+        # All PRs merged/closed and VEP is definitively done — ensure 100%
+        vep_merged = getattr(vep.compliance, 'vep_merged', False) or vep.context.deadline.get("vep_merged", False)
+        past_freeze = vep.context.deadline.get("ef_passed", False) or vep.context.deadline.get("cf_passed", False)
+        if all_merged and prob < 100 and (vep_merged or past_freeze):
+            old_prob = prob
+            ra["merge_probability"] = 100
+            ra["reviewer_sentiment"] = "positive"
+            ra["recent_progress"] = True
+            ra["recommend_escalation"] = False
+            ra["escalation_actions"] = []
+            ra["reasoning"] = f"All {total_count} implementation PRs are done and VEP is fully landed. (was {old_prob}%)"
+            log(f"Corrected {vep.name}: fully landed (all PRs done, {'VEP merged' if vep_merged else 'past freeze'}), probability {old_prob}% → 100%", node="analyze_combined")
+
+        # All PRs merged/closed (none open) but LLM gave low probability — correct to 95%
+        elif all_merged and prob < 80:
             old_prob = prob
             ra["merge_probability"] = 95
             ra["reviewer_sentiment"] = "positive"
