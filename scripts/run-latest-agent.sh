@@ -57,6 +57,7 @@ podman run --rm --pull=newer \
     --network=host \
     -v "$PROJECT_ROOT:/workspace:ro" \
     -v "$PROJECT_ROOT/cache:/workspace/cache:rw" \
+    -v "$PROJECT_ROOT/output:/workspace/output:rw" \
     -w /workspace \
     quay.io/mabekitzur/vep-police-agent:latest \
     "${CMD_ARGS[@]}"
