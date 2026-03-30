@@ -84,6 +84,24 @@ def _call_with_retry(tool_func, max_retries=3, delay=5, **kwargs):
     return None
 
 
+def _call_list_issues(list_issues_tool):
+    """Call list_issues with retry, handling different MCP tool argument styles."""
+    try:
+        return _call_with_retry(
+            list_issues_tool.func,
+            owner="kubevirt",
+            repo="enhancements",
+            state="all",
+            per_page=100,
+        )
+    except TypeError:
+        return _call_with_retry(
+            list_issues_tool.func,
+            repo="kubevirt/enhancements",
+            state="all",
+        )
+
+
 def _parse_version(version_str: str) -> tuple:
     """Parse version string (e.g., 'v1.11') into tuple for numerical sorting.
     
@@ -415,37 +433,18 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
         tools = get_mcp_tools_by_name("github")
         log(f"Available GitHub tools: {[t.name for t in tools]}", node="indexer", level="DEBUG")
         
-        # Prefer search_issues over list_issues for comprehensive results
-        # search_issues can get all issues matching criteria, while list_issues may be paginated
+        # Find both tools upfront - search_issues preferred, list_issues is fallback
         search_issues_tool = None
         list_issues_tool = None
-        
-        # Look for search_issues first (better for getting all issues)
+
         for tool in tools:
-            if "search_issues" in tool.name.lower():
+            name_lower = tool.name.lower()
+            if not search_issues_tool and "search_issues" in name_lower:
                 search_issues_tool = tool
                 log(f"Found search_issues tool: {tool.name}", node="indexer", level="DEBUG")
-                break
-        
-        # Fallback to list_issues
-        if not search_issues_tool:
-            tool_names_to_try = [
-                "mcp_GitHub_list_issues",
-                "list_issues",
-                "get_issues",
-            ]
-            for tool in tools:
-                if tool.name in tool_names_to_try:
-                    list_issues_tool = tool
-                    log(f"Found list_issues tool: {tool.name}", node="indexer", level="DEBUG")
-                    break
-            if not list_issues_tool:
-                for tool in tools:
-                    tool_name_lower = tool.name.lower()
-                    if any(name.lower() in tool_name_lower for name in tool_names_to_try):
-                        list_issues_tool = tool
-                        log(f"Found list_issues tool (partial match): {tool.name}", node="indexer", level="DEBUG")
-                        break
+            if not list_issues_tool and name_lower in ("mcp_github_list_issues", "list_issues", "get_issues"):
+                list_issues_tool = tool
+                log(f"Found list_issues tool: {tool.name}", node="indexer", level="DEBUG")
         
         if not search_issues_tool and not list_issues_tool:
             log(f"Could not find issues listing tool. Available tools: {[t.name for t in tools]}", node="indexer", level="WARNING")
@@ -587,22 +586,19 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
                 # Combine lists
                 issues_result = open_issues + closed_issues
                 log(f"Retrieved {len(open_issues)} open issues and {len(closed_issues)} closed issues via search_issues (total: {len(issues_result)})", node="indexer")
+
+                # Fallback to list_issues when search returns 0 (e.g., secondary rate limit)
+                if not issues_result and list_issues_tool:
+                    log("search_issues returned 0 results, falling back to list_issues",
+                        node="indexer", level="WARNING")
+                    issues_result = _call_list_issues(list_issues_tool)
+                    if issues_result:
+                        log(f"list_issues fallback returned data (type={type(issues_result).__name__})",
+                            node="indexer")
             else:
                 # Fallback to list_issues
                 log("Using list_issues to get issues from kubevirt/enhancements", node="indexer", level="DEBUG")
-                try:
-                    issues_result = _call_with_retry(
-                        list_issues_tool.func,
-                        owner="kubevirt",
-                        repo="enhancements",
-                        state="all"
-                    )
-                except TypeError:
-                    issues_result = _call_with_retry(
-                        list_issues_tool.func,
-                        repo="kubevirt/enhancements",
-                        state="all"
-                    )
+                issues_result = _call_list_issues(list_issues_tool)
             
             # Parse result
             if isinstance(issues_result, str):
