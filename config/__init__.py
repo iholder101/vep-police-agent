@@ -25,4 +25,5 @@ from .util import (
     get_all_node_models,
     get_email_recipients,
     get_project_board_for_version,
+    board_search_patterns,
 )

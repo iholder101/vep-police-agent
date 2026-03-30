@@ -4,7 +4,7 @@ from typing import Dict, List
 from .util import FAST_MODEL, HEAVY_MODEL
 
 # Default release version (used when release cannot be auto-detected)
-DEFAULT_RELEASE: str = "v1.8"
+DEFAULT_RELEASE: str = "v1.9"
 
 # Known SIGs in the kubevirt project
 KNOWN_SIGS: List[str] = ["compute", "network", "storage"]
@@ -15,6 +15,7 @@ VERSION_PROJECT_BOARDS: Dict[str, int] = {
     "1.6": 15,
     "1.7": 18,
     "1.8": 19,
+    "1.9": 21,
 }
 
 # Model configuration per node type

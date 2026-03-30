@@ -1855,10 +1855,11 @@ def _find_active_release_project(current_release: str) -> Optional[int]:
     """Discover active release project board ID by title matching.
 
     Searches for a project board with title matching the current release
-    (e.g., "KubeVirt v1.8 Release Tracking").
+    using progressively looser patterns (e.g., "1.9 enhancements tracking",
+    then "1.9 tracking", then just "1.9").
 
     Args:
-        current_release: Release version string (e.g., "v1.8")
+        current_release: Release version string (e.g., "v1.9")
 
     Returns:
         Project board number if found, None otherwise
@@ -1868,21 +1869,17 @@ def _find_active_release_project(current_release: str) -> Optional[int]:
     if not current_release:
         return None
 
-    # Normalize version string (ensure it has 'v' prefix)
-    version = current_release if current_release.startswith('v') else f'v{current_release}'
+    from config import board_search_patterns
 
-    # Search pattern: version + "release" + "tracking"
-    # This should match boards like "KubeVirt v1.8 Release Tracking"
-    search_pattern = f"{version} release tracking"
-
-    try:
-        project_num = find_project_by_title(org_name="kubevirt", title_pattern=search_pattern)
-        if project_num:
-            log(f"Auto-discovered project board for {version}: #{project_num}", node="indexer")
-        return project_num
-    except Exception as e:
-        log(f"Error auto-discovering project board: {e}", node="indexer", level="WARNING")
-        return None
+    for pattern in board_search_patterns(current_release):
+        try:
+            project_num = find_project_by_title(org_name="kubevirt", title_pattern=pattern)
+            if project_num:
+                log(f"Auto-discovered project board for {current_release}: #{project_num}", node="indexer")
+                return project_num
+        except Exception as e:
+            log(f"Error auto-discovering project board: {e}", node="indexer", level="WARNING")
+    return None
 
 
 def _parse_impl_prs_from_text(text: str) -> List[Dict[str, Any]]:
