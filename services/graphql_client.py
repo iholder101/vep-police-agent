@@ -212,7 +212,7 @@ def find_project_by_title(
 
     Args:
         org_name: GitHub organization name (default: "kubevirt")
-        title_pattern: Pattern to match in project title (e.g., "v1.8 release tracking")
+        title_pattern: Pattern to match in project title (e.g., "1.9 enhancements tracking")
 
     Returns:
         Project number if found, None otherwise

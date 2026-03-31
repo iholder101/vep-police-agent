@@ -61,6 +61,22 @@ def get_email_recipients() -> List[str]:
     return EMAIL_RECIPIENTS.copy() if EMAIL_RECIPIENTS else []
 
 
+def board_search_patterns(version: str) -> List[str]:
+    """Build progressively looser search patterns for finding a release board.
+
+    Tries specific patterns first (e.g., "1.9 enhancements tracking"), then
+    falls back to looser ones to be resilient against board naming changes.
+    """
+    v = version.lstrip('v')
+    return [
+        f"{v} enhancements tracking",
+        f"{v} release tracking",
+        f"{v} tracking",
+        f"{v} enhancement",
+        f"{v} release",
+    ]
+
+
 def get_project_board_for_version(version: Optional[str]) -> Optional[int]:
     """Get project board number for a version string like 'v1.8' or '1.8'.
 

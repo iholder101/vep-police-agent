@@ -33,20 +33,19 @@ def _resolve_board_number(version: str) -> int | None:
         Project board number or None
     """
     from services.graphql_client import find_project_by_title
-    from config import get_project_board_for_version
+    from config import get_project_board_for_version, board_search_patterns
 
     if not version:
         return None
 
-    # Try auto-discovery by title matching
-    v = version if version.startswith("v") else f"v{version}"
-    search_pattern = f"{v} release tracking"
-    try:
-        board_num = find_project_by_title(org_name="kubevirt", title_pattern=search_pattern)
-        if board_num:
-            return board_num
-    except Exception:
-        pass
+    # Try auto-discovery by title matching (progressively looser patterns)
+    for pattern in board_search_patterns(version):
+        try:
+            board_num = find_project_by_title(org_name="kubevirt", title_pattern=pattern)
+            if board_num:
+                return board_num
+        except Exception:
+            pass
 
     # Fallback to config mapping
     return get_project_board_for_version(version)
