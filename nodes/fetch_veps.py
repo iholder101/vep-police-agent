@@ -439,6 +439,7 @@ def fetch_veps_node(state: VEPState) -> Any:
 
     return {
         "veps": discovered_veps,
+        "current_release": current_release,
         "last_check_times": last_check_times,
         "next_tasks": next_tasks,
         "sheets_need_update": True,
