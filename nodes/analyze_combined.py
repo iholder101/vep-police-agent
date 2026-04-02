@@ -21,6 +21,81 @@ class AnalyzeCombinedResponse(CheckResponse):
     general_insights: List[str] = []
 
 
+def _fallback_design_phase(vep) -> dict:
+    """Build a fallback risk assessment appropriate for the design phase.
+
+    During design phase the relevant question is whether the PROPOSAL PR
+    will be reviewed and approved by VEP freeze, not whether implementation
+    PRs are merged (open impl PRs are normal and even ahead-of-schedule).
+    """
+    days_inactive = vep.activity.days_since_update if vep.activity else 0
+    has_proposal_pr = bool(vep.enhancement_prs)
+    proposal_merged = any(pr.state == "merged" or pr.merged for pr in vep.enhancement_prs) if has_proposal_pr else False
+    vep_merged = getattr(vep.compliance, 'vep_merged', False) or vep.context.deadline.get("vep_merged", False)
+    has_impl_prs = bool(vep.implementation_prs)
+
+    if vep_merged or proposal_merged:
+        # Proposal already accepted — ahead of schedule
+        bonus = 5 if has_impl_prs else 0
+        prob = min(95 + bonus, 100)
+        reasoning = "Proposal PR merged during design phase."
+        if has_impl_prs:
+            reasoning += " Implementation PRs already in progress (ahead of schedule)."
+        return {
+            "merge_probability": prob,
+            "reviewer_sentiment": "positive",
+            "recent_progress": True,
+            "days_inactive": days_inactive,
+            "reasoning": reasoning,
+            "recommend_escalation": False,
+            "escalation_actions": [],
+        }
+
+    if has_proposal_pr:
+        # Proposal PR open — normal during design phase
+        if days_inactive <= 7:
+            prob = 75
+            sentiment = "neutral"
+            reasoning = "Proposal PR open with recent activity. Design phase — on track."
+        elif days_inactive <= 14:
+            prob = 60
+            sentiment = "concerned"
+            reasoning = f"Proposal PR open but {days_inactive} days inactive. May need reviewer attention."
+        else:
+            prob = 45
+            sentiment = "concerned"
+            reasoning = f"Proposal PR open and stale ({days_inactive} days inactive). Needs attention before VEP freeze."
+        if has_impl_prs:
+            prob = min(prob + 5, 100)
+            reasoning += " Implementation PRs already in progress."
+        return {
+            "merge_probability": prob,
+            "reviewer_sentiment": sentiment,
+            "recent_progress": days_inactive <= 14,
+            "days_inactive": days_inactive,
+            "reasoning": reasoning,
+            "recommend_escalation": prob < 50,
+            "escalation_actions": ["Ping proposal reviewers"] if prob < 50 else [],
+        }
+
+    # No proposal PR at all
+    if has_impl_prs:
+        prob = 55
+        reasoning = f"No proposal PR found but implementation PRs exist. May need proposal PR before VEP freeze."
+    else:
+        prob = 50
+        reasoning = "No proposal or implementation PRs found. Status based on available data."
+    return {
+        "merge_probability": prob,
+        "reviewer_sentiment": "neutral",
+        "recent_progress": days_inactive < 14,
+        "days_inactive": days_inactive,
+        "reasoning": reasoning,
+        "recommend_escalation": days_inactive > 14,
+        "escalation_actions": ["Create proposal PR for VEP freeze"] if not has_proposal_pr else [],
+    }
+
+
 def analyze_combined_node(state: VEPState) -> Any:
     """Analyze all VEPs using their combined context data.
 
@@ -403,6 +478,10 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
                     "recommend_escalation": False,
                     "escalation_actions": [],
                 }
+            elif release_phase == "design":
+                # During design phase, what matters is the PROPOSAL PR, not impl PRs.
+                # Open impl PRs are normal and expected — focus on proposal progress.
+                vep.analysis["risk_assessment"] = _fallback_design_phase(vep)
             elif has_impl_prs:
                 merged_count = sum(1 for pr in vep.implementation_prs if pr.state == "merged")
                 total_count = len(vep.implementation_prs)
