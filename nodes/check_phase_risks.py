@@ -122,7 +122,13 @@ def _check_design_phase_risks(
         return {}
 
     # Filter to PRs that reference VEPs on the board (more precise)
-    board_vep_numbers = set(board_veps.keys())
+    # Board keys may be str (from JSON cache) or int — normalize to int
+    board_vep_numbers = set()
+    for k in board_veps.keys():
+        try:
+            board_vep_numbers.add(int(k))
+        except (ValueError, TypeError):
+            board_vep_numbers.add(k)
     filtered_prs = []
     for pr in enhancements_prs:
         # MCP tools may return state as "OPEN" (GraphQL) or "open" (REST)
@@ -132,6 +138,7 @@ def _check_design_phase_risks(
         if vep_issue_num and vep_issue_num in board_vep_numbers:
             filtered_prs.append(pr)
 
+    log(f"Enhancement PRs: {len(enhancements_prs)} total, filtering to open PRs linked to {len(board_vep_numbers)} board VEPs", node="check_phase_risks", level="DEBUG")
     log(f"Checking {len(filtered_prs)} open proposal PRs linked to board VEPs", node="check_phase_risks", level="DEBUG")
 
     risks_by_vep = {}
@@ -139,7 +146,10 @@ def _check_design_phase_risks(
     # Check each PR for staleness and review status
     for pr in filtered_prs:
         vep_issue_num = pr.get("vep_issue_number")
-        board_vep = board_veps[vep_issue_num]
+        # Board keys may be str (from JSON cache) — try both int and str
+        board_vep = board_veps.get(vep_issue_num) or board_veps.get(str(vep_issue_num))
+        if not board_vep:
+            continue
         status = board_vep.get("fields", {}).get("Status", "")
 
         # Only check tracked VEPs
