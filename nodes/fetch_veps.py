@@ -273,6 +273,14 @@ def fetch_veps_node(state: VEPState) -> Any:
             if match:
                 vep_files_by_number[int(match.group(1))] = vep_file
 
+    # Build enhancements PR lookup by VEP issue number (for proposal PRs)
+    enhancements_prs = indexed_context.get("enhancements_prs", [])
+    enhancements_prs_by_vep = {}
+    for pr in enhancements_prs:
+        if isinstance(pr, dict) and pr.get("vep_issue_number"):
+            vep_num = pr["vep_issue_number"]
+            enhancements_prs_by_vep.setdefault(vep_num, []).append(pr)
+
     # Build kubevirt PR lookup for enriching implementation PRs with merge status
     prs_index = indexed_context.get("prs_index", [])
     kubevirt_prs_by_number = {}
@@ -398,6 +406,34 @@ def fetch_veps_node(state: VEPState) -> Any:
                         author="unknown",
                     )
                     vep_info.implementation_prs.append(pr)
+
+            # Populate enhancement PRs (proposal PRs from kubevirt/enhancements)
+            try:
+                issue_num_int = int(issue_number)
+            except (ValueError, TypeError):
+                issue_num_int = issue_number
+            for pr_data in enhancements_prs_by_vep.get(issue_num_int, []):
+                now = datetime.now(timezone.utc)
+                created = now
+                updated = now
+                try:
+                    if pr_data.get("created_at"):
+                        created = datetime.fromisoformat(pr_data["created_at"].replace('Z', '+00:00'))
+                    if pr_data.get("updated_at"):
+                        updated = datetime.fromisoformat(pr_data["updated_at"].replace('Z', '+00:00'))
+                except (ValueError, AttributeError):
+                    pass
+                pr_state = (pr_data.get("state") or "unknown").lower()
+                pr = PRInfo(
+                    number=pr_data.get("number"),
+                    title=pr_data.get("title", ""),
+                    url=pr_data.get("html_url") or pr_data.get("url", ""),
+                    state=pr_state,
+                    created_at=created,
+                    updated_at=updated,
+                    author="unknown",
+                )
+                vep_info.enhancement_prs.append(pr)
 
             # Update all_code_prs_merged based on enriched PR states
             if vep_info.implementation_prs:
