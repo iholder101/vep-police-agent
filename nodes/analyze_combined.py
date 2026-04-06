@@ -21,6 +21,81 @@ class AnalyzeCombinedResponse(CheckResponse):
     general_insights: List[str] = []
 
 
+def _fallback_design_phase(vep) -> dict:
+    """Build a fallback risk assessment appropriate for the design phase.
+
+    During design phase the relevant question is whether the PROPOSAL PR
+    will be reviewed and approved by VEP freeze, not whether implementation
+    PRs are merged (open impl PRs are normal and even ahead-of-schedule).
+    """
+    days_inactive = vep.activity.days_since_update if vep.activity else 0
+    has_proposal_pr = bool(vep.enhancement_prs)
+    proposal_merged = any(pr.state == "merged" or pr.merged for pr in vep.enhancement_prs) if has_proposal_pr else False
+    vep_merged = getattr(vep.compliance, 'vep_merged', False) or vep.context.deadline.get("vep_merged", False)
+    has_impl_prs = bool(vep.implementation_prs)
+
+    if vep_merged or proposal_merged:
+        # Proposal already accepted — ahead of schedule
+        bonus = 5 if has_impl_prs else 0
+        prob = min(95 + bonus, 100)
+        reasoning = "Proposal PR merged during design phase."
+        if has_impl_prs:
+            reasoning += " Implementation PRs already in progress (ahead of schedule)."
+        return {
+            "merge_probability": prob,
+            "reviewer_sentiment": "positive",
+            "recent_progress": True,
+            "days_inactive": days_inactive,
+            "reasoning": reasoning,
+            "recommend_escalation": False,
+            "escalation_actions": [],
+        }
+
+    if has_proposal_pr:
+        # Proposal PR open — normal during design phase
+        if days_inactive <= 7:
+            prob = 75
+            sentiment = "neutral"
+            reasoning = "Proposal PR open with recent activity. Design phase — on track."
+        elif days_inactive <= 14:
+            prob = 60
+            sentiment = "concerned"
+            reasoning = f"Proposal PR open but {days_inactive} days inactive. May need reviewer attention."
+        else:
+            prob = 45
+            sentiment = "concerned"
+            reasoning = f"Proposal PR open and stale ({days_inactive} days inactive). Needs attention before VEP freeze."
+        if has_impl_prs:
+            prob = min(prob + 5, 100)
+            reasoning += " Implementation PRs already in progress."
+        return {
+            "merge_probability": prob,
+            "reviewer_sentiment": sentiment,
+            "recent_progress": days_inactive <= 14,
+            "days_inactive": days_inactive,
+            "reasoning": reasoning,
+            "recommend_escalation": prob < 50,
+            "escalation_actions": ["Ping proposal reviewers"] if prob < 50 else [],
+        }
+
+    # No proposal PR at all
+    if has_impl_prs:
+        prob = 55
+        reasoning = f"No proposal PR found but implementation PRs exist. May need proposal PR before VEP freeze."
+    else:
+        prob = 50
+        reasoning = "No proposal or implementation PRs found. Status based on available data."
+    return {
+        "merge_probability": prob,
+        "reviewer_sentiment": "neutral",
+        "recent_progress": days_inactive < 14,
+        "days_inactive": days_inactive,
+        "reasoning": reasoning,
+        "recommend_escalation": days_inactive > 14,
+        "escalation_actions": ["Create proposal PR for VEP freeze"] if not has_proposal_pr else [],
+    }
+
+
 def analyze_combined_node(state: VEPState) -> Any:
     """Analyze all VEPs using their combined context data.
 
@@ -141,8 +216,9 @@ YOUR ANALYSIS TASKS:
    - Post-freeze work + no exception = BLOCKER
    - Multiple issues on same VEP = escalate priority
 
-6. MERGE PROBABILITY AND REVIEWER SENTIMENT (NEW - PHASE-AWARE):
-   For VEPs with context.phase_risks.has_risks = true:
+6. MERGE PROBABILITY AND REVIEWER SENTIMENT (FOR EVERY VEP):
+   You MUST generate a risk_assessment for EVERY VEP, not just flagged ones.
+   Skip VEPs marked with "_deterministic_risk" in their analysis — those are pre-assessed.
 
    CRITICAL: RECENCY IS KEY - Only recent activity matters (last 7 days for design, 5 days for development)
    - Old approvals/reviews DON'T COUNT if PR is now stale
@@ -150,7 +226,7 @@ YOUR ANALYSIS TASKS:
    - High days_since_update = stale = lower probability and more negative sentiment
 
    a) Estimate merge probability (0-100%) by phase deadline:
-      - PRIMARY FACTOR: days_since_update (from phase_risks data)
+      - PRIMARY FACTOR: days_since_update
         * 0-2 days inactive: Active work, higher probability (60-90%)
         * 3-7 days inactive: Moderate staleness, medium probability (30-60%)
         * 8-14 days inactive: Very stale, low probability (10-30%)
@@ -168,14 +244,13 @@ YOUR ANALYSIS TASKS:
       - IMPORTANT: Old activity doesn't count - only consider RECENT timeline
 
    c) Assess recent progress:
-      - Check days_since_update from phase_risks data
-      - Determine if there's been recent activity (within stale_days threshold)
+      - Determine if there's been meaningful activity recently
       - recent_progress: true if days_since_update <= 7 (design) or <= 5 (development)
       - recent_progress: false if days_since_update > threshold (stale)
 
    d) Step-by-step reasoning:
       - START with days_since_update (PRIMARY factor)
-      - Analyze the specific risk (stale proposal, missing impl, etc.)
+      - Analyze PR state, review status, and activity
       - Factor in review_count, but ONLY if recent
       - Consider deadline proximity and urgency
       - Weight recent activity HEAVILY in probability estimate
@@ -191,7 +266,7 @@ YOUR ANALYSIS TASKS:
         "merge_probability": <int 0-100>,
         "reviewer_sentiment": "<positive|concerned|blocked|neutral>",
         "recent_progress": <bool>,
-        "days_inactive": <int from phase_risks>,
+        "days_inactive": <int>,
         "reasoning": "<step-by-step explanation emphasizing recency>",
         "recommend_escalation": <bool>,
         "escalation_actions": ["<specific action 1>", "<action 2>"]
@@ -246,6 +321,57 @@ and issue category - consolidate related issues into a single alert."""
     # Log phase risks summary
     log(f"Phase risks count: {len(phase_risks)}, VEPs count: {len(veps)}", node="analyze_combined")
 
+    # Pre-fill deterministic RED risk_assessment for stale VEPs detected by check_phase_risks.
+    # These are worst-case: stale (>7d) AND under-reviewed — no LLM needed.
+    stale_vep_names = set()
+    for risk in phase_risks:
+        if not risk.get("has_risks"):
+            continue
+        vep_name = risk["vep_name"]
+        vep_id = risk["vep_id"]
+        stale_vep_names.add(vep_name)
+
+        # Find the VEP object and pre-fill
+        for vep in veps:
+            if vep.tracking_issue_id == vep_id:
+                if not hasattr(vep, 'analysis') or vep.analysis is None:
+                    vep.analysis = {}
+                phase = risk.get("phase", release_phase)
+                proposal_pr = risk.get("proposal_pr", {})
+                stale_impl_prs = risk.get("stale_impl_prs", [])
+                days_inactive = (proposal_pr.get("days_since_update")
+                                 if proposal_pr else
+                                 max((p.get("days_since_update", 0) for p in stale_impl_prs), default=0))
+                days_to_deadline = risk.get("days_to_deadline", 0)
+
+                if phase == "design":
+                    pr_num = proposal_pr.get("number", "?")
+                    review_count = proposal_pr.get("review_count", 0)
+                    reasoning = (f"Proposal PR #{pr_num} is stale ({days_inactive} days inactive) "
+                                 f"with only {review_count} review(s). "
+                                 f"EF deadline in {days_to_deadline} days. Needs immediate attention.")
+                else:
+                    stale_nums = [f"#{p.get('number', '?')}" for p in stale_impl_prs]
+                    reasoning = (f"Implementation PR(s) {', '.join(stale_nums)} stale ({days_inactive}+ days inactive). "
+                                 f"CF deadline in {days_to_deadline} days. Needs immediate attention.")
+
+                vep.analysis["risk_assessment"] = {
+                    "merge_probability": max(5, 30 - days_inactive),
+                    "reviewer_sentiment": "blocked",
+                    "recent_progress": False,
+                    "days_inactive": days_inactive,
+                    "reasoning": reasoning,
+                    "recommend_escalation": True,
+                    "escalation_actions": ["Ping reviewers immediately", "Request expedited review", "Consider exception if near deadline"],
+                }
+                vep.analysis["_deterministic_risk"] = True
+                log(f"Deterministic RED for {vep_name}: stale {phase} phase risk, prob={vep.analysis['risk_assessment']['merge_probability']}%",
+                    node="analyze_combined")
+                break
+
+    if stale_vep_names:
+        log(f"Pre-filled {len(stale_vep_names)} stale VEP(s) with deterministic RED: {', '.join(sorted(stale_vep_names))}", node="analyze_combined")
+
     # Process VEPs in batches to avoid LLM output token limits
     BATCH_SIZE = 7
     all_updated_veps = []
@@ -264,8 +390,18 @@ and issue category - consolidate related issues into a single alert."""
         batch_phase_risks = [r for r in phase_risks if r["vep_name"] in {v.name for v in batch_veps}]
 
         release_schedule = state.get("release_schedule")
+        # During design phase, exclude implementation PRs from LLM context — they're not relevant yet
+        if release_phase == "design":
+            veps_data = []
+            for vep in batch_veps:
+                d = vep.model_dump(mode='json')
+                d.pop("implementation_prs", None)
+                veps_data.append(d)
+        else:
+            veps_data = [vep.model_dump(mode='json') for vep in batch_veps]
+
         batch_context = {
-            "veps": [vep.model_dump(mode='json') for vep in batch_veps],
+            "veps": veps_data,
             "release_schedule": release_schedule.model_dump(mode='json') if release_schedule else None,
             "current_release": state.get("current_release"),
             "today": datetime.now().strftime("%Y-%m-%d"),
@@ -288,7 +424,7 @@ For EACH VEP:
 2. Perform cross-domain reasoning to identify risks
 3. Update analysis with combined_insights, priority, risk_factors, recommended_actions
 
-For VEPs with context.phase_risks.has_risks = true:
+For EVERY VEP (skip any with "_deterministic_risk" in analysis):
 4. Estimate merge probability (0-100%) considering ALL factors holistically:
    - Weight staleness (days_since_update) heavily — a PR with no activity for weeks is much
      less likely to merge by deadline than one updated yesterday
@@ -330,6 +466,13 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
                 original = originals_by_id.get(updated_vep.tracking_issue_id)
                 if not original:
                     continue
+                # Preserve deterministic risk_assessment — don't let LLM overwrite
+                orig_analysis = original.analysis if hasattr(original, 'analysis') and original.analysis else {}
+                if orig_analysis.get("_deterministic_risk"):
+                    if not hasattr(updated_vep, 'analysis') or updated_vep.analysis is None:
+                        updated_vep.analysis = {}
+                    updated_vep.analysis["risk_assessment"] = orig_analysis["risk_assessment"]
+                    updated_vep.analysis["_deterministic_risk"] = True
                 if not updated_vep.implementation_prs and original.implementation_prs:
                     updated_vep.implementation_prs = original.implementation_prs
                 if not updated_vep.enhancement_prs and original.enhancement_prs:
@@ -372,12 +515,16 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
 
     updated_veps = all_updated_veps
 
-    # Generate fallback risk assessments for VEPs that LLM dropped or didn't analyze
+    # Generate fallback risk assessments for VEPs that LLM genuinely dropped or failed.
+    # This should be rare now — LLM generates risk_assessment for all VEPs,
+    # and stale VEPs get deterministic RED pre-filled.
+    fallback_count = 0
     for vep in updated_veps:
         if not hasattr(vep, 'analysis') or not vep.analysis or not vep.analysis.get("risk_assessment"):
             # Build a basic risk assessment from available data
             if not hasattr(vep, 'analysis') or vep.analysis is None:
                 vep.analysis = {}
+            fallback_count += 1
 
             # Check if all implementation PRs are merged
             all_merged = False
@@ -403,6 +550,10 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
                     "recommend_escalation": False,
                     "escalation_actions": [],
                 }
+            elif release_phase == "design":
+                # During design phase, what matters is the PROPOSAL PR, not impl PRs.
+                # Open impl PRs are normal and expected — focus on proposal progress.
+                vep.analysis["risk_assessment"] = _fallback_design_phase(vep)
             elif has_impl_prs:
                 merged_count = sum(1 for pr in vep.implementation_prs if pr.state == "merged")
                 total_count = len(vep.implementation_prs)
@@ -429,6 +580,9 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
                     "escalation_actions": ["Identify and track implementation PRs"] if days_inactive > 14 else [],
                 }
             log(f"Generated fallback risk assessment for {vep.name}: prob={vep.analysis['risk_assessment']['merge_probability']}%", node="analyze_combined", level="DEBUG")
+
+    if fallback_count > 0:
+        log(f"Fallback risk assessments generated for {fallback_count} VEP(s) (LLM did not produce risk_assessment for these)", node="analyze_combined", level="WARNING")
 
     # Post-LLM correction: override risk assessment when actual PR states contradict LLM
     for vep in updated_veps:
