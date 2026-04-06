@@ -81,7 +81,7 @@ def _fallback_design_phase(vep) -> dict:
     # No proposal PR at all
     if has_impl_prs:
         prob = 55
-        reasoning = f"No proposal PR found but implementation PRs exist. May need proposal PR before VEP freeze."
+        reasoning = "No proposal PR found but implementation PRs exist. May need proposal PR before VEP freeze."
     else:
         prob = 50
         reasoning = "No proposal or implementation PRs found. Status based on available data."
