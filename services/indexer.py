@@ -1079,6 +1079,8 @@ def index_enhancements_prs(days_back: Optional[int] = 365) -> List[Dict[str, Any
                         "updated_at": updated_at,
                         "vep_issue_number": vep_issue_num,
                         "review_count": review_count,
+                        "labels": [l.get("name") if isinstance(l, dict) else l for l in pr.get("labels", [])],
+                        "merged": bool(pr.get("merged_at") or pr.get("merged", False)),
                     })
 
                 # Filter by date if requested
