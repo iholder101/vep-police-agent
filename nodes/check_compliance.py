@@ -1,102 +1,127 @@
-"""Compliance context fetch node - fetches compliance-related data for VEPs.
+"""Compliance context node - computes compliance-related data for VEPs.
 
-This is a FETCH node - it only gathers raw data, NO analysis.
-Analysis is done by analyze_combined which has access to ALL context at once.
+Deterministic node using indexed context (no LLM). Checks PR status,
+labels, template completeness, and implementation PRs for each VEP.
 """
 
-import json
+import re
 from datetime import datetime
 from typing import Any
 from state import VEPState
 from services.utils import log
-from services.llm_helper import invoke_llm_fetch
-from services.response_models import FetchResponse
+from services.indexer import create_indexed_context
+from nodes._check_helpers import extract_vep_num, collect_impl_prs
 
 
 def check_compliance_node(state: VEPState) -> Any:
-    """Fetch compliance-related context for VEPs.
+    """Compute compliance context for VEPs from indexed data.
 
-    This is a FETCH node using lightweight LLM (Flash). It:
-    1. Fetches PR status, reviews, and labels from GitHub
-    2. Checks VEP template completeness indicators
-    3. Stores raw compliance data in vep.context.compliance
-
-    NO analysis is done here - that's handled by analyze_combined.
+    Checks enhancement PR status/labels, tracking issue labels,
+    template sections, and implementation PRs.
     """
     veps = state.get("veps", [])
-    veps_count = len(veps)
-    log(f"Fetching compliance context for {veps_count} VEP(s)", node="check_compliance")
+    log(f"Computing compliance context for {len(veps)} VEP(s)", node="check_compliance")
 
     last_check_times = state.get("last_check_times", {})
     last_check_times["check_compliance"] = datetime.now()
 
     if not veps:
-        return {
-            "last_check_times": last_check_times,
+        return {"last_check_times": last_check_times}
+
+    index_cache_minutes = state.get("index_cache_minutes", 60)
+    indexed_context = create_indexed_context(cache_max_age_minutes=index_cache_minutes)
+
+    enhancements_prs = indexed_context.get("enhancements_prs", [])
+    issues_index = indexed_context.get("issues_index", [])
+    vep_files_index = indexed_context.get("vep_files_index", [])
+    vep_to_pr_mappings = indexed_context.get("vep_to_pr_mappings", {})
+    board_veps = indexed_context.get("board_veps", {})
+    prs_index = indexed_context.get("prs_index", [])
+
+    context_by_id = {}
+    for vep in veps:
+        # 1. Enhancement PR status
+        vep_pr = next(
+            (pr for pr in enhancements_prs
+             if pr.get("vep_issue_number") == vep.tracking_issue_id),
+            None,
+        )
+        pr_labels = [l.lower() for l in vep_pr.get("labels", [])] if vep_pr else []
+        has_lgtm = "lgtm" in pr_labels
+        has_approved_label = any("approved" in l for l in pr_labels)
+
+        # 2. Tracking issue labels
+        issue = next(
+            (i for i in issues_index if i.get("number") == vep.tracking_issue_id),
+            None,
+        )
+        labels = issue.get("labels", []) if issue else []
+        sig_labels = [l for l in labels if l.startswith("sig/")]
+        release_labels = [l for l in labels if re.match(r'^v\d', l)]
+
+        # 3. Implementation PRs (deduplicated from all sources)
+        impl_prs = collect_impl_prs(
+            vep.tracking_issue_id, board_veps, vep_to_pr_mappings, prs_index
+        )
+
+        # 4. Docs PR (heuristic: kubevirt PR title contains 'doc' and references this VEP)
+        docs_pr = None
+        for p in prs_index:
+            if not isinstance(p, dict):
+                continue
+            if p.get("vep_issue_number") != vep.tracking_issue_id:
+                continue
+            if "doc" in p.get("title", "").lower():
+                docs_pr = {"number": p["number"], "state": p.get("state", "unknown")}
+                break
+
+        # 5. Template sections from VEP markdown
+        vep_num = extract_vep_num(vep.name)
+        vep_file = next(
+            (f for f in vep_files_index
+             if extract_vep_num(f.get("vep_number")) == vep_num),
+            None,
+        ) if vep_num is not None else None
+        content = vep_file.get("content", "") if vep_file else ""
+
+        has_motivation = bool(re.search(
+            r"^##\s*(motivation|goals)", content, re.MULTILINE | re.IGNORECASE
+        ))
+        has_design = bool(re.search(
+            r"^##\s*(design|proposal)", content, re.MULTILINE | re.IGNORECASE
+        ))
+        has_api = bool(re.search(
+            r"^##\s*api", content, re.MULTILINE | re.IGNORECASE
+        ))
+        has_test_plan = bool(re.search(
+            r"^##\s*test\s*plan", content, re.MULTILINE | re.IGNORECASE
+        ))
+
+        context_by_id[vep.tracking_issue_id] = {
+            "pr_state": vep_pr.get("state") if vep_pr else None,
+            "pr_number": vep_pr.get("number") if vep_pr else None,
+            "pr_url": vep_pr.get("html_url", vep_pr.get("url")) if vep_pr else None,
+            "has_lgtm": has_lgtm,
+            "has_approved_label": has_approved_label,
+            "reviewers": [],
+            "sig_labels": sig_labels,
+            "release_labels": release_labels,
+            "other_labels": [l for l in labels if l not in sig_labels + release_labels],
+            "implementation_prs": impl_prs,
+            "docs_pr": docs_pr,
+            "has_motivation_section": has_motivation,
+            "has_design_section": has_design,
+            "has_api_section": has_api,
+            "has_test_plan": has_test_plan,
         }
 
-    # Build system prompt - FETCH ONLY, no analysis
-    system_prompt = """You are a lightweight data fetcher for VEP compliance information.
-
-Your task is to FETCH raw data only - do NOT analyze or generate alerts.
-
-FETCH TASKS for each VEP:
-1. Check VEP PR status in kubevirt/enhancements:
-   - pr_state: "open", "merged", "closed"
-   - pr_number: int
-   - pr_url: str
-   - has_lgtm: bool (has LGTM comment or approval)
-   - has_approved_label: bool
-   - reviewers: list of usernames who reviewed
-
-2. Check tracking issue labels:
-   - sig_labels: list of SIG labels (sig/compute, sig/network, sig/storage)
-   - release_labels: list of release labels (v1.8, etc.)
-   - other_labels: list of other relevant labels
-
-3. Check for linked PRs:
-   - implementation_prs: list of {number, state, repo} for implementation PRs
-   - docs_pr: {number, state} if docs PR exists, null otherwise
-
-4. Template completeness indicators (from PR or issue content):
-   - has_motivation_section: bool
-   - has_design_section: bool
-   - has_api_section: bool
-   - has_test_plan: bool
-
-IMPORTANT: Do NOT analyze, do NOT judge compliance, do NOT make recommendations.
-Just fetch the raw data. Compliance analysis is done by a separate node.
-
-Return context_updates with the raw compliance data for each VEP."""
-
-    # Serialize minimal state for LLM
-    context = {
-        "veps": [{"tracking_issue_id": vep.tracking_issue_id, "name": vep.name, "title": vep.title,
-                  "tracking_issue": vep.tracking_issue.model_dump() if vep.tracking_issue else None,
-                  "enhancement_prs": [pr.model_dump() for pr in vep.enhancement_prs]} for vep in veps],
+    vep_updates_by_check = state.get("vep_updates_by_check", {})
+    vep_updates_by_check["check_compliance"] = {
+        "context_field": "compliance",
+        "updates": context_by_id,
     }
 
-    user_prompt = f"""Fetch compliance context for these VEPs:
-
-{json.dumps(context, indent=2, default=str)}
-
-For each VEP, use GitHub MCP tools to fetch PR/issue details and return context_updates with:
-- pr_state, pr_number, has_lgtm, has_approved_label, reviewers
-- sig_labels, release_labels, other_labels
-- implementation_prs, docs_pr
-- has_motivation_section, has_design_section, has_api_section, has_test_plan"""
-
-    # Invoke lightweight LLM to fetch data
-    result = invoke_llm_fetch("check_compliance", context, system_prompt, user_prompt, FetchResponse)
-
-    # Store context updates for merge node to apply
-    context_by_id = {cu.tracking_issue_id: cu.context_data for cu in result.context_updates}
-
-    # Store in vep_updates_by_check for merge node
-    vep_updates_by_check = state.get("vep_updates_by_check", {})
-    vep_updates_by_check["check_compliance"] = {"context_field": "compliance", "updates": context_by_id}
-
-    log(f"Fetched compliance context for {len(context_by_id)} VEP(s)", node="check_compliance")
+    log(f"Computed compliance context for {len(context_by_id)} VEP(s)", node="check_compliance")
 
     return {
         "last_check_times": last_check_times,
