@@ -38,11 +38,11 @@ graph TD
 
     FetchVEPs --> Scheduler
 
-    RunMonitoring --> CheckDeadlines[check_deadlines]
-    RunMonitoring --> CheckActivity[check_activity]
-    RunMonitoring --> CheckCompliance[check_compliance]
-    RunMonitoring --> CheckExceptions[check_exceptions]
-    RunMonitoring --> CheckPhaseRisks[check_phase_risks]
+    RunMonitoring --> CheckDeadlines["check_deadlines (deterministic)"]
+    RunMonitoring --> CheckActivity["check_activity (deterministic)"]
+    RunMonitoring --> CheckCompliance["check_compliance (deterministic)"]
+    RunMonitoring --> CheckExceptions["check_exceptions (deterministic)"]
+    RunMonitoring --> CheckPhaseRisks["check_phase_risks (deterministic)"]
 
     CheckDeadlines --> MergeUpdates[merge_vep_updates]
     CheckActivity --> MergeUpdates
@@ -78,11 +78,11 @@ graph TD
     style UpdateSheets fill:#F44336,stroke:#D32F2F,stroke-width:2px,color:#fff
     style UpdateBoard fill:#F44336,stroke:#D32F2F,stroke-width:2px,color:#fff
     style FetchVEPs fill:#00BCD4,stroke:#0097A7,stroke-width:2px,color:#fff
-    style CheckDeadlines fill:#795548,stroke:#5D4037,stroke-width:2px,color:#fff
-    style CheckActivity fill:#607D8B,stroke:#455A64,stroke-width:2px,color:#fff
-    style CheckCompliance fill:#9E9E9E,stroke:#616161,stroke-width:2px,color:#fff
-    style CheckExceptions fill:#FFC107,stroke:#F57C00,stroke-width:2px,color:#000
-    style CheckPhaseRisks fill:#795548,stroke:#5D4037,stroke-width:2px,color:#fff
+    style CheckDeadlines fill:#4CAF50,stroke:#388E3C,stroke-width:2px,color:#fff
+    style CheckActivity fill:#4CAF50,stroke:#388E3C,stroke-width:2px,color:#fff
+    style CheckCompliance fill:#4CAF50,stroke:#388E3C,stroke-width:2px,color:#fff
+    style CheckExceptions fill:#4CAF50,stroke:#388E3C,stroke-width:2px,color:#fff
+    style CheckPhaseRisks fill:#4CAF50,stroke:#388E3C,stroke-width:2px,color:#fff
     style AlertSummary fill:#E91E63,stroke:#C2185B,stroke-width:2px,color:#fff
     style SendNotifications fill:#FF5722,stroke:#E64A19,stroke-width:2px,color:#fff
     style SendEmail fill:#FF5722,stroke:#E64A19,stroke-width:2px,color:#fff
@@ -93,7 +93,7 @@ graph TD
 **Flow Summary:**
 1. `scheduler` coordinates all operations on configurable intervals.
 2. `fetch_veps` discovers VEPs from GitHub and returns to scheduler.
-3. Scheduler routes to `run_monitoring`, which fans out to five parallel check nodes (deadlines, activity, compliance, exceptions, phase risks) using Flash model.
+3. Scheduler routes to `run_monitoring`, which fans out to five parallel deterministic check nodes (deadlines, activity, compliance, exceptions, phase risks) that compute context from the indexed GitHub data - no LLM calls.
 4. `merge_vep_updates` combines context data (deterministic, no LLM).
 5. `analyze_combined` (Pro model) does cross-domain reasoning and generates alerts. Uses the previous release's code freeze date to distinguish current-release vs previous-release PRs - VEPs with only old PRs are flagged instead of shown as complete.
 6. `detect_changes` compares to previous run for accurate change reporting.
@@ -257,8 +257,9 @@ podman run --rm --pull=newer \
 ### Models
 
 Two-tier approach configured in `config.py`:
-- **Flash** (fast): Fetch nodes (`fetch_veps`, `check_*`).
+- **Flash** (fast): Fetch node (`fetch_veps`).
 - **Pro** (powerful): Analysis nodes (`analyze_combined`, `update_sheets`, `alert_summary`).
+- **Deterministic** (no LLM): Check nodes (`check_deadlines`, `check_activity`, `check_compliance`, `check_exceptions`, `check_phase_risks`).
 
 Override models via environment variables:
 - `FAST_MODEL` (default: `gemini-3-flash-preview`)
