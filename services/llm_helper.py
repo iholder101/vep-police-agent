@@ -1,5 +1,6 @@
 """Helper functions for creating LLM agents with MCP tools."""
 
+import concurrent.futures
 import json
 import time
 from typing import Dict, Any, Type, TypeVar
@@ -12,9 +13,17 @@ from config.config import LLM_MAX_RETRIES, LLM_INITIAL_DELAY, LLM_MAX_TIMEOUT
 T = TypeVar('T', bound=BaseModel)
 
 
-def _invoke_with_retry(llm, messages, operation_type: str):
-    """Invoke LLM with exponential backoff on rate limit errors.
+def _invoke_with_timeout(llm, messages, timeout_seconds):
+    """Invoke LLM with a per-call timeout to prevent indefinite hangs."""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(llm.invoke, messages)
+        return future.result(timeout=timeout_seconds)
 
+
+def _invoke_with_retry(llm, messages, operation_type: str):
+    """Invoke LLM with per-call timeout and exponential backoff on retriable errors.
+
+    Retriable errors: rate limits (429/RESOURCE_EXHAUSTED) and call timeouts.
     Returns the LLM response or raises if max retries/timeout exceeded.
     """
     start_time = time.time()
@@ -22,7 +31,18 @@ def _invoke_with_retry(llm, messages, operation_type: str):
 
     for attempt in range(LLM_MAX_RETRIES + 1):
         try:
-            return llm.invoke(messages)
+            return _invoke_with_timeout(llm, messages, LLM_MAX_TIMEOUT)
+        except concurrent.futures.TimeoutError:
+            elapsed = time.time() - start_time
+            if attempt >= LLM_MAX_RETRIES:
+                log(f"LLM call timed out after {LLM_MAX_TIMEOUT}s, max retries exceeded",
+                    node=operation_type, level="ERROR")
+                raise
+            log(f"LLM call timed out after {LLM_MAX_TIMEOUT}s, retrying in {delay}s "
+                f"(attempt {attempt+1}/{LLM_MAX_RETRIES})",
+                node=operation_type, level="WARNING")
+            time.sleep(delay)
+            delay = min(delay * 2, 60)
         except Exception as e:
             error_str = str(e)
             # Check if it's a rate limit error
