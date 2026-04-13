@@ -242,6 +242,9 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
             "vep_number": vep.tracking_issue_id,
             "vep_name": vep.name,
             "title": vep.title[:50] if vep.title else "",  # Truncate for readability
+            "owner": vep.owner,
+            "approvers": getattr(vep, "approvers", []),
+            "reviewers": getattr(vep, "reviewers", []),
             "proposal_prs": proposal_prs,
             "impl_prs": impl_prs,
             "urgency": urgency,

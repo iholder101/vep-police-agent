@@ -98,6 +98,7 @@ def update_project_board_node(state: VEPState) -> Any:
 
     # Verify the expected fields exist on the board
     expected_fields = ["Agent Urgency", "Agent Comment", "Proposal PRs", "Impl PRs"]
+    # "VEP approver"/"VEP reviewer" are optional — only written when present on the board
     missing = [f for f in expected_fields if f not in fields_meta]
     if missing:
         log(f"Missing expected fields on project board: {missing}. "
@@ -134,6 +135,14 @@ def update_project_board_node(state: VEPState) -> Any:
             "Proposal PRs": format_pr_links_plain(row.get("proposal_prs", [])),
             "Impl PRs": format_pr_links_plain(row.get("impl_prs", [])),
         }
+
+        # Write VEP approver/reviewer when the fields exist on the board
+        if "VEP approver" in fields_meta:
+            approvers = row.get("approvers", [])
+            field_updates["VEP approver"] = ", ".join(f"@{u}" for u in approvers) if approvers else ""
+        if "VEP reviewer" in fields_meta:
+            reviewers = row.get("reviewers", [])
+            field_updates["VEP reviewer"] = ", ".join(f"@{u}" for u in reviewers) if reviewers else ""
 
         count = update_project_item_fields(project_id, item_id, field_updates, fields_meta)
         if count > 0:
