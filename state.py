@@ -171,6 +171,10 @@ class VEPInfo(BaseModel):
     compliance: VEPCompliance  # Compliance check results
     activity: VEPActivity  # Activity metrics for monitoring
 
+    # People associated with the VEP (extracted from enhancement PR reviews)
+    approvers: List[str] = []  # GitHub usernames who approved the VEP enhancement PR(s)
+    reviewers: List[str] = []  # GitHub usernames who reviewed the VEP enhancement PR(s)
+
     # Related GitHub resources
     tracking_issue: IssueInfo | None  # Full tracking issue data from GitHub
     enhancement_prs: List[PRInfo] = []  # PRs in kubevirt/enhancements repo (VEP creation/updates)
@@ -239,3 +243,4 @@ class VEPState(TypedDict):
     use_state_cache: bool  # Flag to use cached state from previous run on first cycle
     _state_cache_used: bool  # Internal flag tracking if state cache was used this run
     _force_sheets_update: bool  # Internal flag to force sheets update on first cache cycle
+    skip_cc_reviewers: bool  # Flag to skip posting CC comments on implementation PRs

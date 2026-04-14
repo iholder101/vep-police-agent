@@ -53,3 +53,7 @@ FETCH_VEPS_INTERVAL_SECONDS: int = 4 * 60 * 60  # 4 hours
 LLM_MAX_RETRIES: int = 3
 LLM_INITIAL_DELAY: int = 2  # seconds
 LLM_MAX_TIMEOUT: int = 180  # seconds - abort if exceeded
+
+# CC reviewers configuration
+# Minimum days between CC comments on the same implementation PR
+CC_REVIEWERS_COOLDOWN_DAYS: int = 7

@@ -135,6 +135,8 @@ def scheduler_node(state: VEPState) -> Any:
                 next_tasks.append("update_sheets")
             if not state.get("skip_update_board", False):
                 next_tasks.append("update_project_board")
+            if not state.get("skip_cc_reviewers", False):
+                next_tasks.append("cc_reviewers")
             next_tasks.append("alert_summary")
             # Set last_check_times for fetch_veps so the interval check doesn't
             # immediately schedule fetch_veps on the next scheduler call
@@ -162,11 +164,13 @@ def scheduler_node(state: VEPState) -> Any:
                 next_tasks.append("run_monitoring")
             else:
                 log("First run: Skip-monitoring enabled, skipping analysis pipeline", node="scheduler")
-        # Schedule update_sheets, update_project_board, and alert_summary after analysis
-        log("First run: Scheduling update_sheets, update_project_board, and alert_summary", node="scheduler")
+        # Schedule update_sheets, update_project_board, cc_reviewers, and alert_summary after analysis
+        log("First run: Scheduling update_sheets, update_project_board, cc_reviewers, and alert_summary", node="scheduler")
         next_tasks.append("update_sheets")
         if not state.get("skip_update_board", False):
             next_tasks.append("update_project_board")
+        if not state.get("skip_cc_reviewers", False):
+            next_tasks.append("cc_reviewers")
         next_tasks.append("alert_summary")
     else:
         # If immediate_start is enabled, don't check for round hour - use interval-based timing
@@ -238,6 +242,13 @@ def scheduler_node(state: VEPState) -> Any:
             if update_board_time is None or update_board_time < analyze_combined_time:
                 log("analyze_combined completed, scheduling update_project_board", node="scheduler")
                 next_tasks.append("update_project_board")
+
+        # Schedule cc_reviewers if it hasn't run since analyze_combined
+        cc_reviewers_time = last_check_times.get("cc_reviewers")
+        if "cc_reviewers" not in next_tasks and not state.get("skip_cc_reviewers", False):
+            if cc_reviewers_time is None or cc_reviewers_time < analyze_combined_time:
+                log("analyze_combined completed, scheduling cc_reviewers", node="scheduler")
+                next_tasks.append("cc_reviewers")
 
         # Schedule alert_summary if it hasn't run since analyze_combined
         if "alert_summary" not in next_tasks:

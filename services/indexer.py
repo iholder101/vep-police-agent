@@ -2242,6 +2242,71 @@ def index_approved_vep_prs(prs_index: Optional[List[Dict[str, Any]]] = None) -> 
     return approved_vep_prs
 
 
+def index_enhancement_pr_reviews(
+    enhancements_prs: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[int, Dict[str, List[str]]]:
+    """Fetch reviews for enhancement PRs and group by VEP tracking issue.
+
+    For each enhancement PR that is linked to a VEP tracking issue, fetches
+    the PR reviews from the GitHub REST API and classifies reviewers as
+    approvers (state=APPROVED) or reviewers (any review submitted).
+
+    Args:
+        enhancements_prs: Pre-fetched list from ``index_enhancements_prs()``.
+            If None, will be fetched.
+
+    Returns:
+        Dict mapping *VEP tracking issue number* -> {"approvers": [...], "reviewers": [...]}.
+        Usernames are deduplicated. The VEP owner is excluded from both lists.
+    """
+    from services.github_api import get_pull_request_reviews
+
+    if enhancements_prs is None:
+        enhancements_prs = index_enhancements_prs(days_back=None)
+
+    log(f"Fetching reviews for {len(enhancements_prs)} enhancement PRs", node="indexer")
+
+    # Group enhancement PRs by VEP tracking issue
+    prs_by_vep: Dict[int, List[Dict[str, Any]]] = {}
+    for pr in enhancements_prs:
+        vep_issue = pr.get("vep_issue_number")
+        if vep_issue:
+            prs_by_vep.setdefault(vep_issue, []).append(pr)
+
+    result: Dict[int, Dict[str, List[str]]] = {}
+
+    for vep_issue, prs in prs_by_vep.items():
+        approvers_set: set[str] = set()
+        reviewers_set: set[str] = set()
+
+        for pr in prs:
+            pr_number = pr.get("number")
+            if not pr_number:
+                continue
+
+            reviews = get_pull_request_reviews("kubevirt", "enhancements", pr_number)
+            for review in reviews:
+                user = review.get("user", {})
+                login = user.get("login", "") if isinstance(user, dict) else ""
+                if not login:
+                    continue
+                state = review.get("state", "")
+                reviewers_set.add(login)
+                if state == "APPROVED":
+                    approvers_set.add(login)
+            time.sleep(API_DELAY)
+
+        result[vep_issue] = {
+            "approvers": sorted(approvers_set),
+            "reviewers": sorted(reviewers_set),
+        }
+
+    reviewed_count = sum(1 for v in result.values() if v["reviewers"])
+    log(f"Indexed reviews for {len(result)} VEPs ({reviewed_count} have reviewers)", node="indexer")
+
+    return result
+
+
 def _load_cached_index(cache_file: Path, max_age_minutes: int = 60) -> Optional[Dict[str, Any]]:
     """Load cached indexed context if it exists and is fresh.
     
@@ -2613,6 +2678,9 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
     project_board_items = index_project_board_items(version=release_version)
     vep_to_pr_mappings = index_vep_pr_mappings(prs_index=prs_index)
 
+    # Fetch reviews for enhancement PRs (approvers/reviewers per VEP)
+    enhancement_pr_reviews = index_enhancement_pr_reviews(enhancements_prs=enhancements_prs)
+
     indexed_context = {
         "release_info": release_info,
         "current_release": release_version,
@@ -2629,6 +2697,8 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
         "approved_vep_prs": index_approved_vep_prs(prs_index=prs_index),
         # VEPs that are tracked but have no implementation PRs
         "veps_missing_prs": compute_veps_missing_prs(project_board_items, vep_to_pr_mappings),
+        # Approvers/reviewers extracted from enhancement PR reviews
+        "enhancement_pr_reviews": enhancement_pr_reviews,
         "indexed_at": datetime.now().isoformat(),
         "days_back": days_back,
     }

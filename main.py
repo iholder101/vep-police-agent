@@ -72,7 +72,7 @@ def load_state_cache() -> Optional[Dict[str, Any]]:
         return None
 
 
-def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False, skip_monitoring: bool = False, skip_sheets: bool = False, skip_update_board: bool = False, skip_send_email: bool = False, skip_send_slack: bool = False, mock_veps: bool = False, mock_analyzed_combined: bool = False, mock_alert_summary: bool = False, immediate_start: bool = False, use_state_cache: bool = False):
+def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False, skip_monitoring: bool = False, skip_sheets: bool = False, skip_update_board: bool = False, skip_send_email: bool = False, skip_send_slack: bool = False, skip_cc_reviewers: bool = False, mock_veps: bool = False, mock_analyzed_combined: bool = False, mock_alert_summary: bool = False, immediate_start: bool = False, use_state_cache: bool = False):
     """Create initial state for the agent."""
     sheet_config = {
         "sheet_name": "VEP Status",  # Optional: name for the sheet/tab
@@ -109,6 +109,7 @@ def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int =
         "skip_update_board": skip_update_board,  # Flag to skip writing to GitHub project board
         "skip_send_email": skip_send_email,  # Flag to skip sending email alerts
         "skip_send_slack": skip_send_slack,  # Flag to skip sending Slack alerts
+        "skip_cc_reviewers": skip_cc_reviewers,  # Flag to skip posting CC comments on impl PRs
         "mock_veps": mock_veps,  # Flag to use mock VEPs instead of fetching from GitHub
         "mock_analyzed_combined": mock_analyzed_combined,  # Flag to skip LLM in analyze_combined
         "mock_alert_summary": mock_alert_summary,  # Flag to skip LLM in alert_summary
@@ -183,6 +184,8 @@ def log_startup_flags(args, index_cache_minutes: int) -> None:
         flags.append("  --skip-send-email: enabled")
     if args.skip_send_slack:
         flags.append("  --skip-send-slack: enabled")
+    if args.skip_cc_reviewers:
+        flags.append("  --skip-cc-reviewers: enabled")
     if args.mock_veps:
         flags.append("  --mock-veps: enabled")
     if args.mock_analyzed_combined:
@@ -212,6 +215,8 @@ def log_startup_flags(args, index_cache_minutes: int) -> None:
         log("Skip-sheets mode: Google Sheets updates will be skipped", node="main")
     if args.skip_update_board:
         log("Skip-update-board mode: GitHub project board updates will be skipped", node="main")
+    if args.skip_cc_reviewers:
+        log("Skip-cc-reviewers mode: CC comments will not be posted on implementation PRs", node="main")
     if args.mock_veps:
         log("Mock VEPs mode: will use mock VEPs instead of fetching from GitHub", node="main")
     if args.mock_analyzed_combined:
@@ -311,6 +316,11 @@ def parse_args():
         "--skip-send-slack",
         action="store_true",
         help="Skip sending Slack alerts. Useful for debugging without sending Slack messages."
+    )
+    parser.add_argument(
+        "--skip-cc-reviewers",
+        action="store_true",
+        help="Skip posting CC comments on implementation PRs. Useful when testing without issue write scope."
     )
     parser.add_argument(
         "--mock-veps",
@@ -481,7 +491,7 @@ def main():
     log("Graph created successfully", node="main")
     
     # Initialize state
-    initial_state = get_initial_state(sheet_id=args.sheet_id, index_cache_minutes=index_cache_minutes, one_cycle=args.one_cycle, skip_monitoring=args.skip_monitoring, skip_sheets=args.skip_sheets, skip_update_board=args.skip_update_board, skip_send_email=args.skip_send_email, skip_send_slack=args.skip_send_slack, mock_veps=args.mock_veps, mock_analyzed_combined=args.mock_analyzed_combined, mock_alert_summary=args.mock_alert_summary, immediate_start=args.immediate_start, use_state_cache=args.use_state_cache)
+    initial_state = get_initial_state(sheet_id=args.sheet_id, index_cache_minutes=index_cache_minutes, one_cycle=args.one_cycle, skip_monitoring=args.skip_monitoring, skip_sheets=args.skip_sheets, skip_update_board=args.skip_update_board, skip_send_email=args.skip_send_email, skip_send_slack=args.skip_send_slack, skip_cc_reviewers=args.skip_cc_reviewers, mock_veps=args.mock_veps, mock_analyzed_combined=args.mock_analyzed_combined, mock_alert_summary=args.mock_alert_summary, immediate_start=args.immediate_start, use_state_cache=args.use_state_cache)
 
     # Load state cache if requested
     if args.use_state_cache:

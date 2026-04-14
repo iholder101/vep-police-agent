@@ -261,6 +261,7 @@ def fetch_veps_node(state: VEPState) -> Any:
     board_veps = indexed_context.get("board_veps", {})  # Dict[issue_number -> board_data]
     issues_index = indexed_context.get("issues_index", [])
     vep_files_index = indexed_context.get("vep_files_index", [])
+    enhancement_pr_reviews = indexed_context.get("enhancement_pr_reviews", {})  # Dict[issue_number -> {approvers, reviewers}]
 
     # Build lookups
     issues_by_number = {issue.get("number"): issue for issue in issues_index if issue.get("number")}
@@ -465,6 +466,13 @@ def fetch_veps_node(state: VEPState) -> Any:
                 total_count = len(vep_info.implementation_prs)
                 if merged_count > 0:
                     log(f"  VEP #{issue_number} ({vep_info.name}): {merged_count}/{total_count} impl PRs merged", node="fetch_veps", level="DEBUG")
+
+            # Populate approvers/reviewers from enhancement PR review data
+            # Keys may be int (in-memory) or str (after JSON cache round-trip)
+            review_data = enhancement_pr_reviews.get(issue_number) or enhancement_pr_reviews.get(str(issue_number)) or {}
+            if review_data:
+                vep_info.approvers = review_data.get("approvers", [])
+                vep_info.reviewers = review_data.get("reviewers", [])
 
             discovered_veps.append(vep_info)
 
