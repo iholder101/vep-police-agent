@@ -152,9 +152,56 @@ def _process_schedule_content(schedule_content: Any, version: str, sorted_versio
         "release_phase": phase,
     }
 
+def _fetch_previous_release_code_freeze(get_file_tool, versions: List[str], current_version: str) -> Optional[str]:
+    """Fetch the previous release's code freeze date.
+
+    The code freeze date is when the release branch is cut from main.
+    PRs merged to main before this date belong to the previous release;
+    PRs merged after belong to the current release.
+
+    Returns ISO date string (e.g. "2026-02-25") or None if unavailable.
+    """
+    # Find the version right after current in the sorted list (sorted newest-first)
+    try:
+        idx = versions.index(current_version)
+    except ValueError:
+        return None
+    if idx + 1 >= len(versions):
+        return None
+
+    prev_version = versions[idx + 1]
+    log(f"Fetching previous release ({prev_version}) code freeze date", node="indexer")
+
+    try:
+        schedule_path = f"releases/{prev_version}/schedule.md"
+        try:
+            schedule_content = get_file_tool.func(
+                owner="kubevirt", repo="sig-release", path=schedule_path
+            )
+        except TypeError:
+            schedule_content = get_file_tool.func(
+                path=f"kubevirt/sig-release/{schedule_path}"
+            )
+
+        if not schedule_content or len(str(schedule_content)) <= 100:
+            log(f"No valid schedule for {prev_version}", node="indexer", level="WARNING")
+            return None
+
+        prev_result = _process_schedule_content(schedule_content, prev_version)
+        cf_date = prev_result.get("release_deadlines", {}).get("code_freeze")
+        if cf_date:
+            log(f"Previous release {prev_version} code freeze: {cf_date}", node="indexer")
+        else:
+            log(f"Could not parse code freeze from {prev_version} schedule", node="indexer", level="WARNING")
+        return cf_date
+    except Exception as e:
+        log(f"Error fetching previous release schedule: {e}", node="indexer", level="WARNING")
+        return None
+
+
 def index_release_schedule() -> Optional[Dict[str, Any]]:
     """Index the current release schedule from kubevirt/sig-release.
-    
+
     Lists the releases directory, finds all versions, sorts numerically,
     and fetches the schedule for the newest release.
     
@@ -308,7 +355,7 @@ def index_release_schedule() -> Optional[Dict[str, Any]]:
                 try:
                     schedule_path = f"releases/{version}/schedule.md"
                     log(f"Trying to fetch schedule for {version}", node="indexer")
-                    
+
                     # Try different parameter formats
                     try:
                         schedule_content = get_file_tool.func(
@@ -328,10 +375,15 @@ def index_release_schedule() -> Optional[Dict[str, Any]]:
                                 path=schedule_path,
                                 branch="main"
                             )
-                    
+
                     if schedule_content and len(str(schedule_content)) > 100:
                         log(f"Found release schedule for {version} ({'newest available' if in_main_loop else 'fallback'})", node="indexer")
-                        return _process_schedule_content(schedule_content, version, sorted_versions if in_main_loop else None)
+                        result = _process_schedule_content(schedule_content, version, sorted_versions if in_main_loop else None)
+                        # Also fetch the previous release's code freeze date
+                        result["previous_release_code_freeze"] = _fetch_previous_release_code_freeze(
+                            get_file_tool, sorted_versions, version
+                        )
+                        return result
                 except Exception as e:
                     log(f"Error fetching schedule for {version}: {e}", node="indexer", level="DEBUG")
                     continue
@@ -351,10 +403,14 @@ def index_release_schedule() -> Optional[Dict[str, Any]]:
                     repo="sig-release",
                     path=schedule_path
                 )
-                
+
                 if schedule_content and len(str(schedule_content)) > 100:
                     log(f"Found release schedule for {version} ({'newest available' if in_main_loop else 'fallback'})", node="indexer")
-                    return _process_schedule_content(schedule_content, version, sorted_versions if in_main_loop else None)
+                    result = _process_schedule_content(schedule_content, version, sorted_versions if in_main_loop else None)
+                    result["previous_release_code_freeze"] = _fetch_previous_release_code_freeze(
+                        get_file_tool, fallback_versions, version
+                    )
+                    return result
             except Exception:
                 continue
                     
@@ -1009,10 +1065,13 @@ def index_enhancements_prs(days_back: Optional[int] = 365) -> List[Dict[str, Any
                     if pr.get("comments"):
                         review_count = max(review_count, pr.get("comments", 0) // 2)
 
+                    is_merged = pr.get("merged", False) or (pr.get("merged_at") is not None)
                     prs.append({
                         "number": pr_number,
                         "title": title,
-                        "state": state,
+                        "state": "merged" if is_merged else state,
+                        "merged": is_merged,
+                        "merged_at": pr.get("merged_at"),
                         "body": body,  # Full body for tracking issue reference extraction
                         "url": url,
                         "html_url": pr.get("html_url", url),
@@ -1131,12 +1190,14 @@ def _search_kubevirt_prs_referencing_veps() -> List[Dict[str, Any]]:
                     vep_issue_num = _extract_vep_issue_number(title, body)
 
                     if vep_issue_num:
-                        is_merged = "pull_request" in item and item.get("pull_request", {}).get("merged_at") is not None
+                        pr_info = item.get("pull_request", {})
+                        is_merged = "pull_request" in item and pr_info.get("merged_at") is not None
                         all_prs.append({
                             "number": pr_num,
                             "title": title,
                             "state": "merged" if is_merged else item.get("state", ""),
                             "merged": is_merged,
+                            "merged_at": pr_info.get("merged_at"),
                             "url": item.get("html_url") or item.get("url", ""),
                             "html_url": item.get("html_url", ""),
                             "created_at": item.get("created_at"),
@@ -1301,6 +1362,7 @@ def index_kubevirt_prs(days_back: Optional[int] = 365, fetch_reviews: bool = Tru
                             "labels": [l.get("name") if isinstance(l, dict) else l for l in pr.get("labels", [])],
                             "state": "merged" if is_merged else pr.get("state"),
                             "merged": is_merged,
+                            "merged_at": pr.get("merged_at"),
                             "url": pr.get("html_url") or pr.get("url"),
                             "created_at": pr.get("created_at"),
                             "updated_at": pr.get("updated_at"),
@@ -2061,8 +2123,10 @@ def index_vep_pr_mappings(prs_index: Optional[List[Dict[str, Any]]] = None) -> D
                 "title": pr.get("title"),
                 "state": pr.get("state"),
                 "merged": pr.get("merged", False),
+                "merged_at": pr.get("merged_at"),
                 "url": pr.get("html_url") or pr.get("url"),
                 "labels": pr.get("labels", []),
+                "created_at": pr.get("created_at"),
                 "updated_at": pr.get("updated_at"),
             })
 
@@ -2536,6 +2600,8 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
                         if not existing.get("merged") and pr.get("merged"):
                             existing["merged"] = pr["merged"]
                             existing["state"] = "merged"
+                        if not existing.get("merged_at") and pr.get("merged_at"):
+                            existing["merged_at"] = pr["merged_at"]
                         break
         log(f"Search merge: {new_count} new PRs added, {updated_count} existing PRs updated with VEP issue numbers", node="indexer")
 
@@ -2568,6 +2634,7 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
     }
     indexed_context["release_phase"] = release_info.get("release_phase", "unknown") if release_info else "unknown"
     indexed_context["release_deadlines"] = release_info.get("release_deadlines", {}) if release_info else {}
+    indexed_context["previous_release_code_freeze"] = release_info.get("previous_release_code_freeze") if release_info else None
 
     # Log summary
     release = release_version if release_version else "unknown"
