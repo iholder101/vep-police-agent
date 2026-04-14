@@ -326,6 +326,11 @@ def fetch_veps_node(state: VEPState) -> Any:
                             pr.updated_at = datetime.fromisoformat(pr_data["updated_at"].replace('Z', '+00:00'))
                         except (ValueError, AttributeError):
                             pass
+                    if pr_data.get("merged_at"):
+                        try:
+                            pr.merged_at = datetime.fromisoformat(pr_data["merged_at"].replace('Z', '+00:00'))
+                        except (ValueError, AttributeError):
+                            pass
                 enriched_impl_prs.append(pr)
             vep_info.implementation_prs = enriched_impl_prs
 
@@ -354,6 +359,12 @@ def fetch_veps_node(state: VEPState) -> Any:
                                 updated = datetime.fromisoformat(pr_data["updated_at"].replace('Z', '+00:00'))
                         except (ValueError, AttributeError):
                             pass
+                        merged_at = None
+                        if pr_data.get("merged_at"):
+                            try:
+                                merged_at = datetime.fromisoformat(pr_data["merged_at"].replace('Z', '+00:00'))
+                            except (ValueError, AttributeError):
+                                pass
                         pr = PRInfo(
                             number=pr_num,
                             title=pr_data.get("title", f"PR #{pr_num}"),
@@ -362,6 +373,7 @@ def fetch_veps_node(state: VEPState) -> Any:
                             created_at=created,
                             updated_at=updated,
                             author=pr_data.get("author") or "unknown",
+                            merged_at=merged_at,
                         )
                         vep_info.implementation_prs.append(pr)
 
@@ -391,9 +403,14 @@ def fetch_veps_node(state: VEPState) -> Any:
                     now = datetime.now(timezone.utc)
                     created = now
                     updated = now
+                    merged_at = None
                     try:
+                        if pr_data.get("created_at"):
+                            created = datetime.fromisoformat(pr_data["created_at"].replace('Z', '+00:00'))
                         if pr_data.get("updated_at"):
                             updated = datetime.fromisoformat(pr_data["updated_at"].replace('Z', '+00:00'))
+                        if pr_data.get("merged_at"):
+                            merged_at = datetime.fromisoformat(pr_data["merged_at"].replace('Z', '+00:00'))
                     except (ValueError, AttributeError):
                         pass
                     pr = PRInfo(
@@ -404,6 +421,7 @@ def fetch_veps_node(state: VEPState) -> Any:
                         created_at=created,
                         updated_at=updated,
                         author="unknown",
+                        merged_at=merged_at,
                     )
                     vep_info.implementation_prs.append(pr)
 
@@ -416,11 +434,14 @@ def fetch_veps_node(state: VEPState) -> Any:
                 now = datetime.now(timezone.utc)
                 created = now
                 updated = now
+                merged_at = None
                 try:
                     if pr_data.get("created_at"):
                         created = datetime.fromisoformat(pr_data["created_at"].replace('Z', '+00:00'))
                     if pr_data.get("updated_at"):
                         updated = datetime.fromisoformat(pr_data["updated_at"].replace('Z', '+00:00'))
+                    if pr_data.get("merged_at"):
+                        merged_at = datetime.fromisoformat(pr_data["merged_at"].replace('Z', '+00:00'))
                 except (ValueError, AttributeError):
                     pass
                 pr_state = (pr_data.get("state") or "unknown").lower()
@@ -432,6 +453,7 @@ def fetch_veps_node(state: VEPState) -> Any:
                     created_at=created,
                     updated_at=updated,
                     author="unknown",
+                    merged_at=merged_at,
                 )
                 vep_info.enhancement_prs.append(pr)
 
