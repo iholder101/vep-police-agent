@@ -94,7 +94,7 @@ graph TD
 2. `fetch_veps` discovers VEPs from GitHub and returns to scheduler.
 3. Scheduler routes to `run_monitoring`, which fans out to five parallel check nodes (deadlines, activity, compliance, exceptions, phase risks) using Flash model.
 4. `merge_vep_updates` combines context data (deterministic, no LLM).
-5. `analyze_combined` (Pro model) does cross-domain reasoning and generates alerts.
+5. `analyze_combined` (Pro model) does cross-domain reasoning and generates alerts. Uses the previous release's code freeze date to distinguish current-release vs previous-release PRs - VEPs with only old PRs are flagged instead of shown as complete.
 6. `detect_changes` compares to previous run for accurate change reporting.
 7. `update_sheets`, `update_project_board`, and `alert_summary` run on schedule; alerts fan out to email and Slack.
 

@@ -5,14 +5,68 @@ This node has access to ALL context at once and does holistic reasoning.
 """
 
 import json
-from datetime import datetime
-from typing import Any, List
-from state import VEPState
+from datetime import datetime, date, time, timedelta, timezone
+from typing import Any, List, Optional, Tuple
+from state import VEPState, PRInfo
 from services.utils import log
 from services.llm_helper import invoke_llm_check
 from services.response_models import CheckResponse
 from services.indexer import create_indexed_context
 from nodes.alert_formatting import build_vep_summary_table, build_markdown_table
+
+
+def classify_prs_by_release(impl_prs: List[PRInfo], cutoff: datetime) -> Tuple[List[PRInfo], List[PRInfo]]:
+    """Classify implementation PRs as current-release vs previous-release work.
+
+    The cutoff is the previous release's code freeze date (when its branch was
+    cut from main). PRs merged to main before that date belong to the previous
+    release; PRs merged after or still open belong to the current release.
+
+    Returns (current_release_prs, previous_release_prs).
+    Closed-not-merged (abandoned) PRs are excluded from both lists.
+    Unknown-state PRs are treated as current-release (conservative) to prevent
+    false 10% assignments when PR data is incomplete.
+    """
+    current, previous = [], []
+    for pr in impl_prs:
+        if pr.state == "open":
+            current.append(pr)
+        elif pr.state == "merged" and pr.merged_at:
+            if pr.merged_at > cutoff:
+                current.append(pr)
+            else:
+                previous.append(pr)
+        elif pr.state == "merged":
+            # merged_at not available - can't classify, treat as current (conservative)
+            current.append(pr)
+        elif pr.state == "closed":
+            pass  # closed-not-merged (abandoned): excluded from both lists
+        else:
+            # unknown or unrecognized state: treat as current (conservative)
+            current.append(pr)
+    return current, previous
+
+
+def _build_previous_release_override(
+    num_previous_prs: int, cutoff_str: str, phase_info: str, old_prob: Optional[int] = None
+) -> dict:
+    """Build risk assessment dict for VEPs with only previous-release PRs."""
+    reasoning = (
+        f"All {num_previous_prs} implementation PRs merged before previous release "
+        f"code freeze ({cutoff_str}), no current-release activity. "
+        f"Promotion phase: {phase_info}."
+    )
+    if old_prob is not None:
+        reasoning += f" (LLM estimated {old_prob}%)"
+    return {
+        "merge_probability": 10,
+        "reviewer_sentiment": "concerned",
+        "recent_progress": False,
+        "days_inactive": 0,  # no current-release PRs to measure staleness on
+        "reasoning": reasoning,
+        "recommend_escalation": True,
+        "escalation_actions": ["Open implementation PRs for current release"],
+    }
 
 
 class AnalyzeCombinedResponse(CheckResponse):
@@ -150,6 +204,22 @@ def analyze_combined_node(state: VEPState) -> Any:
     release_phase = indexed_context.get("release_phase", "unknown")
     release_deadlines = indexed_context.get("release_deadlines", {})
     board_veps = indexed_context.get("board_veps", {})
+
+    # Parse previous release code freeze cutoff for release-aware PR classification
+    prev_cf_str = indexed_context.get("previous_release_code_freeze")
+    release_cutoff: Optional[datetime] = None
+    if prev_cf_str:
+        try:
+            # Add 7-day buffer after the scheduled code freeze to account for
+            # the community delaying the actual branch cut by up to a week
+            release_cutoff = datetime.combine(
+                date.fromisoformat(prev_cf_str), time.min, tzinfo=timezone.utc
+            ) + timedelta(days=7)
+            log(f"Release cutoff for PR classification: {prev_cf_str} + 7d buffer = {release_cutoff.date().isoformat()}", node="analyze_combined")
+        except (ValueError, TypeError):
+            log(f"Could not parse previous_release_code_freeze: {prev_cf_str}", node="analyze_combined", level="WARNING")
+    else:
+        log("Release-aware PR classification disabled: no previous release code freeze date available", node="analyze_combined", level="WARNING")
 
     # Extract phase_risks from VEPs for focused analysis
     phase_risks = []
@@ -438,7 +508,12 @@ For EVERY VEP (skip any with "_deterministic_risk" in analysis):
 8. Recommend escalation if probability < 50% OR blocked OR no recent_progress
 9. Store in vep.analysis["risk_assessment"] with recent_progress and days_inactive fields
 
-For VEPs where ALL implementation PRs are merged:
+RELEASE-AWARENESS: PRs merged before the previous release's code freeze ({prev_cf_str or 'unknown'})
+are PREVIOUS-RELEASE work, not current-release progress. Ignore previous-release PRs when assessing
+completeness - only current-release PRs matter. A VEP with no current-release PRs should have LOW
+probability (around 10%), regardless of how many previous-release PRs were merged.
+
+For VEPs where ALL CURRENT-RELEASE implementation PRs are merged:
 - If the VEP proposal is also merged OR we are past the relevant freeze: set merge_probability to 100%
 - Otherwise: set merge_probability to 95%
 - Set reviewer_sentiment to "positive"
@@ -526,14 +601,27 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
                 vep.analysis = {}
             fallback_count += 1
 
-            # Check if all implementation PRs are merged
+            # Determine effective PRs: filter to current-release only when cutoff available
             all_merged = False
             has_impl_prs = bool(vep.implementation_prs)
+            effective_prs = vep.implementation_prs
+            if has_impl_prs and release_cutoff:
+                current_prs, previous_prs = classify_prs_by_release(vep.implementation_prs, release_cutoff)
+                if previous_prs and not current_prs:
+                    phase_info = getattr(vep.current_milestone, 'promotion_phase', 'Net New')
+                    vep.analysis["risk_assessment"] = _build_previous_release_override(
+                        len(previous_prs), prev_cf_str or "unknown", phase_info
+                    )
+                    log(f"Fallback: {vep.name} has only previous-release PRs ({len(previous_prs)}), prob=10%", node="analyze_combined")
+                    continue
+                elif current_prs:
+                    effective_prs = current_prs
+
             if has_impl_prs:
                 # Consider PRs as done if merged, closed, or unknown (unknown = too old to fetch, likely merged)
-                all_merged = all(pr.state in ("merged", "closed", "unknown") for pr in vep.implementation_prs)
+                all_merged = all(pr.state in ("merged", "closed", "unknown") for pr in effective_prs)
                 # But require at least one PR with confirmed merged/closed state
-                any_confirmed = any(pr.state in ("merged", "closed") for pr in vep.implementation_prs)
+                any_confirmed = any(pr.state in ("merged", "closed") for pr in effective_prs)
                 all_merged = all_merged and any_confirmed
 
             if all_merged and has_impl_prs:
@@ -555,8 +643,8 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
                 # Open impl PRs are normal and expected — focus on proposal progress.
                 vep.analysis["risk_assessment"] = _fallback_design_phase(vep)
             elif has_impl_prs:
-                merged_count = sum(1 for pr in vep.implementation_prs if pr.state == "merged")
-                total_count = len(vep.implementation_prs)
+                merged_count = sum(1 for pr in effective_prs if pr.state == "merged")
+                total_count = len(effective_prs)
                 open_count = total_count - merged_count
                 prob = max(30, int(70 * merged_count / total_count)) if total_count > 0 else 50
                 vep.analysis["risk_assessment"] = {
@@ -592,12 +680,31 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
         if not has_impl_prs:
             continue
 
-        # Count PRs by state category
+        # Determine effective PRs: filter to current-release only when cutoff available
+        effective_prs = vep.implementation_prs
+        if release_cutoff:
+            current_prs, previous_prs = classify_prs_by_release(vep.implementation_prs, release_cutoff)
+            if previous_prs and not current_prs:
+                ra = vep.analysis["risk_assessment"]
+                prob = ra.get("merge_probability", 100)
+                if prob > 10:
+                    old_prob = prob
+                    phase_info = getattr(vep.current_milestone, 'promotion_phase', 'Net New')
+                    override = _build_previous_release_override(
+                        len(previous_prs), prev_cf_str or "unknown", phase_info, old_prob=old_prob
+                    )
+                    ra.update(override)
+                    log(f"Corrected {vep.name}: only previous-release PRs ({len(previous_prs)}), probability {old_prob}% → 10%", node="analyze_combined")
+                continue
+            elif current_prs:
+                effective_prs = current_prs
+
+        # Count PRs by state category (using current-release PRs only)
         done_states = ("merged", "closed")
-        open_count = sum(1 for pr in vep.implementation_prs if pr.state == "open")
-        done_count = sum(1 for pr in vep.implementation_prs if pr.state in done_states)
-        unknown_count = sum(1 for pr in vep.implementation_prs if pr.state not in (*done_states, "open"))
-        total_count = len(vep.implementation_prs)
+        open_count = sum(1 for pr in effective_prs if pr.state == "open")
+        done_count = sum(1 for pr in effective_prs if pr.state in done_states)
+        unknown_count = sum(1 for pr in effective_prs if pr.state not in (*done_states, "open"))
+        total_count = len(effective_prs)
         # No explicitly open PRs = all done (unknown state = old PR likely merged)
         all_merged = open_count == 0 and done_count > 0
         ra = vep.analysis["risk_assessment"]
@@ -640,7 +747,6 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
         # Some PRs still open — boost if most are done
         elif not all_merged:
             merged_count = done_count
-            total_count = len(vep.implementation_prs)
             if merged_count > 0 and prob < 50:
                 floor = max(50, int(80 * merged_count / total_count))
                 if floor > prob:
