@@ -26,18 +26,13 @@ NODE_MODELS: Dict[str, str] = {
     "update_sheets": HEAVY_MODEL,
     "alert_summary": HEAVY_MODEL,  # Generates summary-style notifications
 
-    # Context fetch nodes - use fast model (Flash) to fetch data via GitHub MCP
-    # These nodes ONLY fetch raw data, NO analysis - analysis is done by analyze_combined
+    # Context fetch node - uses fast model (Flash) to fetch data via GitHub MCP
     "fetch_veps": FAST_MODEL,
-    "check_activity": FAST_MODEL,
-    "check_compliance": FAST_MODEL,
-    "check_deadlines": FAST_MODEL,
-    "check_exceptions": FAST_MODEL,
     "merge_vep_updates": FAST_MODEL,  # Simple context merge, no deep reasoning
 
-    # Utility/orchestration nodes omitted - they don't invoke LLMs.
-    # (send_email, send_slack, send_notifications, save_state_cache, scheduler, run_monitoring)
-    # If added here they'd just fall back to DEFAULT_MODEL via get_model_for_node(), which is unused.
+    # Deterministic nodes (no LLM): check_activity, check_compliance,
+    # check_deadlines, check_exceptions, check_phase_risks.
+    # Utility/orchestration nodes also omitted - they don't invoke LLMs.
 }
 
 # Email notification configuration

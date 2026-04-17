@@ -1,97 +1,126 @@
-"""Exception context fetch node - fetches exception-related data for VEPs.
+"""Exception context node - computes exception-related data for VEPs.
 
-This is a FETCH node - it only gathers raw data, NO analysis.
-Analysis is done by analyze_combined which has access to ALL context at once.
+Deterministic node using indexed context (no LLM). Discovers exception
+issues, maps them to VEPs, and detects post-freeze activity.
 """
 
-import json
+import re
 from datetime import datetime
 from typing import Any
 from state import VEPState
 from services.utils import log
-from services.llm_helper import invoke_llm_fetch
-from services.response_models import FetchResponse
+from services.indexer import create_indexed_context
+from nodes._check_helpers import get_board_vep, collect_impl_prs, parse_iso_date
+
+
+EXCEPTION_PATTERNS = ["exception", "exemption", "freeze extension", "post-freeze"]
 
 
 def check_exceptions_node(state: VEPState) -> Any:
-    """Fetch exception-related context for VEPs.
+    """Compute exception context for VEPs from indexed data.
 
-    This is a FETCH node using lightweight LLM (Flash). It:
-    1. Searches for exception requests in kubevirt/enhancements
-    2. Checks for post-freeze work that might need exceptions
-    3. Stores raw exception data in vep.context.exceptions
-
-    NO analysis is done here - that's handled by analyze_combined.
+    Discovers exception issues from issues_index, maps them to VEPs,
+    checks board exception phase, and detects post-freeze PR activity.
     """
     veps = state.get("veps", [])
-    veps_count = len(veps)
-    log(f"Fetching exception context for {veps_count} VEP(s)", node="check_exceptions")
+    log(f"Computing exception context for {len(veps)} VEP(s)", node="check_exceptions")
 
     last_check_times = state.get("last_check_times", {})
     last_check_times["check_exceptions"] = datetime.now()
 
     if not veps:
-        return {
-            "last_check_times": last_check_times,
+        return {"last_check_times": last_check_times}
+
+    index_cache_minutes = state.get("index_cache_minutes", 60)
+    indexed_context = create_indexed_context(cache_max_age_minutes=index_cache_minutes)
+
+    issues_index = indexed_context.get("issues_index", [])
+    release_deadlines = indexed_context.get("release_deadlines", {})
+    prs_index = indexed_context.get("prs_index", [])
+    vep_to_pr_mappings = indexed_context.get("vep_to_pr_mappings", {})
+    board_veps = indexed_context.get("board_veps", {})
+
+    # Phase 1: Discover exception issues
+    exception_issues = []
+    for issue in issues_index:
+        labels_lower = [l.lower() for l in issue.get("labels", [])]
+        title_lower = issue.get("title", "").lower()
+        body_text = (issue.get("body") or issue.get("body_preview") or "")[:500].lower()
+
+        if ("exception" in labels_lower
+                or any(pat in title_lower for pat in EXCEPTION_PATTERNS)
+                or any(pat in body_text for pat in EXCEPTION_PATTERNS)):
+            exception_issues.append(issue)
+
+    log(f"Found {len(exception_issues)} exception-related issue(s)", node="check_exceptions")
+
+    # Phase 2: Map exceptions to VEPs via body references
+    vep_to_exception = {}
+    for exc_issue in exception_issues:
+        body = exc_issue.get("body") or exc_issue.get("body_preview") or ""
+        refs = re.findall(
+            r'(?:vep[-\s#]*|tracking\s+issue\s*#?)(\d+)', body, re.IGNORECASE
+        )
+        for ref in refs:
+            vep_to_exception[int(ref)] = exc_issue
+
+    # Phase 3: Per-VEP context
+    ef_date = parse_iso_date(release_deadlines.get("enhancement_freeze"))
+    cf_date = parse_iso_date(release_deadlines.get("code_freeze"))
+
+    context_by_id = {}
+    for vep in veps:
+        exc_issue = vep_to_exception.get(vep.tracking_issue_id)
+
+        # Board exception phase (authoritative signal)
+        board_vep = get_board_vep(board_veps, vep.tracking_issue_id)
+        exception_phase = board_vep.get("fields", {}).get("Exception Phase", "None")
+
+        # Post-freeze activity (PR updated_at as proxy for activity)
+        has_post_ef_commits = False
+        has_post_cf_commits = False
+        post_freeze_pr_numbers = []
+
+        if ef_date or cf_date:
+            impl_prs = collect_impl_prs(
+                vep.tracking_issue_id, board_veps, vep_to_pr_mappings, prs_index
+            )
+            seen = set()
+            for impl_pr in impl_prs:
+                pr_data = next(
+                    (p for p in prs_index if p.get("number") == impl_pr.get("number")),
+                    None,
+                )
+                if not pr_data or not pr_data.get("updated_at"):
+                    continue
+                updated_at = parse_iso_date(pr_data["updated_at"])
+                if not updated_at:
+                    continue
+                if ef_date and updated_at > ef_date:
+                    has_post_ef_commits = True
+                    if pr_data["number"] not in seen:
+                        post_freeze_pr_numbers.append(pr_data["number"])
+                        seen.add(pr_data["number"])
+                if cf_date and updated_at > cf_date:
+                    has_post_cf_commits = True
+
+        context_by_id[vep.tracking_issue_id] = {
+            "exception_issue_number": exc_issue.get("number") if exc_issue else None,
+            "exception_issue_state": exc_issue.get("state") if exc_issue else None,
+            "exception_labels": exc_issue.get("labels", []) if exc_issue else [],
+            "exception_phase": exception_phase,
+            "has_post_ef_commits": has_post_ef_commits,
+            "has_post_cf_commits": has_post_cf_commits,
+            "post_freeze_pr_numbers": post_freeze_pr_numbers,
         }
 
-    # Get release schedule for freeze dates
-    release_schedule = state.get("release_schedule")
-
-    # Build system prompt - FETCH ONLY, no analysis
-    system_prompt = """You are a lightweight data fetcher for VEP exception information.
-
-Your task is to FETCH raw data only - do NOT analyze or generate alerts.
-
-FETCH TASKS:
-1. Search for exception-related issues in kubevirt/enhancements:
-   - Search patterns: "exception", "exemption", "freeze extension", "post-freeze"
-   - Check for "exception" label on issues
-   - For each found exception issue, get: number, title, state, labels, body (first 500 chars)
-
-2. For each VEP, check if it has an associated exception:
-   - exception_issue_number: int or null
-   - exception_issue_state: "open", "closed" or null
-   - exception_labels: list of labels on exception issue
-
-3. Check for post-freeze activity:
-   - has_post_ef_commits: bool (commits after Enhancement Freeze)
-   - has_post_cf_commits: bool (commits after Code Freeze)
-   - post_freeze_pr_numbers: list of PR numbers with post-freeze activity
-
-IMPORTANT: Do NOT analyze whether exceptions are needed, do NOT judge completeness.
-Just fetch the raw data. Exception analysis is done by a separate node.
-
-Return context_updates with the raw exception data for each VEP."""
-
-    # Serialize minimal state for LLM
-    context = {
-        "veps": [{"tracking_issue_id": vep.tracking_issue_id, "name": vep.name, "title": vep.title,
-                  "target_release": vep.target_release} for vep in veps],
-        "release_schedule": release_schedule.model_dump(mode='json') if release_schedule else None,
-        "current_release": state.get("current_release"),
+    vep_updates_by_check = state.get("vep_updates_by_check", {})
+    vep_updates_by_check["check_exceptions"] = {
+        "context_field": "exceptions",
+        "updates": context_by_id,
     }
 
-    user_prompt = f"""Fetch exception context for these VEPs:
-
-{json.dumps(context, indent=2, default=str)}
-
-First, search kubevirt/enhancements for exception-related issues.
-Then, for each VEP, return context_updates with:
-- exception_issue_number, exception_issue_state, exception_labels
-- has_post_ef_commits, has_post_cf_commits, post_freeze_pr_numbers"""
-
-    # Invoke lightweight LLM to fetch data
-    result = invoke_llm_fetch("check_exceptions", context, system_prompt, user_prompt, FetchResponse)
-
-    # Store context updates for merge node to apply
-    context_by_id = {cu.tracking_issue_id: cu.context_data for cu in result.context_updates}
-
-    # Store in vep_updates_by_check for merge node
-    vep_updates_by_check = state.get("vep_updates_by_check", {})
-    vep_updates_by_check["check_exceptions"] = {"context_field": "exceptions", "updates": context_by_id}
-
-    log(f"Fetched exception context for {len(context_by_id)} VEP(s)", node="check_exceptions")
+    log(f"Computed exception context for {len(context_by_id)} VEP(s)", node="check_exceptions")
 
     return {
         "last_check_times": last_check_times,
