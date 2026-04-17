@@ -34,6 +34,7 @@ graph TD
     Scheduler -->|Board due| UpdateBoard[update_project_board]
     Scheduler -->|Alerts due| AlertSummary[alert_summary]
     Scheduler -->|No tasks| Wait[wait]
+    Scheduler -->|one-cycle done| End([END])
 
     FetchVEPs --> Scheduler
 
@@ -169,6 +170,7 @@ sudo ./scripts/create-systemd-unit.sh --delete
 podman run --rm --pull=newer \
     -v "$(pwd):/workspace:ro" \
     -v "$(pwd)/cache:/workspace/cache:rw" \
+    -v "$(pwd)/output:/workspace/output:rw" \
     -w /workspace \
     quay.io/mabekitzur/vep-police-agent:latest \
     --api-key /workspace/API_KEY \
@@ -181,6 +183,7 @@ podman run --rm --pull=newer \
 **Note**:
 - `-v "$(pwd):/workspace:ro"` mounts your project directory as read-only (credentials stay secure)
 - `-v "$(pwd)/cache:/workspace/cache:rw"` mounts cache directory as read-write for persistence
+- `-v "$(pwd)/output:/workspace/output:rw"` mounts output directory for status snapshots
 - `-w /workspace` sets the working directory so `/workspace/API_KEY` paths work correctly
 - Run this from the project root directory where your credential files are located
 
@@ -296,6 +299,43 @@ Cache files in `cache/` directory:
 - `alert_persistence.json`: Tracks escalation logic.
 
 Use `--clear-history` for a fresh start.
+
+## Status Snapshots & Diff-Based Testing
+
+Each agent cycle produces deterministic output files in `output/`:
+
+| File | Description |
+|------|-------------|
+| `vep_snapshot_YYYYMMDD_HHMM.yaml` | Timestamped VEP status (sorted, fixed field order). Last 10 kept. |
+| `realizations.txt` | Changes vs previous run + anomaly flags |
+
+**Diff-based review workflow:**
+
+```bash
+# Diff the two most recent snapshots
+diff output/vep_snapshot_20260330_1400.yaml output/vep_snapshot_20260331_1400.yaml
+
+# Or read the realizations file directly (auto-diffs the last two snapshots)
+cat output/realizations.txt
+```
+
+The realizations file flags anomalies automatically (VEPs disappearing, PR counts
+decreasing, compliance regressions, large merge probability swings) - no LLM involved,
+purely deterministic checks.
+
+**Snapshot validation** (integration test equivalent):
+
+```bash
+# Run a full cycle with output-only flags
+python main.py --one-cycle \
+  --api-key API_KEY --google-token GOOGLE_TOKEN \
+  --github-token GITHUB_TOKEN --skip-sheets --skip-send-email \
+  --skip-send-slack --skip-update-board
+
+# Verify output files exist and look correct
+ls output/vep_snapshot_*.yaml
+cat output/realizations.txt
+```
 
 ## Troubleshooting
 

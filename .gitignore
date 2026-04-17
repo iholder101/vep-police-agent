@@ -9,3 +9,4 @@ cache/*
 !cache/history/
 cache/history/*
 !cache/history/.gitkeep
+output/

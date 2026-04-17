@@ -6,6 +6,7 @@ import json
 import os
 import signal
 import sys
+import time
 from pathlib import Path
 from typing import Optional, Dict, Any
 from langchain_core.messages import HumanMessage
@@ -14,6 +15,7 @@ from services.utils import log
 from state import VEPInfo, ReleaseSchedule
 from nodes.state_history import clear_all_history
 from nodes.escalation import clear_persistence
+from nodes.snapshot import dump_snapshot, generate_realizations
 
 # State cache file location
 STATE_CACHE_FILE = Path(__file__).parent / "cache" / "state_cache.json"
@@ -420,6 +422,16 @@ def setup_credentials(args):
         log("Fastest model mode enabled: all nodes will use FAST_MODEL", node="main")
 
 
+def _try_snapshot(response, start_time: float) -> None:
+    """Write snapshot and realizations, swallowing errors."""
+    try:
+        elapsed = time.time() - start_time
+        dump_snapshot(response, cycle_duration=elapsed)
+        generate_realizations(response, cycle_duration=elapsed)
+    except Exception as e:
+        log(f"Snapshot failed: {e}", node="main", level="ERROR")
+
+
 def main():
     """Run the VEP governance agent."""
     global _shutdown_requested
@@ -501,6 +513,8 @@ def main():
     log(f"Sheet config: {initial_state['sheet_config']}", node="main")
     
     # Run the agent
+    start_time = time.time()
+    response = initial_state  # Ensure response is always defined for finally block
     try:
         if args.one_cycle:
             # In one-cycle mode, run until update_sheets completes
@@ -508,40 +522,41 @@ def main():
             current_state = initial_state
             max_iterations = 50  # Safety limit
             iteration = 0
-            
+
             while iteration < max_iterations:
                 iteration += 1
                 response = agent.invoke(current_state)
-                
+
                 if _shutdown_requested:
                     log("Agent interrupted by user. Exiting...", node="main", level="INFO")
                     return
-                
+
                 # Check if we should exit after sheet update
                 if response.get("_exit_after_sheets", False):
                     log("One-cycle mode: Sheet update completed, exiting", node="main")
-                    return  # Exit immediately
-                
+                    return
+
                 # Update state for next iteration
                 current_state = response
-                
+
                 # Safety check: if no tasks are scheduled and sheets don't need update, exit
                 if not response.get("next_tasks") and not response.get("sheets_need_update", False):
                     log("No more tasks scheduled and sheets are up to date, exiting", node="main")
                     return
             log(f"One-cycle mode: Reached max iterations ({max_iterations}), exiting", node="main", level="WARNING")
+            return
         else:
             # Normal mode - run continuously
             log("Invoking agent...", node="main")
             response = agent.invoke(initial_state)
-        
+
         if _shutdown_requested:
             log("Agent interrupted by user. Exiting...", node="main", level="INFO")
             return
-        
+
         log("Agent execution completed", node="main")
         log(f"Final state keys: {list(response.keys())}", node="main")
-        
+
         # Check if sheet was created
         sheet_config = response.get("sheet_config", {})
         if sheet_config.get("sheet_id"):
@@ -549,7 +564,7 @@ def main():
             log(f"  View at: https://docs.google.com/spreadsheets/d/{sheet_config['sheet_id']}/edit", node="main")
         else:
             log("Sheet ID not yet set - will be created on first update_sheets run", node="main")
-            
+
     except KeyboardInterrupt:
         log("\nInterrupted by user. Exiting gracefully...", node="main", level="INFO")
         sys.exit(130)
@@ -561,6 +576,8 @@ def main():
         import traceback
         log(f"Traceback: {traceback.format_exc()}", node="main", level="ERROR")
         raise
+    finally:
+        _try_snapshot(response, start_time)
 
 
 if __name__ == "__main__":

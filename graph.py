@@ -1,7 +1,7 @@
 """LangGraph definition for VEP governance agent."""
 
 from typing import Literal, Any
-from langgraph.graph import StateGraph
+from langgraph.graph import StateGraph, END
 from langgraph.graph.state import CompiledStateGraph
 
 from state import VEPState
@@ -83,6 +83,7 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
             "update_project_board": "update_project_board",
             "alert_summary": "alert_summary",
             "wait": "wait",
+            END: END,
         }
     )
     
@@ -138,9 +139,9 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     return workflow.compile()
 
 
-def route_scheduler_operations(state: VEPState) -> Literal["fetch_veps", "run_monitoring", "update_sheets", "update_project_board", "alert_summary", "wait"]:
+def route_scheduler_operations(state: VEPState) -> str:
     """Route based on scheduler's next_tasks.
-    
+
     Routes to the first task in the queue. The scheduler can queue:
     - "fetch_veps" (discovers/updates VEPs from GitHub)
     - "run_monitoring" (triggers all checks in parallel) - only if not skip_monitoring
@@ -148,17 +149,16 @@ def route_scheduler_operations(state: VEPState) -> Literal["fetch_veps", "run_mo
     - "update_project_board" (writes summary data to GitHub project board)
     - "alert_summary" (checks if alerts need to be sent)
     - "wait" (wait until next round hour)
-    
+
     Note: Multiple tasks (e.g., update_sheets and alert_summary) are handled
     by routing to them sequentially. The scheduler queues tasks and processes
     them one at a time, returning to scheduler after each completes.
     """
     import os
     debug_mode = os.environ.get("DEBUG_MODE")
-    # In one-cycle mode or test-sheets debug mode, if sheet update completed, exit (don't route to wait)
+    # In one-cycle mode or test-sheets debug mode, if sheet update completed, terminate the graph
     if (state.get("one_cycle", False) or debug_mode == "test-sheets") and state.get("_exit_after_sheets", False):
-        # Don't route anywhere - main loop will detect this and exit
-        return "wait"  # Return wait but wait node will exit immediately
+        return END
     
     next_tasks = state.get("next_tasks", [])
     

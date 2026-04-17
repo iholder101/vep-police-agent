@@ -1,0 +1,391 @@
+"""Deterministic VEP status snapshot and self-consistency realizations.
+
+Produces diff-friendly output files after each agent cycle:
+- output/vep_snapshot_YYYYMMDD_HHMM.yaml - timestamped VEP status
+- output/realizations.txt - changes and anomalies vs previous run
+
+Keeps the last 10 snapshots, older ones are pruned automatically.
+"""
+
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+import yaml
+
+from services.utils import log
+from state import VEPState
+
+OUTPUT_DIR = Path(__file__).parent.parent / "output"
+
+# Compliance field display names -> VEPCompliance attribute names
+_COMPLIANCE_FIELDS = {
+    "template": "template_complete",
+    "sigs-signed-off": "all_sigs_signed_off",
+    "vep-merged": "vep_merged",
+    "prs-linked": "prs_linked",
+    "docs-pr": "docs_pr_created",
+    "labels": "labels_valid",
+}
+
+# Alert severity ordering (lower = higher priority)
+_SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+
+# Merge probability change threshold (percentage points) for anomaly detection
+_MERGE_PROB_ANOMALY_THRESHOLD = 40
+
+# Maximum number of snapshot files to keep
+_MAX_SNAPSHOTS = 10
+
+
+def dump_snapshot(state: VEPState, cycle_duration: float = 0) -> None:
+    """Write deterministic VEP status snapshot to output/."""
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    veps = state.get("veps", [])
+    summary_table = state.get("vep_summary_table", [])
+    alerts = state.get("alerts", [])
+    release_schedule = state.get("release_schedule")
+    now = datetime.now()
+
+    # Build urgency lookup from summary table
+    urgency_by_vep = {}
+    for row in summary_table:
+        vep_num = row.get("vep_number")
+        if vep_num is not None:
+            urgency_by_vep[vep_num] = row.get("urgency")
+
+    # Build alerts lookup by VEP ID
+    alerts_by_vep: Dict[int, List[Dict[str, Any]]] = {}
+    for alert in alerts:
+        vep_id = alert.get("vep_id")
+        if vep_id is not None:
+            alerts_by_vep.setdefault(vep_id, []).append(alert)
+
+    # Deadline info from release schedule
+    ef_date = None
+    cf_date = None
+    if release_schedule:
+        ef_date = release_schedule.enhancement_freeze
+        cf_date = release_schedule.code_freeze
+
+    # Build snapshot data sorted by tracking_issue_id
+    sorted_veps = sorted(veps, key=lambda v: v.tracking_issue_id)
+    vep_records = []
+
+    for vep in sorted_veps:
+        record = _build_vep_record(
+            vep, urgency_by_vep, alerts_by_vep, ef_date, cf_date, now
+        )
+        vep_records.append(record)
+
+    snapshot = {
+        "generated": now.strftime("%Y-%m-%dT%H:%M:%S"),
+        "cycle_duration_seconds": round(cycle_duration),
+        "vep_count": len(vep_records),
+        "veps": vep_records,
+    }
+
+    # Write timestamped YAML
+    timestamp = now.strftime("%Y%m%d_%H%M")
+    yaml_path = OUTPUT_DIR / f"vep_snapshot_{timestamp}.yaml"
+    yaml_path.write_text(yaml.dump(snapshot, default_flow_style=False, sort_keys=False, allow_unicode=True))
+
+    # Prune old snapshots
+    _prune_snapshots()
+
+    log(f"Snapshot written: {len(vep_records)} VEPs", node="snapshot")
+
+
+def generate_realizations(state: VEPState, cycle_duration: float = 0) -> None:
+    """Compare current vs previous snapshot, write output/realizations.txt."""
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    snapshots = _get_sorted_snapshots()
+    now = datetime.now()
+
+    if not snapshots:
+        log("No snapshots found, skipping realizations", node="snapshot")
+        return
+
+    current = yaml.safe_load(snapshots[-1].read_text())
+
+    if len(snapshots) < 2:
+        lines = [
+            f"Generated: {now.strftime('%Y-%m-%dT%H:%M:%S')} | cycle: {round(cycle_duration)}s",
+            "",
+            "=== Changes ===",
+            "First run - no previous data",
+            "",
+            "=== Anomalies ===",
+            "(none)",
+            "",
+        ]
+        (OUTPUT_DIR / "realizations.txt").write_text("\n".join(lines))
+        log("Realizations written (first run)", node="snapshot")
+        return
+
+    previous = yaml.safe_load(snapshots[-2].read_text())
+    changes, anomalies = _diff_snapshots(previous, current)
+
+    lines = [
+        f"Generated: {now.strftime('%Y-%m-%dT%H:%M:%S')} | cycle: {round(cycle_duration)}s",
+        "",
+        "=== Changes ===",
+    ]
+    if changes:
+        lines.extend(f"- {c}" for c in changes)
+    else:
+        lines.append("(no changes)")
+    lines.append("")
+    lines.append("=== Anomalies ===")
+    if anomalies:
+        lines.extend(f"- {a}" for a in anomalies)
+    else:
+        lines.append("(none)")
+    lines.append("")
+
+    (OUTPUT_DIR / "realizations.txt").write_text("\n".join(lines))
+    log(f"Realizations written: {len(changes)} changes, {len(anomalies)} anomalies",
+        node="snapshot")
+
+
+# -- Internal helpers --
+
+
+def _build_vep_record(
+    vep, urgency_by_vep, alerts_by_vep, ef_date, cf_date, now
+) -> Dict[str, Any]:
+    """Build a single VEP record for the snapshot."""
+    vep_num = vep.tracking_issue_id
+
+    # Sentiment and merge probability from analysis
+    risk = vep.analysis.get("risk_assessment", {}) if vep.analysis else {}
+    sentiment = risk.get("reviewer_sentiment", "unknown")
+    merge_prob = risk.get("merge_probability")
+    if merge_prob is not None:
+        try:
+            merge_prob = int(merge_prob)
+        except (ValueError, TypeError):
+            merge_prob = None
+
+    # Compliance
+    compliance = {}
+    for display_name, attr_name in _COMPLIANCE_FIELDS.items():
+        key = display_name.replace("-", "_")
+        compliance[key] = getattr(vep.compliance, attr_name, False) if vep.compliance else False
+
+    # Activity
+    days_since_update = vep.activity.days_since_update if vep.activity else None
+    review_lag_days = vep.activity.review_lag_days if vep.activity else None
+
+    # Deadlines with pre-computed day deltas
+    deadlines = {}
+    if ef_date:
+        deadlines["ef"] = ef_date.strftime("%Y-%m-%d") if hasattr(ef_date, "strftime") else str(ef_date)
+        try:
+            deadlines["ef_days"] = (ef_date - now).days
+        except TypeError:
+            pass
+    if cf_date:
+        deadlines["cf"] = cf_date.strftime("%Y-%m-%d") if hasattr(cf_date, "strftime") else str(cf_date)
+        try:
+            deadlines["cf_days"] = (cf_date - now).days
+        except TypeError:
+            pass
+
+    # PRs
+    proposal_prs = _format_pr_list(vep.enhancement_prs)
+    impl_prs = _format_pr_list(vep.implementation_prs)
+
+    # Alerts for this VEP
+    vep_alerts = alerts_by_vep.get(vep_num, [])
+    formatted_alerts = _format_alert_list(vep_alerts)
+
+    # Milestone info
+    milestone = vep.current_milestone
+    promotion_phase = milestone.promotion_phase if milestone else None
+    status = milestone.status if milestone else vep.status
+
+    return {
+        "vep_number": vep_num,
+        "name": vep.name,
+        "title": vep.title,
+        "owner": vep.owner,
+        "sig": vep.owning_sig,
+        "target_release": vep.target_release,
+        "status": status,
+        "promotion_phase": promotion_phase,
+        "urgency": urgency_by_vep.get(vep_num),
+        "merge_probability": merge_prob,
+        "sentiment": sentiment,
+        "compliance": compliance,
+        "days_since_update": days_since_update,
+        "review_lag_days": review_lag_days,
+        "deadlines": deadlines,
+        "proposal_prs": proposal_prs,
+        "impl_prs": impl_prs,
+        "alerts": formatted_alerts,
+    }
+
+
+def _format_pr_list(prs) -> List[Dict[str, Any]]:
+    """Format PR list sorted by number."""
+    if not prs:
+        return []
+    sorted_prs = sorted(prs, key=lambda p: p.number)
+    result = []
+    for pr in sorted_prs:
+        state = "unknown"
+        if pr.merged:
+            state = "merged"
+        elif pr.state:
+            state = pr.state.lower()
+        result.append({"number": pr.number, "state": state})
+    return result
+
+
+def _format_alert_list(alerts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Format alert list sorted by severity then subject."""
+    if not alerts:
+        return []
+    sorted_alerts = sorted(
+        alerts,
+        key=lambda a: (_SEVERITY_ORDER.get(a.get("severity", "low"), 99), a.get("subject", "")),
+    )
+    return [
+        {
+            "severity": a.get("severity", "low"),
+            "subject": a.get("subject", ""),
+            "message": a.get("message", ""),
+        }
+        for a in sorted_alerts
+    ]
+
+
+def _get_sorted_snapshots() -> List[Path]:
+    """Return snapshot files sorted by timestamp (oldest first)."""
+    return sorted(OUTPUT_DIR.glob("vep_snapshot_*.yaml"))
+
+
+def _prune_snapshots() -> None:
+    """Remove oldest snapshots, keeping the last _MAX_SNAPSHOTS."""
+    snapshots = _get_sorted_snapshots()
+    for old in snapshots[:-_MAX_SNAPSHOTS]:
+        old.unlink()
+
+
+def _diff_snapshots(
+    previous: Dict[str, Any], current: Dict[str, Any]
+) -> tuple[List[str], List[str]]:
+    """Diff two snapshot JSONs, return (changes, anomalies)."""
+    changes: List[str] = []
+    anomalies: List[str] = []
+
+    prev_veps = {v["vep_number"]: v for v in previous.get("veps", [])}
+    curr_veps = {v["vep_number"]: v for v in current.get("veps", [])}
+
+    prev_nums = set(prev_veps.keys())
+    curr_nums = set(curr_veps.keys())
+
+    # New VEPs
+    for num in sorted(curr_nums - prev_nums):
+        changes.append(f"VEP-{num:04d}: new VEP appeared")
+
+    # Disappeared VEPs
+    for num in sorted(prev_nums - curr_nums):
+        changes.append(f"VEP-{num:04d}: VEP disappeared")
+        anomalies.append(f"VEP-{num:04d}: was in previous run but missing now (VEPs should not disappear)")
+
+    # Compare existing VEPs
+    for num in sorted(prev_nums & curr_nums):
+        pv = prev_veps[num]
+        cv = curr_veps[num]
+        vep_id = f"VEP-{num:04d}"
+
+        # Scalar fields
+        # Exclude days_since_update and review_lag_days - they change daily and
+        # create noise in every diff. They're still in the snapshot for reading.
+        for field in ["status", "promotion_phase", "urgency", "sentiment", "owner",
+                       "target_release"]:
+            old_val = pv.get(field)
+            new_val = cv.get(field)
+            if old_val != new_val:
+                changes.append(f"{vep_id}: {field} {old_val} -> {new_val}")
+
+        # Merge probability
+        old_mp = pv.get("merge_probability")
+        new_mp = cv.get("merge_probability")
+        if old_mp != new_mp:
+            changes.append(f"{vep_id}: merge_probability {old_mp} -> {new_mp}")
+            # Anomaly: large change between two numeric values
+            if old_mp is not None and new_mp is not None:
+                try:
+                    if abs(int(new_mp) - int(old_mp)) > _MERGE_PROB_ANOMALY_THRESHOLD:
+                        anomalies.append(
+                            f"{vep_id}: merge probability changed by "
+                            f">{_MERGE_PROB_ANOMALY_THRESHOLD}pp ({old_mp} -> {new_mp})"
+                        )
+                except (ValueError, TypeError):
+                    pass
+
+        # Compliance sub-fields
+        old_comp = pv.get("compliance", {})
+        new_comp = cv.get("compliance", {})
+        for key in _COMPLIANCE_FIELDS:
+            comp_key = key.replace("-", "_")
+            old_v = old_comp.get(comp_key)
+            new_v = new_comp.get(comp_key)
+            if old_v != new_v:
+                changes.append(f"{vep_id}: compliance.{comp_key} {old_v} -> {new_v}")
+                if old_v is True and new_v is False:
+                    anomalies.append(f"{vep_id}: compliance regressed: {comp_key} true -> false")
+
+        # PR diffs
+        _diff_pr_list(pv, cv, "proposal_prs", "proposal-pr", vep_id, changes)
+        _diff_pr_list(pv, cv, "impl_prs", "impl-pr", vep_id, changes, anomalies)
+
+        # Alert diffs
+        _diff_alert_list(pv, cv, vep_id, changes)
+
+    return changes, anomalies
+
+
+def _diff_pr_list(
+    prev_vep: Dict, curr_vep: Dict, field: str, label: str, vep_id: str,
+    changes: List[str], anomalies: Optional[List[str]] = None,
+) -> None:
+    """Diff PR lists by number, report added/removed/state-changed."""
+    old_prs = {p["number"]: p["state"] for p in prev_vep.get(field, [])}
+    new_prs = {p["number"]: p["state"] for p in curr_vep.get(field, [])}
+
+    for num in sorted(set(new_prs) - set(old_prs)):
+        changes.append(f"{vep_id}: {label} #{num} added ({new_prs[num]})")
+
+    for num in sorted(set(old_prs) - set(new_prs)):
+        changes.append(f"{vep_id}: {label} #{num} removed")
+
+    for num in sorted(set(old_prs) & set(new_prs)):
+        if old_prs[num] != new_prs[num]:
+            changes.append(f"{vep_id}: {label} #{num} {old_prs[num]} -> {new_prs[num]}")
+
+    # Anomaly: PR count decreased (only for impl_prs)
+    if anomalies is not None and len(new_prs) < len(old_prs):
+        anomalies.append(
+            f"{vep_id}: {label} count decreased {len(old_prs)} -> {len(new_prs)} "
+            f"(PRs should not vanish)"
+        )
+
+
+def _diff_alert_list(
+    prev_vep: Dict, curr_vep: Dict, vep_id: str, changes: List[str]
+) -> None:
+    """Diff alert lists by (severity, subject)."""
+    old_keys = {(a["severity"], a["subject"]) for a in prev_vep.get("alerts", [])}
+    new_keys = {(a["severity"], a["subject"]) for a in curr_vep.get("alerts", [])}
+
+    for sev, subj in sorted(new_keys - old_keys):
+        changes.append(f"{vep_id}: new alert [{sev}] {subj}")
+
+    for sev, subj in sorted(old_keys - new_keys):
+        changes.append(f"{vep_id}: resolved alert [{sev}] {subj}")

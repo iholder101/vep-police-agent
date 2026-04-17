@@ -51,11 +51,15 @@ def update_sheets_node(state: VEPState) -> Any:
         next_tasks = state.get("next_tasks", [])
         if next_tasks and next_tasks[0] == "update_sheets":
             next_tasks = next_tasks[1:]
-        return {
+        result = {
             "last_check_times": last_check_times,
             "sheets_need_update": False,
             "next_tasks": next_tasks,
         }
+        # In one-cycle mode, signal exit even when sheets are skipped
+        if state.get("one_cycle", False):
+            result["_exit_after_sheets"] = True
+        return result
     
     # Log sheet URL if already configured
     existing_sheet_id = sheet_config.get("sheet_id")
