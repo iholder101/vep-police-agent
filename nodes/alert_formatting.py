@@ -8,6 +8,7 @@ Provides utilities to build per-VEP summary tables with:
 """
 
 import re
+from datetime import date, datetime, time, timedelta, timezone
 from typing import List, Dict, Any, Tuple
 from services.indexer import create_indexed_context
 from services.utils import log
@@ -72,6 +73,18 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
     enhancements_prs = indexed_context.get("enhancements_prs", [])
     board_veps = indexed_context.get("board_veps", {})
     issues_index = indexed_context.get("issues_index", [])
+
+    # Parse previous release cutoff for filtering previous-release impl PRs
+    # (uses the same cutoff as classify_prs_by_release() in analyze_combined.py)
+    release_cutoff = None
+    prev_cf_str = indexed_context.get("previous_release_code_freeze")
+    if prev_cf_str:
+        try:
+            release_cutoff = datetime.combine(
+                date.fromisoformat(prev_cf_str), time.min, tzinfo=timezone.utc
+            ) + timedelta(days=7)
+        except (ValueError, TypeError):
+            pass
 
     # Build a lookup from issue number to issue data
     issues_by_number = {}
@@ -147,6 +160,8 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
                     impl_prs.append({
                         "number": pr.number,
                         "url": pr.url,
+                        "_state": pr.state,
+                        "_merged_at": pr.merged_at,
                     })
         else:
             # Fall back to board_veps (in case VEPInfo doesn't have them)
@@ -163,6 +178,8 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
                     impl_prs.append({
                         "number": pr_num,
                         "url": pr_url,
+                        "_state": pr.get("state"),
+                        "_merged_at": pr.get("merged_at"),
                     })
 
         # Source 2: Match from kubevirt PRs by vep_issue_number
@@ -180,6 +197,8 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
                     impl_prs.append({
                         "number": pr_num,
                         "url": pr_url,
+                        "_state": pr.get("state"),
+                        "_merged_at": pr.get("merged_at"),
                     })
 
         # Source 3: Match from vep_to_pr_mappings (PRs with "vep-62" etc. in title/body)
@@ -203,6 +222,8 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
                 impl_prs.append({
                     "number": pr_num,
                     "url": pr_url,
+                    "_state": pr.get("state"),
+                    "_merged_at": pr.get("merged_at"),
                 })
 
         # Exclude impl PRs that are actually from the enhancements repo (proposal PRs)
@@ -211,6 +232,34 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
 
         # Sort by PR number
         impl_prs = sorted(impl_prs, key=lambda x: x["number"])
+
+        # Filter out previous-release PRs using the pre-parsed cutoff
+        if release_cutoff:
+            before_count = len(impl_prs)
+            filtered = []
+            for p in impl_prs:
+                state = p.get("_state")
+                merged_at = p.get("_merged_at")
+                # Parse ISO string to datetime if needed
+                if isinstance(merged_at, str):
+                    try:
+                        merged_at = datetime.fromisoformat(merged_at.replace("Z", "+00:00"))
+                    except (ValueError, TypeError):
+                        merged_at = None
+                if isinstance(merged_at, datetime) and merged_at.tzinfo is None:
+                    merged_at = merged_at.replace(tzinfo=timezone.utc)
+                # Keep unless confirmed previous-release
+                if state == "merged" and merged_at and merged_at < release_cutoff:
+                    continue
+                filtered.append(p)
+            impl_prs = filtered
+            removed = before_count - len(impl_prs)
+            if removed:
+                log(f"VEP {vep.name}: filtered {removed} previous-release impl PR(s)",
+                    node="alert_formatting")
+
+        # Strip internal fields before output
+        impl_prs = [{"number": p["number"], "url": p["url"]} for p in impl_prs]
 
         # Get urgency level
         urgency, urgency_color = get_urgency_level(vep)
