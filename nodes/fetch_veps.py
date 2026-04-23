@@ -331,7 +331,11 @@ def fetch_veps_node(state: VEPState) -> Any:
                             pr.merged_at = datetime.fromisoformat(pr_data["merged_at"].replace('Z', '+00:00'))
                         except (ValueError, AttributeError):
                             pass
-                enriched_impl_prs.append(pr)
+                    enriched_impl_prs.append(pr)
+                else:
+                    log(f"VEP {vep_info.name}: dropping board PR #{pr.number} "
+                        f"(not in prs_index, likely outside lookback window)",
+                        node="fetch_veps")
             vep_info.implementation_prs = enriched_impl_prs
 
             # Also add implementation PRs discovered via vep_issue_number in prs_index

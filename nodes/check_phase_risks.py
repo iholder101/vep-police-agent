@@ -245,9 +245,15 @@ def _check_development_phase_risks(
         impl_prs = []
 
         # Source 1: Board data (parsed from tracking issue body)
+        # Only include PRs that are in prs_index (board PRs outside the
+        # lookback window are stale and should not affect risk assessment)
+        prs_by_number = {pr.get("number"): pr for pr in prs_index if isinstance(pr, dict)}
         for pr in board_vep.get("impl_prs", []):
             pr_num = pr.get("number")
-            if pr_num and pr_num not in impl_pr_numbers:
+            if pr_num and pr_num not in impl_pr_numbers and pr_num in prs_by_number:
+                base_ref = prs_by_number[pr_num].get("base_ref")
+                if base_ref and base_ref not in ("main", "master"):
+                    continue
                 impl_pr_numbers.add(pr_num)
                 impl_prs.append(pr)
 
@@ -255,6 +261,9 @@ def _check_development_phase_risks(
         vep_num_str = str(vep_issue_num)
         for pr in vep_to_pr_mappings.get(vep_num_str, []):
             pr_num = pr.get("number")
+            base_ref = pr.get("base_ref")
+            if base_ref and base_ref not in ("main", "master"):
+                continue
             if pr_num and pr_num not in impl_pr_numbers:
                 impl_pr_numbers.add(pr_num)
                 impl_prs.append(pr)
@@ -265,6 +274,9 @@ def _check_development_phase_risks(
                 pr_num = pr.get("number")
                 pr_url = pr.get("html_url") or pr.get("url", "")
                 if "enhancements" in pr_url:
+                    continue
+                base_ref = pr.get("base_ref")
+                if base_ref and base_ref not in ("main", "master"):
                     continue
                 if pr_num and pr_num not in impl_pr_numbers:
                     impl_pr_numbers.add(pr_num)
