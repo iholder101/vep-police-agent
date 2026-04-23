@@ -82,7 +82,7 @@ def _create_vep_from_board_item(
 ) -> Optional[VEPInfo]:
     """Create VEPInfo from board item, enriching with issue and file data."""
 
-    tracking_issue_id = issue_number
+    tracking_issue_id = int(issue_number)
 
     # Get corresponding issue
     issue = issues_by_number.get(tracking_issue_id)
@@ -331,7 +331,11 @@ def fetch_veps_node(state: VEPState) -> Any:
                             pr.merged_at = datetime.fromisoformat(pr_data["merged_at"].replace('Z', '+00:00'))
                         except (ValueError, AttributeError):
                             pass
-                enriched_impl_prs.append(pr)
+                    enriched_impl_prs.append(pr)
+                else:
+                    log(f"VEP {vep_info.name}: dropping board PR #{pr.number} "
+                        f"(not in prs_index, likely outside lookback window)",
+                        node="fetch_veps")
             vep_info.implementation_prs = enriched_impl_prs
 
             # Also add implementation PRs discovered via vep_issue_number in prs_index
@@ -390,7 +394,12 @@ def fetch_veps_node(state: VEPState) -> Any:
                 if "enhancements" in pr_url:
                     continue
                 # Skip backport PRs (PRs targeting non-main branches like release-1.x)
+                # vep_to_pr_mappings may lack base_ref; fall back to prs_index
                 base_ref = pr_data.get("base_ref")
+                if not base_ref and pr_num:
+                    idx = kubevirt_prs_by_number.get(pr_num)
+                    if idx:
+                        base_ref = idx.get("base_ref")
                 if base_ref and base_ref not in ("main", "master"):
                     continue
                 # Skip if PR title references a different VEP number

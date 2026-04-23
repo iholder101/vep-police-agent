@@ -2128,6 +2128,7 @@ def index_vep_pr_mappings(prs_index: Optional[List[Dict[str, Any]]] = None) -> D
                 "labels": pr.get("labels", []),
                 "created_at": pr.get("created_at"),
                 "updated_at": pr.get("updated_at"),
+                "base_ref": pr.get("base_ref"),
             })
 
     total_prs = sum(len(prs) for prs in mappings.values())

@@ -460,15 +460,17 @@ and issue category - consolidate related issues into a single alert."""
         batch_phase_risks = [r for r in phase_risks if r["vep_name"] in {v.name for v in batch_veps}]
 
         release_schedule = state.get("release_schedule")
-        # During design phase, exclude implementation PRs from LLM context — they're not relevant yet
-        if release_phase == "design":
-            veps_data = []
-            for vep in batch_veps:
-                d = vep.model_dump(mode='json')
+        # Strip raw board impl_prs from LLM context to prevent backport PR leaks.
+        # The filtered implementation_prs field is the authoritative source.
+        veps_data = []
+        for vep in batch_veps:
+            d = vep.model_dump(mode='json')
+            if release_phase == "design":
                 d.pop("implementation_prs", None)
-                veps_data.append(d)
-        else:
-            veps_data = [vep.model_dump(mode='json') for vep in batch_veps]
+            board = d.get("board_fields")
+            if isinstance(board, dict):
+                board.pop("impl_prs", None)
+            veps_data.append(d)
 
         batch_context = {
             "veps": veps_data,
@@ -548,11 +550,11 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
                         updated_vep.analysis = {}
                     updated_vep.analysis["risk_assessment"] = orig_analysis["risk_assessment"]
                     updated_vep.analysis["_deterministic_risk"] = True
-                if not updated_vep.implementation_prs and original.implementation_prs:
+                if original.implementation_prs:
                     updated_vep.implementation_prs = original.implementation_prs
-                if not updated_vep.enhancement_prs and original.enhancement_prs:
+                if original.enhancement_prs:
                     updated_vep.enhancement_prs = original.enhancement_prs
-                if not updated_vep.board_fields and original.board_fields:
+                if original.board_fields:
                     updated_vep.board_fields = original.board_fields
                 if not updated_vep.context.deadline and original.context.deadline:
                     updated_vep.context.deadline = original.context.deadline
