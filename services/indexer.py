@@ -10,7 +10,7 @@ import os
 import time
 from pathlib import Path
 from typing import Dict, List, Any, Optional
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from services.utils import log
 from services.mcp_factory import get_mcp_tools_by_name
 
@@ -2391,6 +2391,7 @@ def compute_release_phase(release_info: dict) -> tuple[str, dict[str, str | None
         "code_freeze": None,
         "ga": None,
     }
+    earliest_schedule_date = None
 
     for line in schedule_content.splitlines():
         line_clean = line.replace("**", "").strip()
@@ -2402,6 +2403,9 @@ def compute_release_phase(release_info: dict) -> tuple[str, dict[str, str | None
         if not parsed_date:
             continue
         date_obj = parsed_date.date()
+
+        if earliest_schedule_date is None or date_obj < earliest_schedule_date:
+            earliest_schedule_date = date_obj
 
         line_lower = line_clean.lower()
 
@@ -2456,6 +2460,7 @@ def compute_release_phase(release_info: dict) -> tuple[str, dict[str, str | None
         key: date.isoformat() if date else None
         for key, date in dates.items()
     }
+    deadlines["cycle_start"] = earliest_schedule_date.isoformat() if earliest_schedule_date else None
 
     log(f"Final parsed deadlines: {deadlines}, phase: {phase}", node="indexer")
 
@@ -2636,6 +2641,24 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
     indexed_context["release_phase"] = release_info.get("release_phase", "unknown") if release_info else "unknown"
     indexed_context["release_deadlines"] = release_info.get("release_deadlines", {}) if release_info else {}
     indexed_context["previous_release_code_freeze"] = release_info.get("previous_release_code_freeze") if release_info else None
+
+    # Compute cycle_start_date: earliest schedule date (primary) or prev CF + 14d (fallback)
+    cycle_start_date = None
+    deadlines = indexed_context.get("release_deadlines", {})
+    cycle_start_from_schedule = deadlines.get("cycle_start")
+    if cycle_start_from_schedule:
+        cycle_start_date = cycle_start_from_schedule
+        log(f"Cycle start date from schedule: {cycle_start_date}", node="indexer")
+    elif indexed_context["previous_release_code_freeze"]:
+        try:
+            prev_cf = date.fromisoformat(indexed_context["previous_release_code_freeze"])
+            cycle_start_date = (prev_cf + timedelta(days=14)).isoformat()
+            log(f"Cycle start date from prev CF + 14d fallback: {cycle_start_date}", node="indexer")
+        except (ValueError, TypeError):
+            log("Could not compute cycle_start_date from previous_release_code_freeze", node="indexer", level="WARNING")
+    else:
+        log("No cycle_start_date available: no schedule dates and no previous CF", node="indexer", level="WARNING")
+    indexed_context["cycle_start_date"] = cycle_start_date
 
     # Log summary
     release = release_version if release_version else "unknown"

@@ -8,6 +8,7 @@ Provides utilities to build per-VEP summary tables with:
 """
 
 import re
+from datetime import date, datetime
 from typing import List, Dict, Any, Tuple
 from services.indexer import create_indexed_context
 from services.utils import log
@@ -250,6 +251,31 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
         if removed:
             log(f"VEP {vep.name}: filtered {removed} backport impl PR(s)",
                 node="alert_formatting")
+
+        # Filter out merged PRs from before the current release cycle
+        cycle_start_date = indexed_context.get("cycle_start_date")
+        if cycle_start_date:
+            cycle_start = date.fromisoformat(cycle_start_date)
+            before_count = len(impl_prs)
+            filtered = []
+            for p in impl_prs:
+                merged_at = p.get("_merged_at")
+                if merged_at:
+                    try:
+                        if isinstance(merged_at, datetime):
+                            merged_date = merged_at.date()
+                        else:
+                            merged_date = datetime.fromisoformat(merged_at).date()
+                        if merged_date < cycle_start:
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+                filtered.append(p)
+            impl_prs = filtered
+            removed = before_count - len(impl_prs)
+            if removed:
+                log(f"VEP {vep.name}: filtered {removed} pre-cycle impl PR(s) (cycle start: {cycle_start_date})",
+                    node="alert_formatting")
 
         # Strip internal fields before output
         impl_prs = [{"number": p["number"], "url": p["url"]} for p in impl_prs]
