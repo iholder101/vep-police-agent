@@ -150,6 +150,33 @@ def generate_realizations(state: VEPState, cycle_duration: float = 0) -> None:
         node="snapshot")
 
 
+def snapshot_node(state: VEPState) -> Any:
+    """Graph node that writes per-cycle snapshot and realizations."""
+    import time as _time
+
+    last_checks = state.get("last_check_times", {})
+    fetch_time = last_checks.get("fetch_veps")
+    cycle_duration = 0.0
+    if fetch_time:
+        try:
+            epoch = fetch_time.timestamp() if hasattr(fetch_time, 'timestamp') else 0
+            cycle_duration = _time.time() - epoch
+        except Exception:
+            pass
+
+    try:
+        dump_snapshot(state, cycle_duration=cycle_duration)
+    except Exception as e:
+        log(f"Snapshot failed: {e}", node="snapshot", level="ERROR")
+
+    try:
+        generate_realizations(state, cycle_duration=cycle_duration)
+    except Exception as e:
+        log(f"Realizations failed: {e}", node="snapshot", level="ERROR")
+
+    return {"last_check_times": {"snapshot": datetime.now()}}
+
+
 # -- Internal helpers --
 
 

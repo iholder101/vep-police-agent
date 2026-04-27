@@ -6,7 +6,6 @@ import json
 import os
 import signal
 import sys
-import time
 from pathlib import Path
 from typing import Optional, Dict, Any
 from langchain_core.messages import HumanMessage
@@ -15,13 +14,11 @@ from services.utils import log
 from state import VEPInfo, ReleaseSchedule
 from nodes.state_history import clear_all_history
 from nodes.escalation import clear_persistence
-from nodes.snapshot import dump_snapshot, generate_realizations
 
 # State cache file location
 STATE_CACHE_FILE = Path(__file__).parent / "cache" / "state_cache.json"
 
-# Global flag for graceful shutdown
-_shutdown_requested = False
+from services.shutdown import is_shutdown_requested, request_shutdown
 
 
 def load_state_cache() -> Optional[Dict[str, Any]]:
@@ -348,15 +345,14 @@ def parse_args():
 
 
 def signal_handler(signum, frame):
-    """Handle SIGINT (Ctrl+C) gracefully."""
-    global _shutdown_requested
-    if _shutdown_requested:
-        # Second Ctrl+C - force exit
+    """Handle SIGINT/SIGTERM gracefully."""
+    if is_shutdown_requested():
         log("\nForce exit requested. Terminating...", node="main", level="WARNING")
-        sys.exit(130)  # Standard exit code for SIGINT
+        sys.exit(130)
     else:
-        _shutdown_requested = True
-        log("\nShutdown requested (Ctrl+C). Finishing current operation and exiting gracefully...", node="main", level="INFO")
+        request_shutdown()
+        sig_name = "SIGTERM" if signum == signal.SIGTERM else "SIGINT"
+        log(f"\nShutdown requested ({sig_name}). Finishing current operation...", node="main", level="INFO")
 
 
 def setup_credentials(args):
@@ -422,22 +418,11 @@ def setup_credentials(args):
         log("Fastest model mode enabled: all nodes will use FAST_MODEL", node="main")
 
 
-def _try_snapshot(response, start_time: float) -> None:
-    """Write snapshot and realizations, swallowing errors."""
-    try:
-        elapsed = time.time() - start_time
-        dump_snapshot(response, cycle_duration=elapsed)
-        generate_realizations(response, cycle_duration=elapsed)
-    except Exception as e:
-        log(f"Snapshot failed: {e}", node="main", level="ERROR")
-
-
 def main():
     """Run the VEP governance agent."""
-    global _shutdown_requested
-
-    # Register signal handler for graceful shutdown
+    # Register signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
     # Parse command line arguments
     args = parse_args()
@@ -513,8 +498,7 @@ def main():
     log(f"Sheet config: {initial_state['sheet_config']}", node="main")
     
     # Run the agent
-    start_time = time.time()
-    response = initial_state  # Ensure response is always defined for finally block
+    response = initial_state
     try:
         if args.one_cycle:
             # In one-cycle mode, run until update_sheets completes
@@ -527,7 +511,7 @@ def main():
                 iteration += 1
                 response = agent.invoke(current_state)
 
-                if _shutdown_requested:
+                if is_shutdown_requested():
                     log("Agent interrupted by user. Exiting...", node="main", level="INFO")
                     return
 
@@ -550,7 +534,7 @@ def main():
             log("Invoking agent...", node="main")
             response = agent.invoke(initial_state)
 
-        if _shutdown_requested:
+        if is_shutdown_requested():
             log("Agent interrupted by user. Exiting...", node="main", level="INFO")
             return
 
@@ -569,15 +553,13 @@ def main():
         log("\nInterrupted by user. Exiting gracefully...", node="main", level="INFO")
         sys.exit(130)
     except Exception as e:
-        if _shutdown_requested:
+        if is_shutdown_requested():
             log(f"Error occurred during shutdown: {e}", node="main", level="WARNING")
             sys.exit(130)
         log(f"Error running agent: {e}", node="main", level="ERROR")
         import traceback
         log(f"Traceback: {traceback.format_exc()}", node="main", level="ERROR")
         raise
-    finally:
-        _try_snapshot(response, start_time)
 
 
 if __name__ == "__main__":

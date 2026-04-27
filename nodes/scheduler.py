@@ -89,6 +89,10 @@ def scheduler_node(state: VEPState) -> Any:
     
     The scheduler ensures the analysis pipeline runs before updating sheets or sending emails.
     """
+    from services.shutdown import is_shutdown_requested
+    if is_shutdown_requested():
+        return {"next_tasks": []}
+
     last_check_times = state.get("last_check_times", {})
     next_tasks: List[str] = []
     one_cycle = state.get("one_cycle", False)

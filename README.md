@@ -53,7 +53,8 @@ graph TD
     MergeUpdates --> AnalyzeCombined[analyze_combined]
     AnalyzeCombined --> DetectChanges[detect_changes]
     DetectChanges --> SaveStateCache[save_state_cache]
-    SaveStateCache --> Scheduler
+    SaveStateCache --> Snapshot[snapshot]
+    Snapshot --> Scheduler
 
     AlertSummary -->|Alerts| SendNotifications[send_notifications]
     AlertSummary -->|No alerts| Scheduler
