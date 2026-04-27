@@ -94,7 +94,7 @@ def _create_vep_from_board_item(
     vep_number = _extract_vep_number_from_text(title)
     if not vep_number:
         # Fallback: use tracking issue number
-        vep_number = f"vep-{tracking_issue_id:04d}"
+        vep_number = f"vep-{int(tracking_issue_id):04d}"
 
     # Get VEP file for this VEP number
     vep_number_int = int(vep_number.split("-")[1]) if "-" in vep_number else None
