@@ -71,6 +71,7 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
         indexed_context = create_indexed_context(cache_max_age_minutes=60)
 
     enhancements_prs = indexed_context.get("enhancements_prs", [])
+    enhancements_by_number = {pr.get("number"): pr for pr in enhancements_prs}
     board_veps = indexed_context.get("board_veps", {})
     issues_index = indexed_context.get("issues_index", [])
 
@@ -130,13 +131,43 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
             if pr.get("vep_issue_number") == vep.tracking_issue_id:
                 proposal_pr_numbers.add(pr.get("number"))
 
-        # Build proposal PRs list with URLs
+        # Build proposal PRs list with URLs and merged_at for filtering
         proposal_prs = []
         for pr_num in sorted(proposal_pr_numbers):
+            enh_pr = enhancements_by_number.get(pr_num, {})
             proposal_prs.append({
                 "number": pr_num,
                 "url": f"https://github.com/kubevirt/enhancements/pull/{pr_num}",
+                "_merged_at": enh_pr.get("merged_at"),
             })
+
+        # Filter out proposal PRs merged before the current release cycle
+        cycle_start_date_str = indexed_context.get("cycle_start_date")
+        if cycle_start_date_str:
+            cycle_start = date.fromisoformat(cycle_start_date_str)
+            before_count = len(proposal_prs)
+            filtered = []
+            for p in proposal_prs:
+                merged_at = p.get("_merged_at")
+                if merged_at:
+                    try:
+                        if isinstance(merged_at, datetime):
+                            merged_date = merged_at.date()
+                        else:
+                            merged_date = datetime.fromisoformat(merged_at).date()
+                        if merged_date < cycle_start:
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+                filtered.append(p)
+            proposal_prs = filtered
+            removed = before_count - len(proposal_prs)
+            if removed:
+                log(f"VEP {vep.name}: filtered {removed} pre-cycle proposal PR(s) (cycle start: {cycle_start_date_str})",
+                    node="alert_formatting")
+
+        # Strip internal fields from proposal PRs
+        proposal_prs = [{"number": p["number"], "url": p["url"]} for p in proposal_prs]
 
         # Get implementation PRs from multiple sources
         # IMPORTANT: Implementation PRs can NEVER be from kubevirt/enhancements (those are proposal PRs)
