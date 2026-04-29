@@ -11,14 +11,13 @@ from typing import Optional, Dict, Any
 from langchain_core.messages import HumanMessage
 from graph import create_graph
 from services.utils import log
+from services.shutdown import is_shutdown_requested, request_shutdown
 from state import VEPInfo, ReleaseSchedule
 from nodes.state_history import clear_all_history
 from nodes.escalation import clear_persistence
 
 # State cache file location
 STATE_CACHE_FILE = Path(__file__).parent / "cache" / "state_cache.json"
-
-from services.shutdown import is_shutdown_requested, request_shutdown
 
 
 def load_state_cache() -> Optional[Dict[str, Any]]:
