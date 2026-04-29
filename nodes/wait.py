@@ -1,6 +1,5 @@
 """Wait node - waits until next round hour before returning to scheduler."""
 
-import time
 from datetime import datetime, timedelta
 from typing import Any
 from state import VEPState
@@ -47,12 +46,8 @@ def wait_node(state: VEPState) -> Any:
         node="wait"
     )
     
-    # Sleep until target time (with interruptible wait)
-    try:
-        time.sleep(wait_seconds)
-    except KeyboardInterrupt:
-        log("Wait interrupted by user", node="wait", level="INFO")
-        raise
-    
-    # After waiting, return to scheduler (which will check what needs to run)
+    from services.shutdown import wait_for_shutdown
+    if wait_for_shutdown(timeout=wait_seconds):
+        log("Wait interrupted by shutdown signal", node="wait", level="INFO")
+
     return {}

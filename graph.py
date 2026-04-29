@@ -24,6 +24,7 @@ from nodes.send_email import send_email_node
 from nodes.send_slack import send_slack_node
 from nodes.update_project_board import update_project_board_node
 from nodes.wait import wait_node
+from nodes.snapshot import snapshot_node
 
 def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     """Create and configure the VEP governance agent graph.
@@ -66,6 +67,7 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     workflow.add_node("send_slack", send_slack_node)
     workflow.add_node("update_project_board", update_project_board_node)
     workflow.add_node("wait", wait_node)
+    workflow.add_node("snapshot", snapshot_node)
     
     # Set entry point
     workflow.set_entry_point("scheduler")
@@ -108,7 +110,8 @@ def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     # Analysis completes → detect changes vs previous run → save state cache → scheduler
     workflow.add_edge("analyze_combined", "detect_changes")
     workflow.add_edge("detect_changes", "save_state_cache")
-    workflow.add_edge("save_state_cache", "scheduler")
+    workflow.add_edge("save_state_cache", "snapshot")
+    workflow.add_edge("snapshot", "scheduler")
     
     # Alert summary decides if notifications needed, then routes to send_notifications or scheduler
     workflow.add_conditional_edges(
@@ -154,9 +157,12 @@ def route_scheduler_operations(state: VEPState) -> str:
     by routing to them sequentially. The scheduler queues tasks and processes
     them one at a time, returning to scheduler after each completes.
     """
+    from services.shutdown import is_shutdown_requested
+    if is_shutdown_requested():
+        return END
+
     import os
     debug_mode = os.environ.get("DEBUG_MODE")
-    # In one-cycle mode or test-sheets debug mode, if sheet update completed, terminate the graph
     if (state.get("one_cycle", False) or debug_mode == "test-sheets") and state.get("_exit_after_sheets", False):
         return END
     

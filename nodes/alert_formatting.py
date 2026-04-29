@@ -8,7 +8,7 @@ Provides utilities to build per-VEP summary tables with:
 """
 
 import re
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime
 from typing import List, Dict, Any, Tuple
 from services.indexer import create_indexed_context
 from services.utils import log
@@ -71,20 +71,15 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
         indexed_context = create_indexed_context(cache_max_age_minutes=60)
 
     enhancements_prs = indexed_context.get("enhancements_prs", [])
+    enhancements_by_number = {pr.get("number"): pr for pr in enhancements_prs}
     board_veps = indexed_context.get("board_veps", {})
     issues_index = indexed_context.get("issues_index", [])
 
-    # Parse previous release cutoff for filtering previous-release impl PRs
-    # (uses the same cutoff as classify_prs_by_release() in analyze_combined.py)
-    release_cutoff = None
-    prev_cf_str = indexed_context.get("previous_release_code_freeze")
-    if prev_cf_str:
-        try:
-            release_cutoff = datetime.combine(
-                date.fromisoformat(prev_cf_str), time.min, tzinfo=timezone.utc
-            ) + timedelta(days=7)
-        except (ValueError, TypeError):
-            pass
+    # Build base_ref lookup from prs_index for filtering backport impl PRs
+    prs_by_number = {}
+    for pr in indexed_context.get("prs_index", []):
+        if isinstance(pr, dict) and pr.get("number"):
+            prs_by_number[pr["number"]] = pr
 
     # Build a lookup from issue number to issue data
     issues_by_number = {}
@@ -136,13 +131,43 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
             if pr.get("vep_issue_number") == vep.tracking_issue_id:
                 proposal_pr_numbers.add(pr.get("number"))
 
-        # Build proposal PRs list with URLs
+        # Build proposal PRs list with URLs and merged_at for filtering
         proposal_prs = []
         for pr_num in sorted(proposal_pr_numbers):
+            enh_pr = enhancements_by_number.get(pr_num, {})
             proposal_prs.append({
                 "number": pr_num,
                 "url": f"https://github.com/kubevirt/enhancements/pull/{pr_num}",
+                "_merged_at": enh_pr.get("merged_at"),
             })
+
+        # Filter out proposal PRs merged before the current release cycle
+        cycle_start_date_str = indexed_context.get("cycle_start_date")
+        if cycle_start_date_str:
+            cycle_start = date.fromisoformat(cycle_start_date_str)
+            before_count = len(proposal_prs)
+            filtered = []
+            for p in proposal_prs:
+                merged_at = p.get("_merged_at")
+                if merged_at:
+                    try:
+                        if isinstance(merged_at, datetime):
+                            merged_date = merged_at.date()
+                        else:
+                            merged_date = datetime.fromisoformat(merged_at).date()
+                        if merged_date < cycle_start:
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+                filtered.append(p)
+            proposal_prs = filtered
+            removed = before_count - len(proposal_prs)
+            if removed:
+                log(f"VEP {vep.name}: filtered {removed} pre-cycle proposal PR(s) (cycle start: {cycle_start_date_str})",
+                    node="alert_formatting")
+
+        # Strip internal fields from proposal PRs
+        proposal_prs = [{"number": p["number"], "url": p["url"]} for p in proposal_prs]
 
         # Get implementation PRs from multiple sources
         # IMPORTANT: Implementation PRs can NEVER be from kubevirt/enhancements (those are proposal PRs)
@@ -189,8 +214,10 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
             if pr.get("vep_issue_number") == vep.tracking_issue_id:
                 pr_num = pr.get("number")
                 pr_url = pr.get("url", f"https://github.com/kubevirt/kubevirt/pull/{pr_num}")
-                # Skip enhancements PRs (safety check)
                 if "enhancements" in pr_url:
+                    continue
+                base_ref = pr.get("base_ref")
+                if base_ref and base_ref not in ("main", "master"):
                     continue
                 if pr_num and pr_num not in impl_pr_numbers:
                     impl_pr_numbers.add(pr_num)
@@ -211,6 +238,13 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
             pr_num = pr.get("number")
             pr_url = pr.get("url", f"https://github.com/kubevirt/kubevirt/pull/{pr_num}")
             if "enhancements" in pr_url:
+                continue
+            base_ref = pr.get("base_ref")
+            if not base_ref and pr_num:
+                idx = prs_by_number.get(pr_num)
+                if idx:
+                    base_ref = idx.get("base_ref")
+            if base_ref and base_ref not in ("main", "master"):
                 continue
             # Skip if PR title references a different VEP number
             pr_title = pr.get("title", "")
@@ -233,29 +267,45 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
         # Sort by PR number
         impl_prs = sorted(impl_prs, key=lambda x: x["number"])
 
-        # Filter out previous-release PRs using the pre-parsed cutoff
-        if release_cutoff:
+        # Filter out backport PRs (targeting release branches, not main)
+        before_count = len(impl_prs)
+        filtered = []
+        for p in impl_prs:
+            pr_index_data = prs_by_number.get(p["number"])
+            if pr_index_data:
+                base_ref = pr_index_data.get("base_ref")
+                if base_ref and base_ref not in ("main", "master"):
+                    continue
+            filtered.append(p)
+        impl_prs = filtered
+        removed = before_count - len(impl_prs)
+        if removed:
+            log(f"VEP {vep.name}: filtered {removed} backport impl PR(s)",
+                node="alert_formatting")
+
+        # Filter out merged PRs from before the current release cycle
+        cycle_start_date = indexed_context.get("cycle_start_date")
+        if cycle_start_date:
+            cycle_start = date.fromisoformat(cycle_start_date)
             before_count = len(impl_prs)
             filtered = []
             for p in impl_prs:
-                state = p.get("_state")
                 merged_at = p.get("_merged_at")
-                # Parse ISO string to datetime if needed
-                if isinstance(merged_at, str):
+                if merged_at:
                     try:
-                        merged_at = datetime.fromisoformat(merged_at.replace("Z", "+00:00"))
+                        if isinstance(merged_at, datetime):
+                            merged_date = merged_at.date()
+                        else:
+                            merged_date = datetime.fromisoformat(merged_at).date()
+                        if merged_date < cycle_start:
+                            continue
                     except (ValueError, TypeError):
-                        merged_at = None
-                if isinstance(merged_at, datetime) and merged_at.tzinfo is None:
-                    merged_at = merged_at.replace(tzinfo=timezone.utc)
-                # Keep unless confirmed previous-release
-                if state == "merged" and merged_at and merged_at < release_cutoff:
-                    continue
+                        pass
                 filtered.append(p)
             impl_prs = filtered
             removed = before_count - len(impl_prs)
             if removed:
-                log(f"VEP {vep.name}: filtered {removed} previous-release impl PR(s)",
+                log(f"VEP {vep.name}: filtered {removed} pre-cycle impl PR(s) (cycle start: {cycle_start_date})",
                     node="alert_formatting")
 
         # Strip internal fields before output

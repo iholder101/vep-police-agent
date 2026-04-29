@@ -5,7 +5,7 @@ This node has access to ALL context at once and does holistic reasoning.
 """
 
 import json
-from datetime import datetime, date, time, timedelta, timezone
+from datetime import datetime, date, time, timezone
 from typing import Any, List, Optional, Tuple
 from state import VEPState, PRInfo
 from services.utils import log
@@ -18,9 +18,9 @@ from nodes.alert_formatting import build_vep_summary_table, build_markdown_table
 def classify_prs_by_release(impl_prs: List[PRInfo], cutoff: datetime) -> Tuple[List[PRInfo], List[PRInfo]]:
     """Classify implementation PRs as current-release vs previous-release work.
 
-    The cutoff is the previous release's code freeze date (when its branch was
-    cut from main). PRs merged to main before that date belong to the previous
-    release; PRs merged after or still open belong to the current release.
+    The cutoff is the cycle start date (first date in the release schedule, or
+    previous CF + 14d fallback). PRs merged before the cutoff belong to the
+    previous release; PRs merged after or still open belong to the current release.
 
     Returns (current_release_prs, previous_release_prs).
     Closed-not-merged (abandoned) PRs are excluded from both lists.
@@ -52,8 +52,8 @@ def _build_previous_release_override(
 ) -> dict:
     """Build risk assessment dict for VEPs with only previous-release PRs."""
     reasoning = (
-        f"All {num_previous_prs} implementation PRs merged before previous release "
-        f"code freeze ({cutoff_str}), no current-release activity. "
+        f"All {num_previous_prs} implementation PRs merged before cycle start "
+        f"({cutoff_str}), no current-release activity. "
         f"Promotion phase: {phase_info}."
     )
     if old_prob is not None:
@@ -205,21 +205,19 @@ def analyze_combined_node(state: VEPState) -> Any:
     release_deadlines = indexed_context.get("release_deadlines", {})
     board_veps = indexed_context.get("board_veps", {})
 
-    # Parse previous release code freeze cutoff for release-aware PR classification
-    prev_cf_str = indexed_context.get("previous_release_code_freeze")
+    # Parse cycle start date for release-aware PR classification
+    cycle_start_str = indexed_context.get("cycle_start_date")
     release_cutoff: Optional[datetime] = None
-    if prev_cf_str:
+    if cycle_start_str:
         try:
-            # Add 7-day buffer after the scheduled code freeze to account for
-            # the community delaying the actual branch cut by up to a week
             release_cutoff = datetime.combine(
-                date.fromisoformat(prev_cf_str), time.min, tzinfo=timezone.utc
-            ) + timedelta(days=7)
-            log(f"Release cutoff for PR classification: {prev_cf_str} + 7d buffer = {release_cutoff.date().isoformat()}", node="analyze_combined")
+                date.fromisoformat(cycle_start_str), time.min, tzinfo=timezone.utc
+            )
+            log(f"Release cutoff for PR classification: cycle_start_date={cycle_start_str}", node="analyze_combined")
         except (ValueError, TypeError):
-            log(f"Could not parse previous_release_code_freeze: {prev_cf_str}", node="analyze_combined", level="WARNING")
+            log(f"Could not parse cycle_start_date: {cycle_start_str}", node="analyze_combined", level="WARNING")
     else:
-        log("Release-aware PR classification disabled: no previous release code freeze date available", node="analyze_combined", level="WARNING")
+        log("Release-aware PR classification disabled: no cycle_start_date available", node="analyze_combined", level="WARNING")
 
     # Extract phase_risks from VEPs for focused analysis
     phase_risks = []
@@ -460,15 +458,17 @@ and issue category - consolidate related issues into a single alert."""
         batch_phase_risks = [r for r in phase_risks if r["vep_name"] in {v.name for v in batch_veps}]
 
         release_schedule = state.get("release_schedule")
-        # During design phase, exclude implementation PRs from LLM context — they're not relevant yet
-        if release_phase == "design":
-            veps_data = []
-            for vep in batch_veps:
-                d = vep.model_dump(mode='json')
+        # Strip raw board impl_prs from LLM context to prevent backport PR leaks.
+        # The filtered implementation_prs field is the authoritative source.
+        veps_data = []
+        for vep in batch_veps:
+            d = vep.model_dump(mode='json')
+            if release_phase == "design":
                 d.pop("implementation_prs", None)
-                veps_data.append(d)
-        else:
-            veps_data = [vep.model_dump(mode='json') for vep in batch_veps]
+            board = d.get("board_fields")
+            if isinstance(board, dict):
+                board.pop("impl_prs", None)
+            veps_data.append(d)
 
         batch_context = {
             "veps": veps_data,
@@ -508,7 +508,7 @@ For EVERY VEP (skip any with "_deterministic_risk" in analysis):
 8. Recommend escalation if probability < 50% OR blocked OR no recent_progress
 9. Store in vep.analysis["risk_assessment"] with recent_progress and days_inactive fields
 
-RELEASE-AWARENESS: PRs merged before the previous release's code freeze ({prev_cf_str or 'unknown'})
+RELEASE-AWARENESS: PRs merged before the cycle start date ({cycle_start_str or 'unknown'})
 are PREVIOUS-RELEASE work, not current-release progress. Ignore previous-release PRs when assessing
 completeness - only current-release PRs matter. A VEP with no current-release PRs should have LOW
 probability (around 10%), regardless of how many previous-release PRs were merged.
@@ -548,11 +548,11 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
                         updated_vep.analysis = {}
                     updated_vep.analysis["risk_assessment"] = orig_analysis["risk_assessment"]
                     updated_vep.analysis["_deterministic_risk"] = True
-                if not updated_vep.implementation_prs and original.implementation_prs:
+                if original.implementation_prs:
                     updated_vep.implementation_prs = original.implementation_prs
-                if not updated_vep.enhancement_prs and original.enhancement_prs:
+                if original.enhancement_prs:
                     updated_vep.enhancement_prs = original.enhancement_prs
-                if not updated_vep.board_fields and original.board_fields:
+                if original.board_fields:
                     updated_vep.board_fields = original.board_fields
                 if not updated_vep.context.deadline and original.context.deadline:
                     updated_vep.context.deadline = original.context.deadline
@@ -610,7 +610,7 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
                 if previous_prs and not current_prs:
                     phase_info = getattr(vep.current_milestone, 'promotion_phase', 'Net New')
                     vep.analysis["risk_assessment"] = _build_previous_release_override(
-                        len(previous_prs), prev_cf_str or "unknown", phase_info
+                        len(previous_prs), cycle_start_str or "unknown", phase_info
                     )
                     log(f"Fallback: {vep.name} has only previous-release PRs ({len(previous_prs)}), prob=10%", node="analyze_combined")
                     continue
@@ -691,7 +691,7 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
                     old_prob = prob
                     phase_info = getattr(vep.current_milestone, 'promotion_phase', 'Net New')
                     override = _build_previous_release_override(
-                        len(previous_prs), prev_cf_str or "unknown", phase_info, old_prob=old_prob
+                        len(previous_prs), cycle_start_str or "unknown", phase_info, old_prob=old_prob
                     )
                     ra.update(override)
                     log(f"Corrected {vep.name}: only previous-release PRs ({len(previous_prs)}), probability {old_prob}% → 10%", node="analyze_combined")
