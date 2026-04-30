@@ -300,8 +300,11 @@ YOUR ANALYSIS TASKS:
         * 8-14 days inactive: Very stale, low probability (10-30%)
         * 15+ days inactive: Abandoned, very low probability (0-15%)
       - SECONDARY FACTORS: days_to_deadline, review_count, status on board
-      - Design phase: Will proposal PR be reviewed and approved by EF?
-      - Development phase: Will implementation PRs be merged by CF?
+      - PHASE-SPECIFIC SCORING:
+        * Design phase: Score based on PROPOSAL PR status ONLY. Implementation PRs
+          are irrelevant during design phase (not expected until after EF).
+          Merged proposal = on track (90-95%). Open active proposal = moderate (60-75%).
+        * Development phase: Will implementation PRs be merged by CF?
       - Be realistic: HIGH days_since_update = stale = LOW probability
 
    b) Summarize reviewer sentiment from RECENT PR activity (last 7/5 days):
@@ -510,8 +513,11 @@ For EVERY VEP (skip any with "_deterministic_risk" in analysis):
 
 RELEASE-AWARENESS: PRs merged before the cycle start date ({cycle_start_str or 'unknown'})
 are PREVIOUS-RELEASE work, not current-release progress. Ignore previous-release PRs when assessing
-completeness - only current-release PRs matter. A VEP with no current-release PRs should have LOW
-probability (around 10%), regardless of how many previous-release PRs were merged.
+completeness - only current-release PRs matter.
+During development/stabilization phases, a VEP with no current-release implementation PRs should
+have LOW probability (around 10%).
+During design phase, implementation PRs are IRRELEVANT - score based on proposal PR status only.
+Note: implementation_prs are intentionally stripped from VEP data during design phase.
 
 For VEPs where ALL CURRENT-RELEASE implementation PRs are merged:
 - If the VEP proposal is also merged OR we are past the relevant freeze: set merge_probability to 100%
@@ -601,6 +607,12 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
                 vep.analysis = {}
             fallback_count += 1
 
+            # Design phase: impl PRs are irrelevant, score by proposal PR status
+            if release_phase == "design":
+                vep.analysis["risk_assessment"] = _fallback_design_phase(vep)
+                log(f"Generated fallback risk assessment for {vep.name}: prob={vep.analysis['risk_assessment']['merge_probability']}%", node="analyze_combined", level="DEBUG")
+                continue
+
             # Determine effective PRs: filter to current-release only when cutoff available
             all_merged = False
             has_impl_prs = bool(vep.implementation_prs)
@@ -638,10 +650,6 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
                     "recommend_escalation": False,
                     "escalation_actions": [],
                 }
-            elif release_phase == "design":
-                # During design phase, what matters is the PROPOSAL PR, not impl PRs.
-                # Open impl PRs are normal and expected — focus on proposal progress.
-                vep.analysis["risk_assessment"] = _fallback_design_phase(vep)
             elif has_impl_prs:
                 merged_count = sum(1 for pr in effective_prs if pr.state == "merged")
                 total_count = len(effective_prs)
@@ -676,6 +684,18 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
     for vep in updated_veps:
         if not hasattr(vep, 'analysis') or not vep.analysis or not vep.analysis.get("risk_assessment"):
             continue
+
+        # Design phase: impl PRs are irrelevant, override with proposal-based scoring
+        if release_phase == "design" and not vep.analysis.get("_deterministic_risk"):
+            ra = vep.analysis["risk_assessment"]
+            design_assessment = _fallback_design_phase(vep)
+            old_prob = ra.get("merge_probability", 0)
+            design_prob = design_assessment["merge_probability"]
+            ra.update(design_assessment)
+            if old_prob != design_prob:
+                log(f"Design phase override for {vep.name}: {old_prob}% → {design_prob}%", node="analyze_combined")
+            continue
+
         has_impl_prs = bool(vep.implementation_prs)
         if not has_impl_prs:
             continue
