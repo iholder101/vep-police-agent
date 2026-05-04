@@ -19,9 +19,9 @@ def get_urgency_level(vep: Any) -> Tuple[str, str]:
 
     Returns:
         (urgency_text, color) tuple
-        - RED: probability <50% or blocked or escalate=True
-        - YELLOW: probability 50-80% or concerned
-        - GREEN: >80% and positive
+        - RED: probability <50% or blocked
+        - YELLOW: probability 50-80% or concerned or escalation recommended
+        - GREEN: >80% and positive/neutral
     """
     if not hasattr(vep, 'analysis') or not vep.analysis:
         return ("UNKNOWN", "gray")
@@ -34,12 +34,12 @@ def get_urgency_level(vep: Any) -> Tuple[str, str]:
     sentiment = risk_assessment.get("reviewer_sentiment", "neutral")
     recommend_escalation = risk_assessment.get("recommend_escalation", False)
 
-    # RED: High risk
-    if prob < 50 or sentiment == "blocked" or recommend_escalation:
+    # RED: High risk - low probability or blocked sentiment
+    if prob < 50 or sentiment == "blocked":
         return ("RED", "red")
 
-    # YELLOW: Medium risk
-    if prob < 80 or sentiment == "concerned":
+    # YELLOW: Medium risk - moderate probability, concern, or escalation recommended
+    if prob < 80 or sentiment == "concerned" or recommend_escalation:
         return ("YELLOW", "orange")
 
     # GREEN: Low risk
