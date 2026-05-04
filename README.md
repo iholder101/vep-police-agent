@@ -3,7 +3,7 @@
 AI-powered governance agent for monitoring KubeVirt [Virtualization Enhancement Proposals](https://github.com/kubevirt/enhancements) (VEPs).
 
 **What it does:**
-- Maintains a [Google Sheet dashboard](https://docs.google.com/spreadsheets/d/12evICwzi3Hpkbc3vWLp6pKEQNz7G3yFblWP2b764et4) with real-time VEP status.
+- Maintains a [Google Sheet dashboard](https://docs.google.com/spreadsheets/d/12evICwzi3Hpkbc3vWLp6pKEQNz7G3yFblWP2b764et4) and a [GitHub Project board](https://github.com/orgs/kubevirt/projects/21) with real-time VEP status.
 - Sends Slack alerts ([#kubevirt-vep-agent-alerts](https://cloud-native.slack.com/archives/C0A99UAFW1M) channel on the CNCF Slack)
 - Send email summaries.
   - currently only to iholder101. Will resolve this limitation moving forward.

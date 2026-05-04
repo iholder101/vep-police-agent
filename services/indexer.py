@@ -888,13 +888,12 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
 def _extract_vep_issue_number(title: str, body: str) -> Optional[int]:
     """Extract VEP tracking issue number from PR title and body.
 
-    Searches for patterns like:
-    - https://github.com/kubevirt/enhancements/issues/80
-    - Tracking issue: #80
-    - VEP Tracker: #21
-    - Tracker: #80
-    - fixes #N, closes #N
-    - VEP number in title (e.g., "VEP 165: ..." → issue 165)
+    Priority order (structured declarations beat generic URL scanning):
+    1. Keyword declarations: "Tracking issue: #80", "VEP Tracker: #21"
+    2. Keyword + URL: "Tracking issue: .../issues/80"
+    3. VEP number in title: "VEP 165: ..."
+    4. Generic close keywords: "fixes #N", "closes #N"
+    5. Any enhancements issue URL (least reliable - catches footnotes/deps)
 
     Returns:
         Issue number or None
@@ -903,38 +902,43 @@ def _extract_vep_issue_number(title: str, body: str) -> Optional[int]:
     if not text_to_search.strip():
         return None
 
-    # Pattern 1: Full issue URL (most reliable)
-    issue_url_match = re.search(r'github\.com/kubevirt/enhancements/issues/(\d+)', text_to_search)
-    if issue_url_match:
-        return int(issue_url_match.group(1))
-
-    # Pattern 2: Specific tracking issue keywords (ordered by specificity)
-    specific_patterns = [
+    # Pattern 1: Keyword declarations with inline number (most intentional)
+    keyword_patterns = [
         r'tracking\s+issue[\s:]+#?(\d+)',
         r'vep\s+tracker[\s:]+#?(\d+)',
         r'tracker[\s:]+#?(\d+)',
         r'vep\s+issue[\s:]+#?(\d+)',
     ]
-    for pattern in specific_patterns:
+    for pattern in keyword_patterns:
         match = re.search(pattern, text_to_search, re.IGNORECASE)
         if match:
             return int(match.group(1))
 
-    # Pattern 3: Generic keywords
-    generic_match = re.search(r'(?:fixes|closes)[\s:]+#?(\d+)', text_to_search, re.IGNORECASE)
-    if generic_match:
-        return int(generic_match.group(1))
+    # Pattern 2: Keyword followed by issue URL on the same line
+    keyword_url_pattern = re.compile(
+        r'(?:tracking\s+issue|vep\s+tracker|tracker|vep\s+issue)'
+        r'[\s:]+\S*github\.com/kubevirt/enhancements/issues/(\d+)',
+        re.IGNORECASE,
+    )
+    match = keyword_url_pattern.search(text_to_search)
+    if match:
+        return int(match.group(1))
 
-    # Pattern 4: VEP number in title as fallback
-    # In the enhancements repo, VEP numbers typically match issue numbers
-    # e.g., "VEP 165: ContainerPath Volumes" → issue #165
-    # e.g., "VEP-183: NetworkDevicesWithDRA" → issue #183
-    # e.g., "VEP #156: Expose Memory Overhead" → issue #156
-    # e.g., "VEP0176: kubevirt-redfish" → issue #176
+    # Pattern 3: VEP number in title
     if title:
         vep_title_match = re.search(r'VEP[- #]*0*(\d+)', title, re.IGNORECASE)
         if vep_title_match:
             return int(vep_title_match.group(1))
+
+    # Pattern 4: Generic close keywords
+    generic_match = re.search(r'(?:fixes|closes)[\s:]+#?(\d+)', text_to_search, re.IGNORECASE)
+    if generic_match:
+        return int(generic_match.group(1))
+
+    # Pattern 5: Any enhancements issue URL (fallback - may match footnotes/deps)
+    issue_url_match = re.search(r'github\.com/kubevirt/enhancements/issues/(\d+)', text_to_search)
+    if issue_url_match:
+        return int(issue_url_match.group(1))
 
     return None
 
@@ -2069,8 +2073,14 @@ def index_project_board_items(version: Optional[str] = None) -> Dict[int, Dict[s
                 if isinstance(field_value, str):
                     impl_prs.extend(_parse_impl_prs_from_text(field_value))
 
-            # Store unique implementation PRs
-            vep_data["impl_prs"] = impl_prs
+            # Deduplicate by PR number
+            seen = set()
+            unique_prs = []
+            for pr in impl_prs:
+                if pr["number"] not in seen:
+                    seen.add(pr["number"])
+                    unique_prs.append(pr)
+            vep_data["impl_prs"] = unique_prs
 
         pr_count = sum(len(v.get("impl_prs", [])) for v in veps.values())
         log(f"Indexed {len(veps)} VEPs from project board #{board_number} with {pr_count} impl PR references", node="indexer")
@@ -2083,10 +2093,8 @@ def index_project_board_items(version: Optional[str] = None) -> Dict[int, Dict[s
 def index_vep_pr_mappings(prs_index: Optional[List[Dict[str, Any]]] = None) -> Dict[str, List[Dict[str, Any]]]:
     """Pre-compute VEP number to PR mappings from kubevirt/kubevirt PRs.
 
-    Searches PR titles and bodies for VEP references using patterns:
-    - vep-{number}, VEP-{number}
-    - vep {number}, VEP {number}
-    - vep#{number}, VEP#{number}
+    When the PR title names specific VEPs, maps only to those (title is
+    authoritative). Falls back to body matches when the title has no VEP ref.
 
     Args:
         prs_index: Optional pre-fetched PRs list. If None, will be fetched.
@@ -2109,27 +2117,32 @@ def index_vep_pr_mappings(prs_index: Optional[List[Dict[str, Any]]] = None) -> D
         if "raw_data" in pr:
             continue
 
-        # Search in title and body
         title = pr.get("title", "") or ""
         body = pr.get("body_preview", "") or pr.get("body", "") or ""
-        content = f"{title} {body}"
 
-        matches = vep_pattern.findall(content)
-        for vep_num in set(matches):  # Dedupe matches in same PR
+        title_matches = set(vep_pattern.findall(title))
+        body_matches = set(vep_pattern.findall(body))
+
+        # Title is authoritative: if it names VEPs, ignore body-only mentions
+        matches = title_matches if title_matches else body_matches
+
+        pr_data = {
+            "number": pr.get("number"),
+            "title": pr.get("title"),
+            "state": pr.get("state"),
+            "merged": pr.get("merged", False),
+            "merged_at": pr.get("merged_at"),
+            "url": pr.get("html_url") or pr.get("url"),
+            "labels": pr.get("labels", []),
+            "created_at": pr.get("created_at"),
+            "updated_at": pr.get("updated_at"),
+            "base_ref": pr.get("base_ref"),
+        }
+
+        for vep_num in matches:
             if vep_num not in mappings:
                 mappings[vep_num] = []
-            mappings[vep_num].append({
-                "number": pr.get("number"),
-                "title": pr.get("title"),
-                "state": pr.get("state"),
-                "merged": pr.get("merged", False),
-                "merged_at": pr.get("merged_at"),
-                "url": pr.get("html_url") or pr.get("url"),
-                "labels": pr.get("labels", []),
-                "created_at": pr.get("created_at"),
-                "updated_at": pr.get("updated_at"),
-                "base_ref": pr.get("base_ref"),
-            })
+            mappings[vep_num].append(pr_data)
 
     total_prs = sum(len(prs) for prs in mappings.values())
     log(f"Mapped {total_prs} PRs to {len(mappings)} VEPs", node="indexer")

@@ -207,6 +207,24 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
                         "_merged_at": pr.get("merged_at"),
                     })
 
+        # Cross-check board-sourced impl PRs: skip if PR title names a different VEP
+        if vep_number and impl_prs:
+            title_vep_re = re.compile(r'vep[-\s#]?0*(\d+)', re.IGNORECASE)
+            filtered = []
+            for p in impl_prs:
+                pr_data = prs_by_number.get(p["number"])
+                if pr_data:
+                    pr_title = pr_data.get("title", "")
+                    tveps = title_vep_re.findall(pr_title)
+                    if tveps and str(vep_number) not in tveps:
+                        log(f"VEP {vep.name}: skipping board impl PR #{p['number']} "
+                            f"(title references VEP {','.join(tveps)}, not {vep_number})",
+                            node="alert_formatting")
+                        impl_pr_numbers.discard(p["number"])
+                        continue
+                filtered.append(p)
+            impl_prs = filtered
+
         # Source 2: Match from kubevirt PRs by vep_issue_number
         # (PRs that reference this VEP issue in their description)
         kubevirt_prs = indexed_context.get("prs_index", [])
@@ -366,7 +384,7 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
 
 
 def format_pr_links_markdown(prs: List[Dict[str, Any]]) -> str:
-    """Format PR list as markdown links.
+    """Format PR list as markdown links (for email alerts).
 
     Args:
         prs: List of {"number": int, "url": str}
@@ -410,6 +428,21 @@ def format_pr_links_plain(prs: List[Dict[str, Any]]) -> str:
         return "-"
 
     return ", ".join([f"#{pr['number']}" for pr in prs])
+
+
+def format_pr_links_urls(prs: List[Dict[str, Any]]) -> str:
+    """Format PR list as full URLs for GitHub Projects V2 (auto-linked).
+
+    Args:
+        prs: List of {"number": int, "url": str}
+
+    Returns:
+        Comma-separated full URLs or "-" if empty
+    """
+    if not prs:
+        return "-"
+
+    return ", ".join(pr["url"] for pr in prs)
 
 
 def build_markdown_table(table_rows: List[Dict[str, Any]]) -> str:
