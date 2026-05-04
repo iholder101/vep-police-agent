@@ -47,10 +47,51 @@ def classify_prs_by_release(impl_prs: List[PRInfo], cutoff: datetime) -> Tuple[L
     return current, previous
 
 
+def _compute_phase_decay_probability(
+    release_phase: str, release_deadlines: dict,
+) -> int:
+    """Compute a time-decaying probability based on position within the current phase.
+
+    Early in a phase, missing impl PRs is normal (high probability).
+    Late in a phase, it's a crisis (low probability, floor of 10%).
+    """
+    today = date.today()
+    try:
+        if release_phase == "development":
+            ef_str = release_deadlines.get("enhancement_freeze")
+            cf_str = release_deadlines.get("code_freeze")
+            if ef_str and cf_str:
+                phase_start = date.fromisoformat(ef_str)
+                phase_end = date.fromisoformat(cf_str)
+                total_days = (phase_end - phase_start).days
+                days_remaining = (phase_end - today).days
+                if total_days > 0 and days_remaining >= 0:
+                    return max(10, int(80 * days_remaining / total_days))
+        elif release_phase == "stabilization":
+            cf_str = release_deadlines.get("code_freeze")
+            ga_str = release_deadlines.get("ga")
+            if cf_str and ga_str:
+                phase_start = date.fromisoformat(cf_str)
+                phase_end = date.fromisoformat(ga_str)
+                total_days = (phase_end - phase_start).days
+                days_remaining = (phase_end - today).days
+                if total_days > 0 and days_remaining >= 0:
+                    return max(10, int(50 * days_remaining / total_days))
+    except (ValueError, TypeError):
+        pass
+    return 10
+
+
 def _build_previous_release_override(
-    num_previous_prs: int, cutoff_str: str, phase_info: str, old_prob: Optional[int] = None
+    num_previous_prs: int, cutoff_str: str, phase_info: str,
+    old_prob: Optional[int] = None, decay_prob: int = 10,
 ) -> dict:
-    """Build risk assessment dict for VEPs with only previous-release PRs."""
+    """Build risk assessment dict for VEPs with only previous-release PRs.
+
+    decay_prob is the time-decay probability from _compute_phase_decay_probability.
+    """
+    prob = decay_prob
+    escalate = prob < 50
     reasoning = (
         f"All {num_previous_prs} implementation PRs merged before cycle start "
         f"({cutoff_str}), no current-release activity. "
@@ -58,14 +99,16 @@ def _build_previous_release_override(
     )
     if old_prob is not None:
         reasoning += f" (LLM estimated {old_prob}%)"
+    if prob > 10:
+        reasoning += f" Early in phase - probability {prob}% (decays toward 10% as deadline approaches)."
     return {
-        "merge_probability": 10,
-        "reviewer_sentiment": "concerned",
+        "merge_probability": prob,
+        "reviewer_sentiment": "concerned" if prob < 50 else "neutral",
         "recent_progress": False,
-        "days_inactive": 0,  # no current-release PRs to measure staleness on
+        "days_inactive": 0,
         "reasoning": reasoning,
-        "recommend_escalation": True,
-        "escalation_actions": ["Open implementation PRs for current release"],
+        "recommend_escalation": escalate,
+        "escalation_actions": ["Open implementation PRs for current release"] if escalate else [],
     }
 
 
@@ -300,8 +343,11 @@ YOUR ANALYSIS TASKS:
         * 8-14 days inactive: Very stale, low probability (10-30%)
         * 15+ days inactive: Abandoned, very low probability (0-15%)
       - SECONDARY FACTORS: days_to_deadline, review_count, status on board
-      - Design phase: Will proposal PR be reviewed and approved by EF?
-      - Development phase: Will implementation PRs be merged by CF?
+      - PHASE-SPECIFIC SCORING:
+        * Design phase: Score based on PROPOSAL PR status ONLY. Implementation PRs
+          are irrelevant during design phase (not expected until after EF).
+          Merged proposal = on track (90-95%). Open active proposal = moderate (60-75%).
+        * Development phase: Will implementation PRs be merged by CF?
       - Be realistic: HIGH days_since_update = stale = LOW probability
 
    b) Summarize reviewer sentiment from RECENT PR activity (last 7/5 days):
@@ -510,8 +556,11 @@ For EVERY VEP (skip any with "_deterministic_risk" in analysis):
 
 RELEASE-AWARENESS: PRs merged before the cycle start date ({cycle_start_str or 'unknown'})
 are PREVIOUS-RELEASE work, not current-release progress. Ignore previous-release PRs when assessing
-completeness - only current-release PRs matter. A VEP with no current-release PRs should have LOW
-probability (around 10%), regardless of how many previous-release PRs were merged.
+completeness - only current-release PRs matter.
+During development/stabilization phases, a VEP with no current-release implementation PRs should
+have LOW probability (around 10%).
+During design phase, implementation PRs are IRRELEVANT - score based on proposal PR status only.
+Note: implementation_prs are intentionally stripped from VEP data during design phase.
 
 For VEPs where ALL CURRENT-RELEASE implementation PRs are merged:
 - If the VEP proposal is also merged OR we are past the relevant freeze: set merge_probability to 100%
@@ -601,6 +650,12 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
                 vep.analysis = {}
             fallback_count += 1
 
+            # Design phase: impl PRs are irrelevant, score by proposal PR status
+            if release_phase == "design":
+                vep.analysis["risk_assessment"] = _fallback_design_phase(vep)
+                log(f"Generated fallback risk assessment for {vep.name}: prob={vep.analysis['risk_assessment']['merge_probability']}%", node="analyze_combined", level="DEBUG")
+                continue
+
             # Determine effective PRs: filter to current-release only when cutoff available
             all_merged = False
             has_impl_prs = bool(vep.implementation_prs)
@@ -608,12 +663,18 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
             if has_impl_prs and release_cutoff:
                 current_prs, previous_prs = classify_prs_by_release(vep.implementation_prs, release_cutoff)
                 if previous_prs and not current_prs:
-                    phase_info = getattr(vep.current_milestone, 'promotion_phase', 'Net New')
-                    vep.analysis["risk_assessment"] = _build_previous_release_override(
-                        len(previous_prs), cycle_start_str or "unknown", phase_info
+                    all_impl_merged = all(
+                        pr.state == "merged" for pr in vep.implementation_prs
                     )
-                    log(f"Fallback: {vep.name} has only previous-release PRs ({len(previous_prs)}), prob=10%", node="analyze_combined")
-                    continue
+                    if not all_impl_merged:
+                        phase_info = getattr(vep.current_milestone, 'promotion_phase', 'Net New')
+                        decay_prob = _compute_phase_decay_probability(release_phase, release_deadlines)
+                        vep.analysis["risk_assessment"] = _build_previous_release_override(
+                            len(previous_prs), cycle_start_str or "unknown", phase_info,
+                            decay_prob=decay_prob,
+                        )
+                        log(f"Fallback: {vep.name} has only previous-release PRs ({len(previous_prs)}), prob={decay_prob}%", node="analyze_combined")
+                        continue
                 elif current_prs:
                     effective_prs = current_prs
 
@@ -638,10 +699,6 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
                     "recommend_escalation": False,
                     "escalation_actions": [],
                 }
-            elif release_phase == "design":
-                # During design phase, what matters is the PROPOSAL PR, not impl PRs.
-                # Open impl PRs are normal and expected — focus on proposal progress.
-                vep.analysis["risk_assessment"] = _fallback_design_phase(vep)
             elif has_impl_prs:
                 merged_count = sum(1 for pr in effective_prs if pr.state == "merged")
                 total_count = len(effective_prs)
@@ -658,14 +715,16 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
                 }
             else:
                 days_inactive = vep.activity.days_since_update if vep.activity else 0
+                decay_prob = _compute_phase_decay_probability(release_phase, release_deadlines)
+                no_impl_prob = max(decay_prob, 30)
                 vep.analysis["risk_assessment"] = {
-                    "merge_probability": 50,
-                    "reviewer_sentiment": "neutral",
+                    "merge_probability": no_impl_prob,
+                    "reviewer_sentiment": "neutral" if no_impl_prob >= 50 else "concerned",
                     "recent_progress": days_inactive < 14,
                     "days_inactive": days_inactive,
-                    "reasoning": "No implementation PRs found. Status based on available data.",
-                    "recommend_escalation": days_inactive > 14,
-                    "escalation_actions": ["Identify and track implementation PRs"] if days_inactive > 14 else [],
+                    "reasoning": f"No implementation PRs found. Phase-adjusted probability {no_impl_prob}%.",
+                    "recommend_escalation": no_impl_prob < 50,
+                    "escalation_actions": ["Identify and track implementation PRs"] if no_impl_prob < 50 else [],
                 }
             log(f"Generated fallback risk assessment for {vep.name}: prob={vep.analysis['risk_assessment']['merge_probability']}%", node="analyze_combined", level="DEBUG")
 
@@ -676,6 +735,18 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
     for vep in updated_veps:
         if not hasattr(vep, 'analysis') or not vep.analysis or not vep.analysis.get("risk_assessment"):
             continue
+
+        # Design phase: impl PRs are irrelevant, override with proposal-based scoring
+        if release_phase == "design" and not vep.analysis.get("_deterministic_risk"):
+            ra = vep.analysis["risk_assessment"]
+            design_assessment = _fallback_design_phase(vep)
+            old_prob = ra.get("merge_probability", 0)
+            design_prob = design_assessment["merge_probability"]
+            ra.update(design_assessment)
+            if old_prob != design_prob:
+                log(f"Design phase override for {vep.name}: {old_prob}% → {design_prob}%", node="analyze_combined")
+            continue
+
         has_impl_prs = bool(vep.implementation_prs)
         if not has_impl_prs:
             continue
@@ -685,17 +756,23 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
         if release_cutoff:
             current_prs, previous_prs = classify_prs_by_release(vep.implementation_prs, release_cutoff)
             if previous_prs and not current_prs:
-                ra = vep.analysis["risk_assessment"]
-                prob = ra.get("merge_probability", 100)
-                if prob > 10:
-                    old_prob = prob
-                    phase_info = getattr(vep.current_milestone, 'promotion_phase', 'Net New')
-                    override = _build_previous_release_override(
-                        len(previous_prs), cycle_start_str or "unknown", phase_info, old_prob=old_prob
-                    )
-                    ra.update(override)
-                    log(f"Corrected {vep.name}: only previous-release PRs ({len(previous_prs)}), probability {old_prob}% → 10%", node="analyze_combined")
-                continue
+                all_impl_merged = all(
+                    pr.state == "merged" for pr in vep.implementation_prs
+                )
+                if not all_impl_merged:
+                    ra = vep.analysis["risk_assessment"]
+                    prob = ra.get("merge_probability", 100)
+                    decay_prob = _compute_phase_decay_probability(release_phase, release_deadlines)
+                    if prob != decay_prob:
+                        old_prob = prob
+                        phase_info = getattr(vep.current_milestone, 'promotion_phase', 'Net New')
+                        override = _build_previous_release_override(
+                            len(previous_prs), cycle_start_str or "unknown", phase_info,
+                            old_prob=old_prob, decay_prob=decay_prob,
+                        )
+                        ra.update(override)
+                        log(f"Corrected {vep.name}: only previous-release PRs ({len(previous_prs)}), probability {old_prob}% → {decay_prob}%", node="analyze_combined")
+                    continue
             elif current_prs:
                 effective_prs = current_prs
 
