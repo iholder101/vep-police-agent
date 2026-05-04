@@ -17,7 +17,7 @@ from services.graphql_client import (
     get_project_field_metadata,
     update_project_item_fields,
 )
-from nodes.alert_formatting import format_pr_links_markdown
+from nodes.alert_formatting import format_pr_links_urls
 
 
 def _resolve_board_number(version: str) -> int | None:
@@ -57,8 +57,8 @@ def update_project_board_node(state: VEPState) -> Any:
     For each VEP in the summary table, updates four text fields on the board:
     - Agent Urgency: RED / YELLOW / GREEN
     - Agent Comment: Status comment from risk assessment
-    - Proposal PRs: Clickable markdown PR links (e.g., "[#215](url), [#220](url)")
-    - Impl PRs: Clickable markdown PR links (e.g., "[#16909](url), [#16832](url)")
+    - Proposal PRs: Full URLs (e.g., "https://...pull/215, https://...pull/220")
+    - Impl PRs: Full URLs (e.g., "https://...pull/16909, https://...pull/16832")
 
     Respects skip_update_board state flag.
     """
@@ -130,8 +130,8 @@ def update_project_board_node(state: VEPState) -> Any:
         field_updates = {
             "Agent Urgency": row.get("urgency", ""),
             "Agent Comment": row.get("status_comment", ""),
-            "Proposal PRs": format_pr_links_markdown(row.get("proposal_prs", [])),
-            "Impl PRs": format_pr_links_markdown(row.get("impl_prs", [])),
+            "Proposal PRs": format_pr_links_urls(row.get("proposal_prs", [])),
+            "Impl PRs": format_pr_links_urls(row.get("impl_prs", [])),
         }
 
         count = update_project_item_fields(project_id, item_id, field_updates, fields_meta)
