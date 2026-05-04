@@ -200,6 +200,38 @@ def _check_design_phase_risks(
     return risks_by_vep
 
 
+def _compute_phase_fraction(release_deadlines: Dict[str, Any]) -> float:
+    """Compute fraction of development phase elapsed (0.0 = start, 1.0 = end)."""
+    ef_str = release_deadlines.get("enhancement_freeze")
+    cf_str = release_deadlines.get("code_freeze")
+    if not ef_str or not cf_str:
+        return 0.5
+    try:
+        from datetime import date
+        phase_start = date.fromisoformat(ef_str)
+        phase_end = date.fromisoformat(cf_str)
+        total_days = (phase_end - phase_start).days
+        elapsed = (date.today() - phase_start).days
+        if total_days <= 0:
+            return 0.5
+        return max(0.0, min(1.0, elapsed / total_days))
+    except (ValueError, TypeError):
+        return 0.5
+
+
+def _check_proposal_merged(
+    vep_issue_num: int,
+    enhancements_prs: list,
+) -> bool:
+    """Check if a VEP's proposal/graduation PR is merged."""
+    vep_issue_int = int(vep_issue_num) if not isinstance(vep_issue_num, int) else vep_issue_num
+    for pr in enhancements_prs:
+        if pr.get("vep_issue_number") == vep_issue_int:
+            if pr.get("merged") or (pr.get("state") or "").lower() == "merged":
+                return True
+    return False
+
+
 def _check_development_phase_risks(
     indexed_context: Dict[str, Any],
     release_deadlines: Dict[str, Any],
@@ -229,6 +261,8 @@ def _check_development_phase_risks(
     # Get kubevirt PRs and VEP-to-PR mappings
     prs_index = indexed_context.get("prs_index", [])
     vep_to_pr_mappings = indexed_context.get("vep_to_pr_mappings", {})
+    enhancements_prs = indexed_context.get("enhancements_prs", [])
+    phase_fraction = _compute_phase_fraction(release_deadlines)
 
     risks_by_vep = {}
     prs_by_number = {pr.get("number"): pr for pr in prs_index if isinstance(pr, dict)}
@@ -284,16 +318,28 @@ def _check_development_phase_risks(
 
         # Flag if no implementation PRs
         if not impl_prs:
+            proposal_merged = _check_proposal_merged(vep_issue_num, enhancements_prs)
+
+            if proposal_merged and phase_fraction < 0.3:
+                log(f"VEP {vep_issue_num}: no impl PRs but proposal merged, early in phase ({phase_fraction:.0%}) - skipping risk", node="check_phase_risks", level="DEBUG")
+                continue
+
+            if proposal_merged:
+                risk_level = "low" if phase_fraction < 0.6 else "medium"
+            else:
+                risk_level = "high" if days_to_cf <= 7 else "medium"
+
             risks_by_vep[vep_issue_num] = {
                 "has_risks": True,
                 "phase": "development",
                 "missing_impl_prs": True,
+                "proposal_merged": proposal_merged,
                 "days_to_deadline": days_to_cf,
                 "days_to_cf": days_to_cf,
                 "near_deadline": days_to_cf <= DEVELOPMENT_PHASE_THRESHOLDS["deadline_extension_days"],
-                "risk_level": "high" if days_to_cf <= 7 else "medium",
+                "risk_level": risk_level,
             }
-            log(f"Development risk: VEP {vep_issue_num} - no implementation PRs", node="check_phase_risks")
+            log(f"Development risk: VEP {vep_issue_num} - no implementation PRs (proposal_merged={proposal_merged}, phase={phase_fraction:.0%}, risk={risk_level})", node="check_phase_risks")
             continue
 
         # Check if all implementation PRs are merged or closed — no risk
@@ -353,16 +399,26 @@ def _check_development_phase_risks(
                 })
 
         if stale_prs:
+            proposal_merged = _check_proposal_merged(vep_issue_num, enhancements_prs)
             near_deadline = days_to_cf <= DEVELOPMENT_PHASE_THRESHOLDS["deadline_extension_days"]
+
+            if proposal_merged and phase_fraction < 0.3:
+                risk_level = "low"
+            elif proposal_merged:
+                risk_level = "low" if phase_fraction < 0.6 else "medium"
+            else:
+                risk_level = "high" if near_deadline else "medium"
+
             risks_by_vep[vep_issue_num] = {
                 "has_risks": True,
                 "phase": "development",
                 "stale_impl_prs": stale_prs,
+                "proposal_merged": proposal_merged,
                 "days_to_deadline": days_to_cf,
                 "days_to_cf": days_to_cf,
                 "near_deadline": near_deadline,
-                "risk_level": "high" if near_deadline else "medium",
+                "risk_level": risk_level,
             }
-            log(f"Development risk: VEP {vep_issue_num} - {len(stale_prs)} stale impl PR(s)", node="check_phase_risks")
+            log(f"Development risk: VEP {vep_issue_num} - {len(stale_prs)} stale impl PR(s) (proposal_merged={proposal_merged}, phase={phase_fraction:.0%}, risk={risk_level})", node="check_phase_risks")
 
     return risks_by_vep

@@ -443,6 +443,15 @@ and issue category - consolidate related issues into a single alert."""
             continue
         vep_name = risk["vep_name"]
         vep_id = risk["vep_id"]
+
+        # Skip deterministic RED for VEPs with merged proposals and low risk
+        if risk.get("proposal_merged"):
+            risk_level = risk.get("risk_level", "medium")
+            if risk_level == "low":
+                log(f"Skipping deterministic RED for {vep_name}: proposal merged, risk_level=low (early in phase)",
+                    node="analyze_combined")
+                continue
+
         stale_vep_names.add(vep_name)
 
         # Find the VEP object and pre-fill
@@ -457,6 +466,25 @@ and issue category - consolidate related issues into a single alert."""
                                  if proposal_pr else
                                  max((p.get("days_since_update", 0) for p in stale_impl_prs), default=0))
                 days_to_deadline = risk.get("days_to_deadline", 0)
+
+                # For risks with merged proposal: use time-decay instead of hard 30%
+                if risk.get("proposal_merged"):
+                    decay_prob = _compute_phase_decay_probability(release_phase, release_deadlines)
+                    reasoning = (f"No implementation PRs yet, but proposal is merged. "
+                                 f"Phase-adjusted probability {decay_prob}%. "
+                                 f"CF deadline in {days_to_deadline} days.")
+                    vep.analysis["risk_assessment"] = {
+                        "merge_probability": decay_prob,
+                        "reviewer_sentiment": "concerned" if decay_prob < 50 else "neutral",
+                        "recent_progress": False,
+                        "days_inactive": days_inactive,
+                        "reasoning": reasoning,
+                        "recommend_escalation": decay_prob < 50,
+                        "escalation_actions": ["Open implementation PRs for current release"] if decay_prob < 50 else [],
+                    }
+                    log(f"Phase-decay for {vep_name}: proposal merged, no impl PRs, prob={decay_prob}%",
+                        node="analyze_combined")
+                    break
 
                 if phase == "design":
                     pr_num = proposal_pr.get("number", "?")
@@ -557,8 +585,10 @@ For EVERY VEP (skip any with "_deterministic_risk" in analysis):
 RELEASE-AWARENESS: PRs merged before the cycle start date ({cycle_start_str or 'unknown'})
 are PREVIOUS-RELEASE work, not current-release progress. Ignore previous-release PRs when assessing
 completeness - only current-release PRs matter.
-During development/stabilization phases, a VEP with no current-release implementation PRs should
-have LOW probability (around 10%).
+During development/stabilization phases, a VEP with no current-release implementation PRs:
+- If the proposal/enhancement PR is MERGED and we are early in the phase (first 30%): assign
+  MODERATE probability (60-75%). It is normal to not have impl PRs yet shortly after proposal merge.
+- If the proposal is NOT merged or we are late in the phase: assign LOW probability (around 10%).
 During design phase, implementation PRs are IRRELEVANT - score based on proposal PR status only.
 Note: implementation_prs are intentionally stripped from VEP data during design phase.
 
@@ -749,6 +779,26 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
 
         has_impl_prs = bool(vep.implementation_prs)
         if not has_impl_prs:
+            # Check if proposal is merged - if so, use phase-decay probability as floor
+            if not vep.analysis.get("_deterministic_risk"):
+                proposal_merged = any(
+                    pr.state == "merged" or pr.merged
+                    for pr in (vep.enhancement_prs or [])
+                )
+                vep_merged = getattr(vep.compliance, 'vep_merged', False) or vep.context.deadline.get("vep_merged", False)
+                if proposal_merged or vep_merged:
+                    ra = vep.analysis["risk_assessment"]
+                    prob = ra.get("merge_probability", 0)
+                    decay_prob = _compute_phase_decay_probability(release_phase, release_deadlines)
+                    if prob < decay_prob:
+                        old_prob = prob
+                        ra["merge_probability"] = decay_prob
+                        ra["reviewer_sentiment"] = "concerned" if decay_prob < 50 else "neutral"
+                        ra["recommend_escalation"] = decay_prob < 50
+                        ra["escalation_actions"] = ["Open implementation PRs for current release"] if decay_prob < 50 else []
+                        ra["reasoning"] = (f"Proposal merged but no implementation PRs yet. "
+                                           f"Phase-adjusted probability {decay_prob}%. (LLM estimated {old_prob}%)")
+                        log(f"Corrected {vep.name}: proposal merged, no impl PRs, probability {old_prob}% → {decay_prob}%", node="analyze_combined")
             continue
 
         # Determine effective PRs: filter to current-release only when cutoff available
