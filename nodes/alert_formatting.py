@@ -327,13 +327,8 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
                 node="alert_formatting")
 
         # Filter out merged PRs from before the current release cycle
-        # Skip for Graduating VEPs - their impl PRs are from prior cycles by definition
-        is_graduating = (
-            hasattr(vep, 'current_milestone') and vep.current_milestone
-            and vep.current_milestone.promotion_phase == "Graduating"
-        )
         cycle_start_date = indexed_context.get("cycle_start_date")
-        if cycle_start_date and not is_graduating:
+        if cycle_start_date:
             cycle_start = date.fromisoformat(cycle_start_date)
             before_count = len(impl_prs)
             filtered = []
