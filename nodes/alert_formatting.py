@@ -131,14 +131,18 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
             if pr.get("vep_issue_number") == vep.tracking_issue_id:
                 proposal_pr_numbers.add(pr.get("number"))
 
-        # Build proposal PRs list with URLs and merged_at for filtering
+        # Build proposal PRs list with URLs and state/merged_at for filtering
         proposal_prs = []
         for pr_num in sorted(proposal_pr_numbers):
             enh_pr = enhancements_by_number.get(pr_num, {})
+            state = enh_pr.get("state", "")
+            merged_at = enh_pr.get("merged_at")
+            if state == "closed" and not merged_at:
+                continue
             proposal_prs.append({
                 "number": pr_num,
                 "url": f"https://github.com/kubevirt/enhancements/pull/{pr_num}",
-                "_merged_at": enh_pr.get("merged_at"),
+                "_merged_at": merged_at,
             })
 
         # Filter out proposal PRs merged before the current release cycle
@@ -285,6 +289,27 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
         # Sort by PR number
         impl_prs = sorted(impl_prs, key=lambda x: x["number"])
 
+        # Filter out closed-unmerged PRs (abandoned/superseded)
+        before_count = len(impl_prs)
+        filtered = []
+        for p in impl_prs:
+            state = p.get("_state", "")
+            merged_at = p.get("_merged_at")
+            if not state:
+                pr_index_data = prs_by_number.get(p["number"])
+                if pr_index_data:
+                    state = pr_index_data.get("state", "")
+                    merged_at = merged_at or pr_index_data.get("merged_at")
+            if state == "closed" and not merged_at:
+                impl_pr_numbers.discard(p["number"])
+                continue
+            filtered.append(p)
+        impl_prs = filtered
+        removed = before_count - len(impl_prs)
+        if removed:
+            log(f"VEP {vep.name}: filtered {removed} closed-unmerged impl PR(s)",
+                node="alert_formatting")
+
         # Filter out backport PRs (targeting release branches, not main)
         before_count = len(impl_prs)
         filtered = []
@@ -325,6 +350,62 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
             if removed:
                 log(f"VEP {vep.name}: filtered {removed} pre-cycle impl PR(s) (cycle start: {cycle_start_date})",
                     node="alert_formatting")
+
+        # Filter out borderline impl PRs that were backported to the previous release.
+        # PRs merged early in the cycle (before midpoint of cycle_start to EF) that
+        # have cherry-picks targeting the previous release branch are previous-cycle
+        # work that happened to land during the transition period.
+        ef_date_str = indexed_context.get("release_deadlines", {}).get("enhancement_freeze")
+        current_release = indexed_context.get("current_release", "")
+        if cycle_start_date and ef_date_str and current_release:
+            cycle_start_d = date.fromisoformat(cycle_start_date) if isinstance(cycle_start_date, str) else cycle_start_date
+            ef_date_clean = ef_date_str.split('T')[0] if 'T' in ef_date_str else ef_date_str
+            ef_date_d = date.fromisoformat(ef_date_clean) if isinstance(ef_date_str, str) else ef_date_str
+            midpoint = cycle_start_d + (ef_date_d - cycle_start_d) / 2
+            # Derive previous release branch name (e.g., "v1.9" -> "release-1.8")
+            ver_match = re.match(r'v?(\d+)\.(\d+)', current_release)
+            if ver_match:
+                major, minor = int(ver_match.group(1)), int(ver_match.group(2))
+                prev_branch = f"release-{major}.{minor - 1}"
+                # Build set of PR numbers that have backports to previous release
+                backported_prs = set()
+                for pr in kubevirt_prs:
+                    if not isinstance(pr, dict):
+                        continue
+                    if pr.get("base_ref") == prev_branch:
+                        body = pr.get("body_preview", "") or pr.get("body", "") or ""
+                        title = pr.get("title", "") or ""
+                        # Cherry-pick PRs reference original via "Cherry pick of #NNNNN" or "#NNNNN" in title
+                        refs = re.findall(r'(?:#|/pull/)(\d+)', f"{title} {body}")
+                        for ref in refs:
+                            backported_prs.add(int(ref))
+                # Filter impl PRs merged in the borderline window that were backported
+                before_count = len(impl_prs)
+                filtered = []
+                for p in impl_prs:
+                    merged_at = p.get("_merged_at")
+                    if not merged_at:
+                        pr_idx = prs_by_number.get(p["number"])
+                        if pr_idx:
+                            merged_at = pr_idx.get("merged_at")
+                    if merged_at and p["number"] in backported_prs:
+                        try:
+                            if isinstance(merged_at, str):
+                                merged_date = date.fromisoformat(merged_at.replace('Z', '+00:00').split('T')[0] if 'T' in merged_at else merged_at)
+                            else:
+                                merged_date = merged_at.date() if hasattr(merged_at, 'date') else merged_at
+                            if merged_date <= midpoint:
+                                impl_pr_numbers.discard(p["number"])
+                                continue
+                        except (ValueError, TypeError):
+                            pass
+                    filtered.append(p)
+                impl_prs = filtered
+                removed = before_count - len(impl_prs)
+                if removed:
+                    log(f"VEP {vep.name}: filtered {removed} backported borderline impl PR(s) "
+                        f"(merged before {midpoint}, backported to {prev_branch})",
+                        node="alert_formatting")
 
         # Strip internal fields before output
         impl_prs = [{"number": p["number"], "url": p["url"]} for p in impl_prs]
