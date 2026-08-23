@@ -16,6 +16,7 @@ VERSION_PROJECT_BOARDS: Dict[str, int] = {
     "1.7": 18,
     "1.8": 19,
     "1.9": 21,
+    "1.10": 22,
 }
 
 # Model configuration per node type
