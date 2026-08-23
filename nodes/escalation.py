@@ -5,9 +5,10 @@ This creates pressure to resolve long-standing issues.
 """
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
+
 from services.utils import log
 
 # Escalation thresholds (cycles)
@@ -30,29 +31,29 @@ SEVERITY_UPGRADE = {
 PERSISTENCE_FILE = Path(__file__).parent.parent / "cache" / "alert_persistence.json"
 
 
-def _load_persistence() -> Dict[str, Dict[str, Any]]:
+def _load_persistence() -> dict[str, dict[str, Any]]:
     """Load alert persistence data from file."""
     if not PERSISTENCE_FILE.exists():
         return {}
     try:
         with open(PERSISTENCE_FILE, "r") as f:
             return json.load(f)
-    except Exception as e:
+    except (ValueError, TypeError, OSError, KeyError, json.JSONDecodeError) as e:
         log(f"Failed to load persistence data: {e}", node="escalation", level="WARNING")
         return {}
 
 
-def _save_persistence(data: Dict[str, Dict[str, Any]]) -> None:
+def _save_persistence(data: dict[str, dict[str, Any]]) -> None:
     """Save alert persistence data to file."""
     try:
         PERSISTENCE_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(PERSISTENCE_FILE, "w") as f:
             json.dump(data, f, indent=2, default=str)
-    except Exception as e:
+    except (ValueError, TypeError, OSError, KeyError, json.JSONDecodeError) as e:
         log(f"Failed to save persistence data: {e}", node="escalation", level="WARNING")
 
 
-def _make_alert_key(alert: Dict) -> str:
+def _make_alert_key(alert: dict) -> str:
     """Create a unique key for an alert based on VEP and canonical issue type.
 
     Uses canonical types to ensure LLM text variations don't create duplicate
@@ -65,7 +66,7 @@ def _make_alert_key(alert: Dict) -> str:
     return f"{vep_id}:{canonical}"
 
 
-def escalate_alerts(alerts: List[Dict]) -> Tuple[List[Dict], Dict[str, Any]]:
+def escalate_alerts(alerts: list[dict]) -> tuple[list[dict], dict[str, Any]]:
     """Apply escalation logic to alerts based on persistence.
 
     Args:
@@ -85,7 +86,7 @@ def escalate_alerts(alerts: List[Dict]) -> Tuple[List[Dict], Dict[str, Any]]:
     escalation_count = 0
     new_count = 0
 
-    now = datetime.now().isoformat()
+    now = datetime.now(UTC).isoformat()
 
     for alert in alerts:
         key = _make_alert_key(alert)
@@ -176,7 +177,7 @@ def clear_persistence() -> int:
     return count
 
 
-def get_persistence_summary() -> Dict[str, Any]:
+def get_persistence_summary() -> dict[str, Any]:
     """Get summary of current persistence state."""
     persistence = _load_persistence()
 
@@ -186,22 +187,22 @@ def get_persistence_summary() -> Dict[str, Any]:
     # Group by last severity
     by_severity = {}
     oldest_date = None
-    for key, entry in persistence.items():
+    for entry in persistence.values():
         severity = entry.get("last_severity", "low")
         by_severity[severity] = by_severity.get(severity, 0) + 1
 
         first_seen = entry.get("first_seen")
         if first_seen:
             try:
-                dt = datetime.fromisoformat(first_seen.replace("Z", "+00:00"))
+                dt = datetime.fromisoformat(first_seen)
                 if oldest_date is None or dt < oldest_date:
                     oldest_date = dt
-            except:
+            except (ValueError, TypeError):
                 pass
 
     oldest_days = 0
     if oldest_date:
-        oldest_days = (datetime.now() - oldest_date.replace(tzinfo=None)).days
+        oldest_days = (datetime.now(UTC) - oldest_date).days
 
     return {
         "total": len(persistence),

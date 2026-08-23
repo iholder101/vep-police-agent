@@ -5,12 +5,13 @@ Analysis is done by analyze_combined which has access to ALL context at once.
 """
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
-from state import VEPState
-from services.utils import log
+
 from services.llm_helper import invoke_llm_fetch
 from services.response_models import FetchResponse
+from services.utils import log
+from state import VEPState
 
 
 def check_compliance_node(state: VEPState) -> Any:
@@ -28,7 +29,7 @@ def check_compliance_node(state: VEPState) -> Any:
     log(f"Fetching compliance context for {veps_count} VEP(s)", node="check_compliance")
 
     last_check_times = state.get("last_check_times", {})
-    last_check_times["check_compliance"] = datetime.now()
+    last_check_times["check_compliance"] = datetime.now(UTC)
 
     if not veps:
         return {

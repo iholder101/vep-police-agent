@@ -1,11 +1,11 @@
-from typing import TypedDict, Literal, Optional, List, Dict, Any, Annotated
 from datetime import datetime
+from typing import Annotated, Any, Literal, TypedDict
 
 from langchain_core.messages import BaseMessage
 from pydantic import BaseModel, Field
 
 
-def merge_dict_reducer(x: Dict[str, Any], y: Dict[str, Any]) -> Dict[str, Any]:
+def merge_dict_reducer(x: dict[str, Any], y: dict[str, Any]) -> dict[str, Any]:
     """Reducer function to merge two dictionaries."""
     if not x:
         return y or {}
@@ -14,7 +14,7 @@ def merge_dict_reducer(x: Dict[str, Any], y: Dict[str, Any]) -> Dict[str, Any]:
     return {**x, **y}
 
 
-def concat_list_reducer(x: List[Any], y: List[Any]) -> List[Any]:
+def concat_list_reducer(x: list[Any], y: list[Any]) -> list[Any]:
     """Reducer function to concatenate two lists."""
     if not x:
         return y or []
@@ -28,7 +28,7 @@ class ReleaseScheduleDelay(BaseModel):
     original_date: datetime
     delay_date: datetime
     is_current_release: bool
-    reasons: List[str]
+    reasons: list[str]
     notes: str
 
 class ReleaseSchedule(BaseModel):
@@ -41,7 +41,7 @@ class ReleaseSchedule(BaseModel):
     enhancement_freeze: datetime  # EF - deadline for VEP acceptance
     code_freeze: datetime  # CF - deadline for code implementation
     kubevirt_release: datetime  # GA - general availability date
-    freeze_delays: List[ReleaseScheduleDelay]  # Any delays to the original schedule
+    freeze_delays: list[ReleaseScheduleDelay]  # Any delays to the original schedule
 
 class VEPMilestone(BaseModel):
     """VEP milestone tracking information for a specific release.
@@ -76,7 +76,7 @@ class VEPActivity(BaseModel):
     """
     last_activity: datetime  # Last update time (from issue/PR updates)
     days_since_update: int  # Days since last activity
-    review_lag_days: Optional[int] = None  # Days since last review (None if no reviews)
+    review_lag_days: int | None = None  # Days since last review (None if no reviews)
 
 class PRInfo(BaseModel):
     """Structured PR information with core fields we monitor.
@@ -92,7 +92,7 @@ class PRInfo(BaseModel):
     updated_at: datetime
     author: str
     merged: bool = False
-    merged_at: Optional[datetime] = None
+    merged_at: datetime | None = None
 
     # Review status - these are what we actually check for compliance
     has_lgtm: bool = False  # Has "LGTM" comment from approver
@@ -102,7 +102,7 @@ class PRInfo(BaseModel):
 
     # Full GitHub API response stored here for reference
     # Allows access to any field not explicitly defined above
-    github_data: Dict[str, Any] = Field(default_factory=dict)
+    github_data: dict[str, Any] = Field(default_factory=dict)
 
     class Config:
         extra = "allow"  # Allow extra fields from GitHub API that aren't defined above
@@ -120,10 +120,10 @@ class IssueInfo(BaseModel):
     created_at: datetime
     updated_at: datetime
     author: str
-    labels: List[str] = []  # GitHub labels (SIG labels, target release, etc.)
+    labels: list[str] = []  # GitHub labels (SIG labels, target release, etc.)
 
     # Full GitHub API response stored here for reference
-    github_data: Dict[str, Any] = Field(default_factory=dict)
+    github_data: dict[str, Any] = Field(default_factory=dict)
 
     class Config:
         extra = "allow"  # Allow extra fields from GitHub API
@@ -138,15 +138,15 @@ class VEPContext(BaseModel):
     Each field corresponds to data fetched by a specific check node.
     """
     # From check_deadlines - deadline-related raw data
-    deadline: Dict[str, Any] = Field(default_factory=dict)
+    deadline: dict[str, Any] = Field(default_factory=dict)
     # From check_activity - activity-related raw data
-    activity: Dict[str, Any] = Field(default_factory=dict)
+    activity: dict[str, Any] = Field(default_factory=dict)
     # From check_compliance - compliance-related raw data
-    compliance: Dict[str, Any] = Field(default_factory=dict)
+    compliance: dict[str, Any] = Field(default_factory=dict)
     # From check_exceptions - exception-related raw data
-    exceptions: Dict[str, Any] = Field(default_factory=dict)
+    exceptions: dict[str, Any] = Field(default_factory=dict)
     # From check_phase_risks - phase-specific risk data
-    phase_risks: Dict[str, Any] = Field(default_factory=dict)
+    phase_risks: dict[str, Any] = Field(default_factory=dict)
 
 
 class VEPInfo(BaseModel):
@@ -173,20 +173,20 @@ class VEPInfo(BaseModel):
 
     # Related GitHub resources
     tracking_issue: IssueInfo | None  # Full tracking issue data from GitHub
-    enhancement_prs: List[PRInfo] = []  # PRs in kubevirt/enhancements repo (VEP creation/updates)
-    implementation_prs: List[PRInfo] = []  # PRs in kubevirt/kubevirt repo (actual code implementation)
+    enhancement_prs: list[PRInfo] = []  # PRs in kubevirt/enhancements repo (VEP creation/updates)
+    implementation_prs: list[PRInfo] = []  # PRs in kubevirt/kubevirt repo (actual code implementation)
 
     # Raw context data fetched by monitoring nodes (NOT analyzed - just raw data)
     context: VEPContext = Field(default_factory=VEPContext)
 
     # Flexible extensions - structure varies, so Dict allows flexibility
-    target_release: Optional[str] = None  # Target release version (e.g., "v1.8")
-    exceptions: Dict[str, Any] = {}  # Exception requests and status - structure varies by VEP
-    analysis: Dict[str, Any] = {}  # LLM-generated insights and analysis from analyze_combined
-    notes: Optional[str] = None  # Free-form notes for human review
+    target_release: str | None = None  # Target release version (e.g., "v1.8")
+    exceptions: dict[str, Any] = {}  # Exception requests and status - structure varies by VEP
+    analysis: dict[str, Any] = {}  # LLM-generated insights and analysis from analyze_combined
+    notes: str | None = None  # Free-form notes for human review
 
     # Project board metadata from GitHub Project V2
-    board_fields: Optional[Dict[str, Any]] = None  # All project board field values (Status, Priority, dates, etc.)
+    board_fields: dict[str, Any] | None = None  # All project board field values (Status, Priority, dates, etc.)
 
 class VEPState(TypedDict):
     """LangGraph state schema - the entire state of the VEP governance agent.
@@ -196,37 +196,37 @@ class VEPState(TypedDict):
     for performance - state updates are frequent and TypedDict is lightweight.
     """
     # Required by LangGraph for LLM interactions
-    messages: List[BaseMessage]
+    messages: list[BaseMessage]
 
     # Release tracking
-    current_release: Optional[str]  # Active release version (e.g., "v1.8")
-    release_schedule: Optional[ReleaseSchedule]  # Parsed schedule with EF/CF dates
+    current_release: str | None  # Active release version (e.g., "v1.8")
+    release_schedule: ReleaseSchedule | None  # Parsed schedule with EF/CF dates
 
     # VEP data
-    veps: List[VEPInfo]  # All VEPs being tracked
+    veps: list[VEPInfo]  # All VEPs being tracked
 
     # Task scheduling and tracking
-    last_check_times: Annotated[Dict[str, datetime], merge_dict_reducer]  # Last execution time per node/task (merged from parallel nodes)
-    next_tasks: List[str]  # Tasks the scheduler should run next
+    last_check_times: Annotated[dict[str, datetime], merge_dict_reducer]  # Last execution time per node/task (merged from parallel nodes)
+    next_tasks: list[str]  # Tasks the scheduler should run next
 
     # State management
-    alerts: Annotated[List[Dict[str, Any]], concat_list_reducer]  # Alerts queued for notification (deadline warnings, compliance issues, etc.) - concatenated from parallel nodes
-    alert_summary_text: Optional[str]  # Human-readable summary text for email alerts
-    general_insights: Annotated[List[str], concat_list_reducer]  # General insights and patterns across all VEPs (overall release health, trends, cross-VEP patterns) - each insight as a separate string
-    vep_summary_table: List[Dict[str, Any]]  # Per-VEP summary table (urgency, status, PR links) built by analyze_combined
-    detected_changes: Optional[Dict[str, Any]]  # Changes detected vs previous run (from detect_changes node)
+    alerts: Annotated[list[dict[str, Any]], concat_list_reducer]  # Alerts queued for notification (deadline warnings, compliance issues, etc.) - concatenated from parallel nodes
+    alert_summary_text: str | None  # Human-readable summary text for email alerts
+    general_insights: Annotated[list[str], concat_list_reducer]  # General insights and patterns across all VEPs (overall release health, trends, cross-VEP patterns) - each insight as a separate string
+    vep_summary_table: list[dict[str, Any]]  # Per-VEP summary table (urgency, status, PR links) built by analyze_combined
+    detected_changes: dict[str, Any] | None  # Changes detected vs previous run (from detect_changes node)
     sheets_need_update: bool  # Flag indicating Google Sheets needs syncing
-    errors: List[Dict[str, Any]]  # Errors encountered during processing
-    config_cache: Dict[str, Any]  # Cached configuration (VEP template, process docs, etc.)
-    vep_updates_by_check: Annotated[Dict[str, List[VEPInfo]], merge_dict_reducer]  # Temporary storage for VEP updates from parallel checks (merged from parallel nodes)
+    errors: list[dict[str, Any]]  # Errors encountered during processing
+    config_cache: dict[str, Any]  # Cached configuration (VEP template, process docs, etc.)
+    vep_updates_by_check: Annotated[dict[str, list[VEPInfo]], merge_dict_reducer]  # Temporary storage for VEP updates from parallel checks (merged from parallel nodes)
     
     # Google Sheets configuration
-    sheet_config: Dict[str, Any]  # Sheet configuration: sheet_id, create_new, sheet_name, etc.
+    sheet_config: dict[str, Any]  # Sheet configuration: sheet_id, create_new, sheet_name, etc.
     
     # Configuration flags
     index_cache_minutes: int  # Maximum age of index cache in minutes
     one_cycle: bool  # Flag to indicate if the agent should run only one cycle
-    _exit_after_sheets: Optional[bool]  # Internal flag to signal exit after sheets update
+    _exit_after_sheets: bool | None  # Internal flag to signal exit after sheets update
     skip_monitoring: bool  # Flag to skip monitoring checks for faster debugging
     skip_sheets: bool  # Flag to skip sheet updates for faster debugging
     skip_update_board: bool  # Flag to skip writing to GitHub project board

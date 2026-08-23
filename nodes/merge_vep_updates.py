@@ -5,8 +5,9 @@ It applies raw context data from each fetch node to VEP objects.
 """
 
 from typing import Any
-from state import VEPState
+
 from services.utils import log
+from state import VEPState
 
 
 def merge_vep_updates_node(state: VEPState) -> Any:

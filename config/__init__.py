@@ -2,28 +2,25 @@
 
 # Re-export config values
 from .config import (
-    NODE_MODELS,
     EMAIL_RECIPIENTS,
     FETCH_VEPS_INTERVAL_SECONDS,
+    NODE_MODELS,
     VERSION_PROJECT_BOARDS,
 )
 
 # Re-export constants
-from .util import (
-    DEFAULT_MODEL,
-    AVAILABLE_MODELS,
-    FAST_MODEL,
-    HEAVY_MODEL,
-)
-
 # Re-export helpers
 from .util import (
-    set_fastest_model,
-    is_fastest_model_enabled,
-    get_model_for_node,
-    set_node_model,
+    AVAILABLE_MODELS,
+    DEFAULT_MODEL,
+    FAST_MODEL,
+    HEAVY_MODEL,
+    board_search_patterns,
     get_all_node_models,
     get_email_recipients,
+    get_model_for_node,
     get_project_board_for_version,
-    board_search_patterns,
+    is_fastest_model_enabled,
+    set_fastest_model,
+    set_node_model,
 )

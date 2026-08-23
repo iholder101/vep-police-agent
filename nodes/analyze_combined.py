@@ -5,17 +5,20 @@ This node has access to ALL context at once and does holistic reasoning.
 """
 
 import json
-from datetime import datetime, date, time, timezone
-from typing import Any, List, Optional, Tuple
-from state import VEPState, PRInfo
-from services.utils import log
+from datetime import UTC, date, datetime, time
+from typing import Any
+
+from pydantic import Field
+
+from nodes.alert_formatting import build_markdown_table, build_vep_summary_table
+from services.indexer import create_indexed_context
 from services.llm_helper import invoke_llm_check
 from services.response_models import CheckResponse
-from services.indexer import create_indexed_context
-from nodes.alert_formatting import build_vep_summary_table, build_markdown_table
+from services.utils import log
+from state import PRInfo, VEPState
 
 
-def classify_prs_by_release(impl_prs: List[PRInfo], cutoff: datetime) -> Tuple[List[PRInfo], List[PRInfo]]:
+def classify_prs_by_release(impl_prs: list[PRInfo], cutoff: datetime) -> tuple[list[PRInfo], list[PRInfo]]:
     """Classify implementation PRs as current-release vs previous-release work.
 
     The cutoff is the cycle start date (first date in the release schedule, or
@@ -55,7 +58,7 @@ def _compute_phase_decay_probability(
     Early in a phase, missing impl PRs is normal (high probability).
     Late in a phase, it's a crisis (low probability, floor of 10%).
     """
-    today = date.today()
+    today = datetime.now(UTC).date()
     try:
         if release_phase == "development":
             ef_str = release_deadlines.get("enhancement_freeze")
@@ -84,7 +87,7 @@ def _compute_phase_decay_probability(
 
 def _build_previous_release_override(
     num_previous_prs: int, cutoff_str: str, phase_info: str,
-    old_prob: Optional[int] = None, decay_prob: int = 10,
+    old_prob: int | None = None, decay_prob: int = 10,
 ) -> dict:
     """Build risk assessment dict for VEPs with only previous-release PRs.
 
@@ -115,7 +118,7 @@ def _build_previous_release_override(
 class AnalyzeCombinedResponse(CheckResponse):
     """Response model for combined analysis."""
     sheets_need_update: bool = False
-    general_insights: List[str] = []
+    general_insights: list[str] = Field(default_factory=list)
 
 
 def _fallback_design_phase(vep) -> dict:
@@ -214,7 +217,7 @@ def analyze_combined_node(state: VEPState) -> Any:
     log(f"Analyzing {len(veps)} VEP(s) with combined context", node="analyze_combined")
 
     last_check_times = state.get("last_check_times", {})
-    last_check_times["analyze_combined"] = datetime.now()
+    last_check_times["analyze_combined"] = datetime.now(UTC)
 
     if not veps:
         return {
@@ -250,11 +253,11 @@ def analyze_combined_node(state: VEPState) -> Any:
 
     # Parse cycle start date for release-aware PR classification
     cycle_start_str = indexed_context.get("cycle_start_date")
-    release_cutoff: Optional[datetime] = None
+    release_cutoff: datetime | None = None
     if cycle_start_str:
         try:
             release_cutoff = datetime.combine(
-                date.fromisoformat(cycle_start_str), time.min, tzinfo=timezone.utc
+                date.fromisoformat(cycle_start_str), time.min, tzinfo=UTC
             )
             log(f"Release cutoff for PR classification: cycle_start_date={cycle_start_str}", node="analyze_combined")
         except (ValueError, TypeError):
@@ -548,7 +551,7 @@ and issue category - consolidate related issues into a single alert."""
             "veps": veps_data,
             "release_schedule": release_schedule.model_dump(mode='json') if release_schedule else None,
             "current_release": state.get("current_release"),
-            "today": datetime.now().strftime("%Y-%m-%d"),
+            "today": datetime.now(UTC).strftime("%Y-%m-%d"),
             "phase_summary": phase_summary,
             "phase_risks": batch_phase_risks,
         }
@@ -663,7 +666,7 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
 
             log(f"Batch {batch_num} complete: {len(batch_updated)} VEPs analyzed, {len(result.alerts)} alerts", node="analyze_combined")
 
-        except Exception as e:
+        except (RuntimeError, ValueError, TypeError, KeyError) as e:
             log(f"Batch {batch_num} failed: {e}. Preserving original VEPs.", node="analyze_combined", level="WARNING")
             all_updated_veps.extend(batch_veps)
 
@@ -945,7 +948,7 @@ Return updated VEPs with complete analysis, general_insights list, and sheets_ne
                 yellow_count = sum(1 for row in vep_summary_table if row["urgency"] == "YELLOW")
                 green_count = sum(1 for row in vep_summary_table if row["urgency"] == "GREEN")
                 log(f"Summary: {red_count} HIGH RISK (RED), {yellow_count} MEDIUM RISK (YELLOW), {green_count} ON TRACK (GREEN)", node="analyze_combined")
-        except Exception as e:
+        except (RuntimeError, ValueError, TypeError, KeyError) as e:
             log(f"Failed to build VEP summary table: {e}", node="analyze_combined", level="WARNING")
 
     log(f"Sheets update needed: {sheets_need_update}", node="analyze_combined")

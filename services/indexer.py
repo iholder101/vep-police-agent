@@ -4,15 +4,16 @@ This module provides functions to index critical information before LLM processi
 ensuring the LLM has a complete picture of what exists rather than having to discover it.
 """
 
-import re
 import json
 import os
+import re
 import time
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Any, Optional
-from datetime import date, datetime, timedelta, timezone
-from services.utils import log
+from typing import Any
+
 from services.mcp_factory import get_mcp_tools_by_name
+from services.utils import log
 
 # Cache file path (relative to project root)
 CACHE_FILE = Path(__file__).parent.parent / "cache" / "index_cache.json"
@@ -65,7 +66,7 @@ def _call_with_retry(tool_func, max_retries=3, delay=5, **kwargs):
                     # For IP-based limits, also add a base delay to get closer to next hour
                     if "62." in str(e) or "79." in str(e) or "ip" in error_str:
                         # IP-based rate limit - wait longer (typically resets on the hour)
-                        current_minute = datetime.now().minute
+                        current_minute = datetime.now(UTC).minute
                         minutes_until_hour = 60 - current_minute
                         if minutes_until_hour < 60 and minutes_until_hour > 0:
                             # Add extra wait to get closer to hour boundary
@@ -114,11 +115,11 @@ def _parse_version(version_str: str) -> tuple:
     return (0, 0)
 
 
-def _sort_versions_numerically(versions: List[str]) -> List[str]:
+def _sort_versions_numerically(versions: list[str]) -> list[str]:
     """Sort version strings numerically (v1.11 > v1.8, not alphabetically)."""
     return sorted(versions, key=_parse_version, reverse=True)
 
-def _process_schedule_content(schedule_content: Any, version: str, sorted_versions: List[str] | None = None) -> Dict[str, Any]:
+def _process_schedule_content(schedule_content: Any, version: str, sorted_versions: list[str] | None = None) -> dict[str, Any]:
     """Common processing for schedule content from MCP tool."""
     # MCP GitHub tool returns plain markdown in "content"
     # Extract and unescape for proper table parsing
@@ -152,7 +153,7 @@ def _process_schedule_content(schedule_content: Any, version: str, sorted_versio
         "release_phase": phase,
     }
 
-def _fetch_previous_release_code_freeze(get_file_tool, versions: List[str], current_version: str) -> Optional[str]:
+def _fetch_previous_release_code_freeze(get_file_tool, versions: list[str], current_version: str) -> str | None:
     """Fetch the previous release's code freeze date.
 
     The code freeze date is when the release branch is cut from main.
@@ -199,7 +200,7 @@ def _fetch_previous_release_code_freeze(get_file_tool, versions: List[str], curr
         return None
 
 
-def index_release_schedule() -> Optional[Dict[str, Any]]:
+def index_release_schedule() -> dict[str, Any] | None:
     """Index the current release schedule from kubevirt/sig-release.
 
     Lists the releases directory, finds all versions, sorts numerically,
@@ -384,7 +385,7 @@ def index_release_schedule() -> Optional[Dict[str, Any]]:
                             get_file_tool, sorted_versions, version
                         )
                         return result
-                except Exception as e:
+                except (OSError, ValueError, TypeError, KeyError) as e:
                     log(f"Error fetching schedule for {version}: {e}", node="indexer", level="DEBUG")
                     continue
         else:
@@ -411,17 +412,17 @@ def index_release_schedule() -> Optional[Dict[str, Any]]:
                         get_file_tool, fallback_versions, version
                     )
                     return result
-            except Exception:
+            except (ValueError, TypeError, KeyError, RuntimeError):
                 continue
                     
-    except Exception as e:
+    except (OSError, ValueError, TypeError, KeyError) as e:
         log(f"Error in index_release_schedule: {e}", node="indexer", level="WARNING")
     
     log("Could not determine current release schedule", node="indexer", level="WARNING")
     return None
 
 
-def _filter_by_date(items: List[Dict[str, Any]], days: int = 365) -> List[Dict[str, Any]]:
+def _filter_by_date(items: list[dict[str, Any]], days: int = 365) -> list[dict[str, Any]]:
     """Filter items to only include those from the last N days.
     
     IMPORTANT: Always includes open items regardless of date, as they may be active VEPs.
@@ -433,7 +434,7 @@ def _filter_by_date(items: List[Dict[str, Any]], days: int = 365) -> List[Dict[s
     Returns:
         Filtered list of items (all open items + closed items from last N days)
     """
-    cutoff_date = datetime.now() - timedelta(days=days)
+    cutoff_date = datetime.now(UTC) - timedelta(days=days)
     filtered = []
     
     for item in items:
@@ -455,10 +456,10 @@ def _filter_by_date(items: List[Dict[str, Any]], days: int = 365) -> List[Dict[s
         try:
             if isinstance(date_str, str):
                 # Try ISO format
-                item_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                item_date = datetime.fromisoformat(date_str)
             elif isinstance(date_str, (int, float)):
                 # Timestamp
-                item_date = datetime.fromtimestamp(date_str)
+                item_date = datetime.fromtimestamp(date_str, tz=UTC)
             else:
                 # Unknown format, include it
                 filtered.append(item)
@@ -467,14 +468,14 @@ def _filter_by_date(items: List[Dict[str, Any]], days: int = 365) -> List[Dict[s
             # Compare dates (handle timezone-aware dates)
             if item_date.replace(tzinfo=None) >= cutoff_date:
                 filtered.append(item)
-        except Exception:
+        except (ValueError, TypeError, AttributeError):
             # If parsing fails, include it
             filtered.append(item)
     
     return filtered
 
 
-def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, Any]]:
+def index_enhancements_issues(days_back: int | None = 365) -> list[dict[str, Any]]:
     """Index issues in kubevirt/enhancements repository.
     
     Args:
@@ -514,7 +515,7 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
                 date_filter = ""
                 if days_back is not None:
                     from datetime import datetime, timedelta
-                    cutoff_date = datetime.now() - timedelta(days=days_back)
+                    cutoff_date = datetime.now(UTC) - timedelta(days=days_back)
                     date_str = cutoff_date.strftime("%Y-%m-%d")
                     date_filter = f" updated:>={date_str}"
                 
@@ -551,7 +552,7 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
                         if isinstance(result, str):
                             try:
                                 result_dict = json.loads(result)
-                            except:
+                            except (ValueError, TypeError):
                                 pass
                         elif isinstance(result, dict):
                             result_dict = result
@@ -563,7 +564,7 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
                                 items = result_dict["items"]
                             if "total_count" in result_dict:
                                 total_count = result_dict["total_count"]
-                            if "incomplete_results" in result_dict and result_dict["incomplete_results"]:
+                            if result_dict.get("incomplete_results"):
                                 log(f"Warning: Search results for {state} issues may be incomplete", node="indexer", level="WARNING")
                         
                         if not items:
@@ -885,7 +886,7 @@ def index_enhancements_issues(days_back: Optional[int] = 365) -> List[Dict[str, 
     return []
 
 
-def _extract_vep_issue_number(title: str, body: str) -> Optional[int]:
+def _extract_vep_issue_number(title: str, body: str) -> int | None:
     """Extract VEP tracking issue number from PR title and body.
 
     Priority order (structured declarations beat generic URL scanning):
@@ -943,7 +944,7 @@ def _extract_vep_issue_number(title: str, body: str) -> Optional[int]:
     return None
 
 
-def index_enhancements_prs(days_back: Optional[int] = 365) -> List[Dict[str, Any]]:
+def index_enhancements_prs(days_back: int | None = 365) -> list[dict[str, Any]]:
     """Index PRs in kubevirt/enhancements repository.
 
     Indexes proposal PRs that create or modify VEP documents.
@@ -1110,7 +1111,7 @@ def index_enhancements_prs(days_back: Optional[int] = 365) -> List[Dict[str, Any
         return []
 
 
-def _search_kubevirt_prs_referencing_veps() -> List[Dict[str, Any]]:
+def _search_kubevirt_prs_referencing_veps() -> list[dict[str, Any]]:
     """Search kubevirt/kubevirt PRs that reference enhancements tracking issues.
 
     Uses GitHub search API which indexes PR bodies, making it reliable
@@ -1160,7 +1161,7 @@ def _search_kubevirt_prs_referencing_veps() -> List[Dict[str, Any]]:
                 except TypeError:
                     try:
                         result = _call_with_retry(search_tool.func, query=search_query)
-                    except Exception:
+                    except (RuntimeError, ValueError, TypeError):
                         break
                     if page > 1:
                         break
@@ -1225,7 +1226,7 @@ def _search_kubevirt_prs_referencing_veps() -> List[Dict[str, Any]]:
         return []
 
 
-def index_kubevirt_prs(days_back: Optional[int] = 365, fetch_reviews: bool = True) -> List[Dict[str, Any]]:
+def index_kubevirt_prs(days_back: int | None = 365, fetch_reviews: bool = True) -> list[dict[str, Any]]:
     """Index PRs in kubevirt/kubevirt repository.
 
     Args:
@@ -1427,7 +1428,7 @@ def index_kubevirt_prs(days_back: Optional[int] = 365, fetch_reviews: bool = Tru
     return []
 
 
-def index_enhancements_readme() -> Optional[Dict[str, Any]]:
+def index_enhancements_readme() -> dict[str, Any] | None:
     """Index the README.md from kubevirt/enhancements repository.
     
     This contains crucial VEP process documentation, labels, structure, and requirements.
@@ -1510,7 +1511,7 @@ def index_enhancements_readme() -> Optional[Dict[str, Any]]:
                 log("README.md content is too short or empty", node="indexer", level="WARNING")
                 return None
                 
-        except Exception as e:
+        except (OSError, ValueError, TypeError, KeyError) as e:
             log(f"Error reading README.md: {e}", node="indexer", level="WARNING")
             return None
             
@@ -1521,7 +1522,7 @@ def index_enhancements_readme() -> Optional[Dict[str, Any]]:
     return None
 
 
-def index_vep_files() -> List[Dict[str, Any]]:
+def index_vep_files() -> list[dict[str, Any]]:
     """Index all VEP files in kubevirt/enhancements/veps/ directory.
     
     Parses the directory listing to extract VEP file names, then reads each VEP file
@@ -1758,7 +1759,7 @@ def index_vep_files() -> List[Dict[str, Any]]:
                                     log(f"Found VEP file via regex: {full_path}", node="indexer", level="DEBUG")
                     
                     log(f"Found {files_found_in_subdir} VEP file(s) in {subdir}", node="indexer", level="DEBUG")
-                except Exception as e:
+                except (OSError, ValueError, TypeError, KeyError) as e:
                     log(f"Error reading subdirectory {subdir}: {e}", node="indexer", level="DEBUG")
                     continue
             
@@ -1879,7 +1880,7 @@ def index_vep_files() -> List[Dict[str, Any]]:
                         })
                     else:
                         log(f"Skipping {vep_file_path} - suspicious content (length: {len(content_str)})", node="indexer", level="DEBUG")
-                except Exception as e:
+                except (OSError, ValueError, TypeError, KeyError) as e:
                     log(f"Error reading VEP file {vep_file_path}: {e}", node="indexer", level="DEBUG")
                     # Still include the filename even if we can't read it
                     filename = vep_file_path.split("/")[-1]
@@ -1902,18 +1903,18 @@ def index_vep_files() -> List[Dict[str, Any]]:
             log(f"Indexed {len(vep_data)} VEP files with content", node="indexer")
             return vep_data
             
-        except Exception as e:
+        except (OSError, ValueError, TypeError, KeyError) as e:
             log(f"Error reading veps directory: {e}", node="indexer", level="WARNING")
             return []
             
-    except Exception as e:
+    except (OSError, ValueError, TypeError, KeyError) as e:
         log(f"Error in index_vep_files: {e}", node="indexer", level="WARNING")
         return []
 
     return []
 
 
-def _find_active_release_project(current_release: str) -> Optional[int]:
+def _find_active_release_project(current_release: str) -> int | None:
     """Discover active release project board ID by title matching.
 
     Searches for a project board with title matching the current release
@@ -1944,7 +1945,7 @@ def _find_active_release_project(current_release: str) -> Optional[int]:
     return None
 
 
-def _parse_impl_prs_from_text(text: str) -> List[Dict[str, Any]]:
+def _parse_impl_prs_from_text(text: str) -> list[dict[str, Any]]:
     """Parse implementation PR references from text content.
 
     Extracts PR numbers from patterns like:
@@ -2021,7 +2022,7 @@ def _parse_impl_prs_from_text(text: str) -> List[Dict[str, Any]]:
     return impl_prs
 
 
-def index_project_board_items(version: Optional[str] = None) -> Dict[int, Dict[str, Any]]:
+def index_project_board_items(version: str | None = None) -> dict[int, dict[str, Any]]:
     """Index VEP items from the kubevirt GitHub Project V2 board.
 
     Fetches all VEPs from the project board for the given release version,
@@ -2059,7 +2060,7 @@ def index_project_board_items(version: Optional[str] = None) -> Dict[int, Dict[s
         veps = get_veps_from_project_board(project_number=board_number)
 
         # Enhance each VEP with implementation PR data
-        for issue_num, vep_data in veps.items():
+        for vep_data in veps.values():
             impl_prs = []
 
             # Parse implementation PRs from issue body
@@ -2069,7 +2070,7 @@ def index_project_board_items(version: Optional[str] = None) -> Dict[int, Dict[s
 
             # Also check text fields (Notes, Implementation PRs, etc.)
             fields = vep_data.get("fields", {})
-            for field_name, field_value in fields.items():
+            for field_value in fields.values():
                 if isinstance(field_value, str):
                     impl_prs.extend(_parse_impl_prs_from_text(field_value))
 
@@ -2090,7 +2091,7 @@ def index_project_board_items(version: Optional[str] = None) -> Dict[int, Dict[s
         return {}
 
 
-def index_vep_pr_mappings(prs_index: Optional[List[Dict[str, Any]]] = None) -> Dict[str, List[Dict[str, Any]]]:
+def index_vep_pr_mappings(prs_index: list[dict[str, Any]] | None = None) -> dict[str, list[dict[str, Any]]]:
     """Pre-compute VEP number to PR mappings from kubevirt/kubevirt PRs.
 
     When the PR title names specific VEPs, maps only to those (title is
@@ -2108,7 +2109,7 @@ def index_vep_pr_mappings(prs_index: Optional[List[Dict[str, Any]]] = None) -> D
         prs_index = index_kubevirt_prs()
 
     vep_pattern = re.compile(r'vep[-\s#]?(\d+)', re.IGNORECASE)
-    mappings: Dict[str, List[Dict[str, Any]]] = {}
+    mappings: dict[str, list[dict[str, Any]]] = {}
 
     for pr in prs_index:
         if not isinstance(pr, dict):
@@ -2149,7 +2150,7 @@ def index_vep_pr_mappings(prs_index: Optional[List[Dict[str, Any]]] = None) -> D
     return mappings
 
 
-def _extract_proposal_prs_from_issue(issue_body: str) -> List[int]:
+def _extract_proposal_prs_from_issue(issue_body: str) -> list[int]:
     """Extract proposal PR numbers from tracking issue body.
 
     The tracking issue is the authoritative source for proposal PRs.
@@ -2168,10 +2169,10 @@ def _extract_proposal_prs_from_issue(issue_body: str) -> List[int]:
     for match in pr_url_pattern.finditer(issue_body):
         pr_numbers.add(int(match.group(1)))
 
-    return sorted(list(pr_numbers))
+    return sorted(pr_numbers)
 
 
-def index_approved_vep_prs(prs_index: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+def index_approved_vep_prs(prs_index: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Index PRs with 'approved-vep' label from kubevirt/kubevirt.
 
     These are PRs that implement approved VEPs. Per vladikr's approach,
@@ -2192,7 +2193,7 @@ def index_approved_vep_prs(prs_index: Optional[List[Dict[str, Any]]] = None) -> 
         prs_index = index_kubevirt_prs()
 
     approved_vep_prs = []
-    now = datetime.now()
+    now = datetime.now(UTC)
 
     # Pattern to detect VEP references (e.g., "VEP-123", "vep 123", "VEP#123")
     vep_pattern = re.compile(r'vep[-\s#]?(\d+)', re.IGNORECASE)
@@ -2220,7 +2221,7 @@ def index_approved_vep_prs(prs_index: Optional[List[Dict[str, Any]]] = None) -> 
             if updated_at:
                 try:
                     if isinstance(updated_at, str):
-                        updated_dt = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+                        updated_dt = datetime.fromisoformat(updated_at)
                         # Make naive for comparison
                         updated_dt = updated_dt.replace(tzinfo=None)
                     else:
@@ -2256,7 +2257,7 @@ def index_approved_vep_prs(prs_index: Optional[List[Dict[str, Any]]] = None) -> 
     return approved_vep_prs
 
 
-def _load_cached_index(cache_file: Path, max_age_minutes: int = 60) -> Optional[Dict[str, Any]]:
+def _load_cached_index(cache_file: Path, max_age_minutes: int = 60) -> dict[str, Any] | None:
     """Load cached indexed context if it exists and is fresh.
     
     Args:
@@ -2282,7 +2283,7 @@ def _load_cached_index(cache_file: Path, max_age_minutes: int = 60) -> Optional[
         
         # Parse timestamp
         cached_at = datetime.fromisoformat(cached_at_str)
-        age = datetime.now() - cached_at
+        age = datetime.now(UTC) - cached_at
         age_minutes = age.total_seconds() / 60
         
         if age_minutes < max_age_minutes:
@@ -2301,7 +2302,7 @@ def _load_cached_index(cache_file: Path, max_age_minutes: int = 60) -> Optional[
         return None
 
 
-def _save_cached_index(cache_file: Path, indexed_context: Dict[str, Any]) -> None:
+def _save_cached_index(cache_file: Path, indexed_context: dict[str, Any]) -> None:
     """Save indexed context to cache file.
     
     Args:
@@ -2311,7 +2312,7 @@ def _save_cached_index(cache_file: Path, indexed_context: Dict[str, Any]) -> Non
     try:
         # Add timestamp to cache
         cache_data = indexed_context.copy()
-        cache_data["cached_at"] = datetime.now().isoformat()
+        cache_data["cached_at"] = datetime.now(UTC).isoformat()
         
         # Write to cache file
         with open(cache_file, 'w', encoding='utf-8') as f:
@@ -2319,12 +2320,12 @@ def _save_cached_index(cache_file: Path, indexed_context: Dict[str, Any]) -> Non
         
         log(f"Saved indexed context to cache: {cache_file}", node="indexer", level="DEBUG")
     
-    except Exception as e:
+    except (ValueError, TypeError, OSError, KeyError, json.JSONDecodeError) as e:
         log(f"Error saving cache file: {e}", node="indexer", level="WARNING")
         # Don't fail if cache save fails - indexing still succeeded
 
 
-def _parse_date_from_text(text: str) -> Optional[datetime]:
+def _parse_date_from_text(text: str) -> datetime | None:
     """Parse a date from text, supporting various formats.
 
     Supports formats like:
@@ -2360,9 +2361,7 @@ def _parse_date_from_text(text: str) -> Optional[datetime]:
         if match:
             groups = match.groups()
             try:
-                if pattern == date_patterns[0]:  # ISO-like with dashes
-                    year, month, day = int(groups[0]), int(groups[1]), int(groups[2])
-                elif pattern == date_patterns[1]:  # ISO-like with slashes
+                if pattern == date_patterns[0] or pattern == date_patterns[1]:  # ISO-like with dashes
                     year, month, day = int(groups[0]), int(groups[1]), int(groups[2])
                 elif pattern == date_patterns[2]:  # Month Day, Year
                     month_str, day, year = groups[0].lower(), int(groups[1]), int(groups[2])
@@ -2374,7 +2373,7 @@ def _parse_date_from_text(text: str) -> Optional[datetime]:
                     month = month_names.get(month_str) or month_abbrs.get(month_str[:3])
                     if not month:
                         continue
-                return datetime(year, month, day)
+                return datetime(year, month, day, tzinfo=UTC)
             except (ValueError, TypeError):
                 continue
 
@@ -2454,7 +2453,7 @@ def compute_release_phase(release_info: dict) -> tuple[str, dict[str, str | None
             dates["ga"] = date_obj
             log(f"Matched GA: {date_obj} on line: {line_clean[:100]}", node="indexer", level="DEBUG")
 
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
 
     ef = dates["enhancement_freeze"]
     cf = dates["code_freeze"]
@@ -2480,9 +2479,9 @@ def compute_release_phase(release_info: dict) -> tuple[str, dict[str, str | None
     return phase, deadlines
 
 def compute_veps_missing_prs(
-    project_board_items: Dict[int, Dict[str, Any]],
-    vep_to_pr_mappings: Dict[str, List[Dict[str, Any]]]
-) -> List[Dict[str, Any]]:
+    project_board_items: dict[int, dict[str, Any]],
+    vep_to_pr_mappings: dict[str, list[dict[str, Any]]]
+) -> list[dict[str, Any]]:
     """Find tracked VEPs that have no implementation PRs.
 
     VEPs with status "Tracked" or "At risk" should have implementation PRs.
@@ -2534,7 +2533,7 @@ def compute_veps_missing_prs(
     return missing
 
 
-def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes: int = 60) -> Dict[str, Any]:
+def create_indexed_context(days_back: int | None = 365, cache_max_age_minutes: int = 60) -> dict[str, Any]:
     """Create a comprehensive indexed context for VEP discovery.
     
     This pre-fetches key information so the LLM has a complete picture
@@ -2583,10 +2582,10 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
         ef_str = deadlines.get("enhancement_freeze")
         if ef_str:
             try:
-                ef_date = datetime.fromisoformat(ef_str.replace('Z', '+00:00'))
+                ef_date = datetime.fromisoformat(ef_str)
                 if ef_date.tzinfo is None:
-                    ef_date = ef_date.replace(tzinfo=timezone.utc)
-                days_since_ef = (datetime.now(timezone.utc) - ef_date).days
+                    ef_date = ef_date.replace(tzinfo=UTC)
+                days_since_ef = (datetime.now(UTC) - ef_date).days
                 # 30 days before EF + time since EF
                 pr_days_back = max(days_since_ef + 30, 90)  # At least 90 days
                 log(f"PR lookback: {pr_days_back} days (EF was {days_since_ef} days ago)", node="indexer")
@@ -2648,7 +2647,7 @@ def create_indexed_context(days_back: Optional[int] = 365, cache_max_age_minutes
         "approved_vep_prs": index_approved_vep_prs(prs_index=prs_index),
         # VEPs that are tracked but have no implementation PRs
         "veps_missing_prs": compute_veps_missing_prs(project_board_items, vep_to_pr_mappings),
-        "indexed_at": datetime.now().isoformat(),
+        "indexed_at": datetime.now(UTC).isoformat(),
         "days_back": days_back,
     }
     indexed_context["release_phase"] = release_info.get("release_phase", "unknown") if release_info else "unknown"

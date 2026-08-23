@@ -7,12 +7,12 @@ This node detects different risks depending on the current release phase:
 Uses indexed_context (release_phase, release_deadlines, board_veps) for efficient detection.
 """
 
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict
-from state import VEPState
-from services.utils import log
-from services.indexer import create_indexed_context
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
+from services.indexer import create_indexed_context
+from services.utils import log
+from state import VEPState
 
 # Configurable thresholds
 DESIGN_PHASE_THRESHOLDS = {
@@ -39,7 +39,7 @@ def check_phase_risks_node(state: VEPState) -> Any:
     log("Checking phase-specific risks", node="check_phase_risks")
 
     last_check_times = state.get("last_check_times", {})
-    last_check_times["check_phase_risks"] = datetime.now()
+    last_check_times["check_phase_risks"] = datetime.now(UTC)
 
     # Get indexed context (cached, efficient)
     index_cache_minutes = state.get("index_cache_minutes", 60)
@@ -89,10 +89,10 @@ def check_phase_risks_node(state: VEPState) -> Any:
 
 
 def _check_design_phase_risks(
-    indexed_context: Dict[str, Any],
-    release_deadlines: Dict[str, Any],
-    board_veps: Dict[int, Dict[str, Any]]
-) -> Dict[int, Dict[str, Any]]:
+    indexed_context: dict[str, Any],
+    release_deadlines: dict[str, Any],
+    board_veps: dict[int, dict[str, Any]]
+) -> dict[int, dict[str, Any]]:
     """Check design phase risks: stale/under-reviewed proposal PRs.
 
     Returns:
@@ -104,12 +104,14 @@ def _check_design_phase_risks(
         log("No EF deadline found, skipping design phase checks", node="check_phase_risks", level="WARNING")
         return {}
 
-    ef_deadline = datetime.fromisoformat(ef_deadline_str.replace('Z', '+00:00'))
+    if isinstance(ef_deadline_str, str) and ef_deadline_str.endswith('Z'):
+        ef_deadline_str = ef_deadline_str[:-1] + '+00:00'
+    ef_deadline = datetime.fromisoformat(ef_deadline_str)
     # Ensure timezone-aware
     if ef_deadline.tzinfo is None:
-        ef_deadline = ef_deadline.replace(tzinfo=timezone.utc)
+        ef_deadline = ef_deadline.replace(tzinfo=UTC)
     ef_with_extension = ef_deadline + timedelta(days=DESIGN_PHASE_THRESHOLDS["deadline_extension_days"])
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     days_to_ef = (ef_with_extension - now).days
 
     log(f"EF deadline (with extension): {ef_with_extension.date()}, days remaining: {days_to_ef}", node="check_phase_risks")
@@ -124,7 +126,7 @@ def _check_design_phase_risks(
     # Filter to PRs that reference VEPs on the board (more precise)
     # Board keys may be str (from JSON cache) or int — normalize to int
     board_vep_numbers = set()
-    for k in board_veps.keys():
+    for k in board_veps:
         try:
             board_vep_numbers.add(int(k))
         except (ValueError, TypeError):
@@ -159,7 +161,9 @@ def _check_design_phase_risks(
         # Check staleness
         updated_at_str = pr.get("updated_at")
         if updated_at_str:
-            updated_at = datetime.fromisoformat(updated_at_str.replace('Z', '+00:00'))
+            if isinstance(updated_at_str, str) and updated_at_str.endswith('Z'):
+                updated_at_str = updated_at_str[:-1] + '+00:00'
+            updated_at = datetime.fromisoformat(updated_at_str)
             days_since_update = (now - updated_at).days
         else:
             days_since_update = 999  # Unknown, assume stale
@@ -200,18 +204,18 @@ def _check_design_phase_risks(
     return risks_by_vep
 
 
-def _compute_phase_fraction(release_deadlines: Dict[str, Any]) -> float:
+def _compute_phase_fraction(release_deadlines: dict[str, Any]) -> float:
     """Compute fraction of development phase elapsed (0.0 = start, 1.0 = end)."""
     ef_str = release_deadlines.get("enhancement_freeze")
     cf_str = release_deadlines.get("code_freeze")
     if not ef_str or not cf_str:
         return 0.5
     try:
-        from datetime import date
+        from datetime import UTC, date
         phase_start = date.fromisoformat(ef_str)
         phase_end = date.fromisoformat(cf_str)
         total_days = (phase_end - phase_start).days
-        elapsed = (date.today() - phase_start).days
+        elapsed = (datetime.now(UTC).date() - phase_start).days
         if total_days <= 0:
             return 0.5
         return max(0.0, min(1.0, elapsed / total_days))
@@ -226,17 +230,16 @@ def _check_proposal_merged(
     """Check if a VEP's proposal/graduation PR is merged."""
     vep_issue_int = int(vep_issue_num) if not isinstance(vep_issue_num, int) else vep_issue_num
     for pr in enhancements_prs:
-        if pr.get("vep_issue_number") == vep_issue_int:
-            if pr.get("merged") or (pr.get("state") or "").lower() == "merged":
-                return True
+        if pr.get("vep_issue_number") == vep_issue_int and (pr.get("merged") or (pr.get("state") or "").lower() == "merged"):
+            return True
     return False
 
 
 def _check_development_phase_risks(
-    indexed_context: Dict[str, Any],
-    release_deadlines: Dict[str, Any],
-    board_veps: Dict[int, Dict[str, Any]]
-) -> Dict[int, Dict[str, Any]]:
+    indexed_context: dict[str, Any],
+    release_deadlines: dict[str, Any],
+    board_veps: dict[int, dict[str, Any]]
+) -> dict[int, dict[str, Any]]:
     """Check development phase risks: missing/stale implementation PRs.
 
     Returns:
@@ -248,12 +251,14 @@ def _check_development_phase_risks(
         log("No CF deadline found, skipping development phase checks", node="check_phase_risks", level="WARNING")
         return {}
 
-    cf_deadline = datetime.fromisoformat(cf_deadline_str.replace('Z', '+00:00'))
+    if isinstance(cf_deadline_str, str) and cf_deadline_str.endswith('Z'):
+        cf_deadline_str = cf_deadline_str[:-1] + '+00:00'
+    cf_deadline = datetime.fromisoformat(cf_deadline_str)
     # Ensure timezone-aware
     if cf_deadline.tzinfo is None:
-        cf_deadline = cf_deadline.replace(tzinfo=timezone.utc)
+        cf_deadline = cf_deadline.replace(tzinfo=UTC)
     cf_with_extension = cf_deadline + timedelta(days=DEVELOPMENT_PHASE_THRESHOLDS["deadline_extension_days"])
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     days_to_cf = (cf_with_extension - now).days
 
     log(f"CF deadline (with extension): {cf_with_extension.date()}, days remaining: {days_to_cf}", node="check_phase_risks")
@@ -379,7 +384,9 @@ def _check_development_phase_risks(
             # Check staleness
             updated_at_str = pr_data.get("updated_at")
             if updated_at_str:
-                updated_at = datetime.fromisoformat(updated_at_str.replace('Z', '+00:00'))
+                if isinstance(updated_at_str, str) and updated_at_str.endswith('Z'):
+                    updated_at_str = updated_at_str[:-1] + '+00:00'
+                updated_at = datetime.fromisoformat(updated_at_str)
                 days_since_update = (now - updated_at).days
             else:
                 days_since_update = 999

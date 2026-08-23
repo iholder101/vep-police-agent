@@ -1,12 +1,13 @@
 """Save state cache node - saves state to file for fast debug cycles."""
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from state import VEPState
-from services.utils import log
+
 from nodes.state_history import save_snapshot
+from services.utils import log
+from state import VEPState
 
 # Cache file location (in project root)
 CACHE_FILE = Path(__file__).parent.parent / "cache" / "state_cache.json"
@@ -26,7 +27,7 @@ def save_state_cache_node(state: VEPState) -> Any:
     - alerts: List of alert dicts
     """
     last_check_times = state.get("last_check_times", {})
-    last_check_times["save_state_cache"] = datetime.now()
+    last_check_times["save_state_cache"] = datetime.now(UTC)
 
     try:
         veps = state.get("veps", [])
@@ -52,7 +53,7 @@ def save_state_cache_node(state: VEPState) -> Any:
 
         cache_data = {
             "version": "1.0",
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "current_release": state.get("current_release"),
             "release_schedule": serialized_schedule,
             "veps": serialized_veps,
@@ -68,7 +69,7 @@ def save_state_cache_node(state: VEPState) -> Any:
         # Also save a timestamped snapshot for historical tracking
         save_snapshot(cache_data)
 
-    except Exception as e:
+    except (ValueError, TypeError, OSError, KeyError, json.JSONDecodeError) as e:
         log(f"Failed to save state cache: {e}", node="save_state_cache", level="ERROR")
         import traceback
         log(f"Traceback: {traceback.format_exc()}", node="save_state_cache", level="DEBUG")

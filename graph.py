@@ -1,30 +1,32 @@
 """LangGraph definition for VEP governance agent."""
 
-from typing import Literal, Any
-from langgraph.graph import StateGraph, END
+from typing import Any, Literal
+
+from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
-from state import VEPState
-from nodes.scheduler import scheduler_node
-from nodes.fetch_veps import fetch_veps_node
-from nodes.run_monitoring import run_monitoring_node
-from nodes.check_deadlines import check_deadlines_node
+from nodes.alert_summary import alert_summary_node
+from nodes.analyze_combined import analyze_combined_node
 from nodes.check_activity import check_activity_node
 from nodes.check_compliance import check_compliance_node
+from nodes.check_deadlines import check_deadlines_node
 from nodes.check_exceptions import check_exceptions_node
 from nodes.check_phase_risks import check_phase_risks_node
-from nodes.analyze_combined import analyze_combined_node
-from nodes.merge_vep_updates import merge_vep_updates_node
-from nodes.save_state_cache import save_state_cache_node
 from nodes.detect_changes import detect_changes_node
-from nodes.update_sheets import update_sheets_node
-from nodes.alert_summary import alert_summary_node
-from nodes.send_notifications import send_notifications_node
+from nodes.fetch_veps import fetch_veps_node
+from nodes.merge_vep_updates import merge_vep_updates_node
+from nodes.run_monitoring import run_monitoring_node
+from nodes.save_state_cache import save_state_cache_node
+from nodes.scheduler import scheduler_node
 from nodes.send_email import send_email_node
+from nodes.send_notifications import send_notifications_node
 from nodes.send_slack import send_slack_node
-from nodes.update_project_board import update_project_board_node
-from nodes.wait import wait_node
 from nodes.snapshot import snapshot_node
+from nodes.update_project_board import update_project_board_node
+from nodes.update_sheets import update_sheets_node
+from nodes.wait import wait_node
+from state import VEPState
+
 
 def create_graph() -> CompiledStateGraph[Any, Any, Any, Any]:
     """Create and configure the VEP governance agent graph.

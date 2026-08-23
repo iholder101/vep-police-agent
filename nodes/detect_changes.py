@@ -5,14 +5,15 @@ It loads the previous snapshot, compares it to the current state, and stores
 the detected changes in state for alert_summary to use.
 """
 
-from datetime import datetime
-from typing import Any, Dict, List
-from state import VEPState
-from services.utils import log
+from datetime import UTC, datetime
+from typing import Any
+
 from nodes.state_history import (
-    load_previous_snapshot,
     compare_snapshots,
+    load_previous_snapshot,
 )
+from services.utils import log
+from state import VEPState
 
 
 def detect_changes_node(state: VEPState) -> Any:
@@ -26,7 +27,7 @@ def detect_changes_node(state: VEPState) -> Any:
     Stores results in state.detected_changes for use by alert_summary.
     """
     last_check_times = state.get("last_check_times", {})
-    last_check_times["detect_changes"] = datetime.now()
+    last_check_times["detect_changes"] = datetime.now(UTC)
 
     # Build current state snapshot (same format as cache)
     veps = state.get("veps", [])
@@ -40,7 +41,7 @@ def detect_changes_node(state: VEPState) -> Any:
             current_veps.append(vep)
 
     current_state = {
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "veps": current_veps,
         "alerts": state.get("alerts", []),
         "release_schedule": release_schedule.model_dump(mode="json") if release_schedule and hasattr(release_schedule, "model_dump") else release_schedule,
@@ -108,7 +109,7 @@ def detect_changes_node(state: VEPState) -> Any:
     }
 
 
-def _simplify_alerts(alerts: List[Dict]) -> List[Dict]:
+def _simplify_alerts(alerts: list[dict]) -> list[dict]:
     """Extract key fields from alerts for change summary."""
     return [
         {

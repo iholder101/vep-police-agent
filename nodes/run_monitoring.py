@@ -1,9 +1,10 @@
 """Run monitoring node - triggers all monitoring checks in parallel."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
-from state import VEPState
+
 from services.utils import log
+from state import VEPState
 
 
 def run_monitoring_node(state: VEPState) -> Any:
@@ -17,7 +18,7 @@ def run_monitoring_node(state: VEPState) -> Any:
     
     # Update last check time for this coordination node
     last_check_times = state.get("last_check_times", {})
-    last_check_times["run_monitoring"] = datetime.now()
+    last_check_times["run_monitoring"] = datetime.now(UTC)
     
     # Remove this task from queue
     next_tasks = state.get("next_tasks", [])

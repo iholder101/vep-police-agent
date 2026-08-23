@@ -1,7 +1,6 @@
 """Constants and helper functions for configuration."""
 
 import os
-from typing import Dict, List, Optional
 
 # Model tier constants for node configuration (overridable via env vars)
 FAST_MODEL = os.getenv("FAST_MODEL", "gemini-3-flash-preview")
@@ -46,13 +45,13 @@ def set_node_model(node_name: str, model: str) -> None:
     NODE_MODELS[node_name] = model
 
 
-def get_all_node_models() -> Dict[str, str]:
+def get_all_node_models() -> dict[str, str]:
     """Get all node model configurations."""
     from .config import NODE_MODELS
     return NODE_MODELS.copy()
 
 
-def get_email_recipients() -> List[str]:
+def get_email_recipients() -> list[str]:
     """Get email recipients (env var takes precedence over config)."""
     from .config import EMAIL_RECIPIENTS
     env_recipients = os.environ.get("EMAIL_RECIPIENTS")
@@ -61,7 +60,7 @@ def get_email_recipients() -> List[str]:
     return EMAIL_RECIPIENTS.copy() if EMAIL_RECIPIENTS else []
 
 
-def board_search_patterns(version: str) -> List[str]:
+def board_search_patterns(version: str) -> list[str]:
     """Build progressively looser search patterns for finding a release board.
 
     Tries specific patterns first (e.g., "1.9 enhancements tracking"), then
@@ -77,7 +76,7 @@ def board_search_patterns(version: str) -> List[str]:
     ]
 
 
-def get_project_board_for_version(version: Optional[str]) -> Optional[int]:
+def get_project_board_for_version(version: str | None) -> int | None:
     """Get project board number for a version string like 'v1.8' or '1.8'.
 
     Args:

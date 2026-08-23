@@ -1,11 +1,12 @@
 """Scheduler node - determines which tasks to run based on timing and state."""
 
 import os
-from datetime import datetime, timedelta
-from typing import Any, List
-from state import VEPState
-from services.utils import log
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
 import config
+from services.utils import log
+from state import VEPState
 
 
 def _get_next_round_hour(now: datetime) -> datetime:
@@ -94,11 +95,11 @@ def scheduler_node(state: VEPState) -> Any:
         return {"next_tasks": []}
 
     last_check_times = state.get("last_check_times", {})
-    next_tasks: List[str] = []
+    next_tasks: list[str] = []
     one_cycle = state.get("one_cycle", False)
     immediate_start = state.get("immediate_start", False)
     skip_monitoring = state.get("skip_monitoring", False)
-    now = datetime.now()
+    now = datetime.now(UTC)
     
     # In one-cycle mode or test-sheets debug mode, if we just completed update_sheets, don't schedule more tasks
     debug_mode = os.environ.get("DEBUG_MODE")
@@ -232,22 +233,19 @@ def scheduler_node(state: VEPState) -> Any:
         alert_summary_time = last_check_times.get("alert_summary")
 
         # Schedule update_sheets if it hasn't run since analyze_combined
-        if "update_sheets" not in next_tasks:
-            if update_sheets_time is None or update_sheets_time < analyze_combined_time:
-                log("analyze_combined completed, scheduling update_sheets", node="scheduler")
-                next_tasks.append("update_sheets")
+        if "update_sheets" not in next_tasks and (update_sheets_time is None or update_sheets_time < analyze_combined_time):
+            log("analyze_combined completed, scheduling update_sheets", node="scheduler")
+            next_tasks.append("update_sheets")
 
         # Schedule update_project_board if it hasn't run since analyze_combined
-        if "update_project_board" not in next_tasks and not state.get("skip_update_board", False):
-            if update_board_time is None or update_board_time < analyze_combined_time:
-                log("analyze_combined completed, scheduling update_project_board", node="scheduler")
-                next_tasks.append("update_project_board")
+        if "update_project_board" not in next_tasks and not state.get("skip_update_board", False) and (update_board_time is None or update_board_time < analyze_combined_time):
+            log("analyze_combined completed, scheduling update_project_board", node="scheduler")
+            next_tasks.append("update_project_board")
 
         # Schedule alert_summary if it hasn't run since analyze_combined
-        if "alert_summary" not in next_tasks:
-            if alert_summary_time is None or alert_summary_time < analyze_combined_time:
-                log("analyze_combined completed, scheduling alert_summary", node="scheduler")
-                next_tasks.append("alert_summary")
+        if "alert_summary" not in next_tasks and (alert_summary_time is None or alert_summary_time < analyze_combined_time):
+            log("analyze_combined completed, scheduling alert_summary", node="scheduler")
+            next_tasks.append("alert_summary")
     
     # Log scheduling decision
     if next_tasks:

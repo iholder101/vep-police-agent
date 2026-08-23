@@ -3,12 +3,14 @@
 import concurrent.futures
 import json
 import time
-from typing import Dict, Any, Type, TypeVar
-from pydantic import BaseModel
+from typing import Any, TypeVar
+
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
-from services.utils import get_model, log
+from pydantic import BaseModel
+
+from config.config import LLM_INITIAL_DELAY, LLM_MAX_RETRIES, LLM_MAX_TIMEOUT
 from services.mcp_factory import get_mcp_tools_by_name
-from config.config import LLM_MAX_RETRIES, LLM_INITIAL_DELAY, LLM_MAX_TIMEOUT
+from services.utils import get_model, log
 
 T = TypeVar('T', bound=BaseModel)
 
@@ -60,20 +62,19 @@ def _invoke_with_retry(llm, messages, operation_type: str):
             time.sleep(delay)
             delay = min(delay * 2, 60)  # Cap at 60s per retry
 
-    raise Exception(f"Max retries ({LLM_MAX_RETRIES}) exceeded for {operation_type}")
+    raise RuntimeError(f"Max retries ({LLM_MAX_RETRIES}) exceeded for {operation_type}")
 
 
 class NoToolsCalledException(Exception):
     """Raised when LLM completes without calling any tools but tools were required."""
-    pass
 
 
 def invoke_llm_with_tools(
     operation_type: str,
-    state_context: Dict[str, Any],
+    state_context: dict[str, Any],
     system_prompt: str,
     user_prompt: str,
-    response_model: Type[T],
+    response_model: type[T],
     mcp_names: tuple = ("github",),
     require_tools: bool = False
 ) -> T:
@@ -109,7 +110,7 @@ def invoke_llm_with_tools(
             except Exception as e:
                 # If model requires fields, try with empty defaults
                 log(f"Could not create empty {response_model.__name__}: {e}", node=operation_type, level="WARNING")
-                return response_model(**{})
+                return response_model()
 
         # Get model for this operation type (node)
         import config
@@ -184,7 +185,7 @@ def invoke_llm_with_tools(
                             log(f"Tool {tool_name} result: {result_str}", node=operation_type, level="DEBUG")
                             break
                         except Exception as e:
-                            tool_result = f"Error: {str(e)}"
+                            tool_result = f"Error: {e!s}"
                             log(f"Error executing tool {tool_name}: {e}", node=operation_type, level="ERROR")
                             import traceback
                             log(f"Tool error traceback: {traceback.format_exc()}", node=operation_type, level="DEBUG")
@@ -237,7 +238,7 @@ def invoke_llm_with_tools(
         try:
             # Try to create with empty dict first (works if all fields have defaults)
             return response_model()
-        except Exception:
+        except (TypeError, ValueError, AttributeError):
             # Build defaults from model fields
             defaults = {}
             try:
@@ -271,7 +272,7 @@ def invoke_llm_with_tools(
                                 defaults[field_name] = None
                 
                 return response_model(**defaults)
-            except Exception as final_error:
+            except (OSError, ValueError, TypeError, KeyError, RuntimeError) as final_error:
                 log(f"Could not create {response_model.__name__} with defaults: {final_error}", node=operation_type, level="ERROR")
                 # Last resort: try with minimal known defaults
                 minimal_defaults = {
@@ -281,17 +282,17 @@ def invoke_llm_with_tools(
                 }
                 try:
                     return response_model(**{k: v for k, v in minimal_defaults.items() if hasattr(response_model, k)})
-                except Exception:
+                except (TypeError, ValueError, AttributeError):
                     # This will fail but at least we tried everything
                     raise ValueError(f"Could not create {response_model.__name__} with defaults. Error: {final_error}")
 
 
 def invoke_llm_check(
     check_type: str,
-    state_context: Dict[str, Any],
+    state_context: dict[str, Any],
     system_prompt: str,
     user_prompt: str,
-    response_model: Type[T]
+    response_model: type[T]
 ) -> T:
     """Invoke LLM to perform a check with GitHub MCP tools using structured output.
 
@@ -312,10 +313,10 @@ def invoke_llm_check(
 
 def invoke_llm_fetch(
     fetch_type: str,
-    state_context: Dict[str, Any],
+    state_context: dict[str, Any],
     system_prompt: str,
     user_prompt: str,
-    response_model: Type[T]
+    response_model: type[T]
 ) -> T:
     """Invoke lightweight LLM to fetch context data with GitHub MCP tools.
 

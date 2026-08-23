@@ -7,20 +7,22 @@ import os
 import signal
 import sys
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any
+
 from langchain_core.messages import HumanMessage
+
 from graph import create_graph
-from services.utils import log
-from services.shutdown import is_shutdown_requested, request_shutdown
-from state import VEPInfo, ReleaseSchedule
-from nodes.state_history import clear_all_history
 from nodes.escalation import clear_persistence
+from nodes.state_history import clear_all_history
+from services.shutdown import is_shutdown_requested, request_shutdown
+from services.utils import log
+from state import ReleaseSchedule, VEPInfo
 
 # State cache file location
 STATE_CACHE_FILE = Path(__file__).parent / "cache" / "state_cache.json"
 
 
-def load_state_cache() -> Optional[Dict[str, Any]]:
+def load_state_cache() -> dict[str, Any] | None:
     """Load cached state from previous run.
 
     Returns:
@@ -44,7 +46,7 @@ def load_state_cache() -> Optional[Dict[str, Any]]:
         for vep_data in cached.get("veps", []):
             try:
                 veps.append(VEPInfo(**vep_data))
-            except Exception as e:
+            except (ValueError, TypeError, KeyError) as e:
                 log(f"Failed to deserialize VEP: {e}", node="main", level="WARNING")
 
         # Deserialize release schedule
@@ -52,7 +54,7 @@ def load_state_cache() -> Optional[Dict[str, Any]]:
         if cached.get("release_schedule"):
             try:
                 release_schedule = ReleaseSchedule(**cached["release_schedule"])
-            except Exception as e:
+            except (ValueError, TypeError, KeyError) as e:
                 log(f"Failed to deserialize release schedule: {e}", node="main", level="WARNING")
 
         log(f"Loaded state cache: {len(veps)} VEPs from {cached.get('timestamp', 'unknown')}", node="main")
@@ -65,12 +67,12 @@ def load_state_cache() -> Optional[Dict[str, Any]]:
             "alerts": cached.get("alerts", []),
         }
 
-    except Exception as e:
+    except (FileNotFoundError, ValueError, TypeError, KeyError, OSError) as e:
         log(f"Failed to load state cache: {e}", node="main", level="ERROR")
         return None
 
 
-def get_initial_state(sheet_id: Optional[str] = None, index_cache_minutes: int = 60, one_cycle: bool = False, skip_monitoring: bool = False, skip_sheets: bool = False, skip_update_board: bool = False, skip_send_email: bool = False, skip_send_slack: bool = False, mock_veps: bool = False, mock_analyzed_combined: bool = False, mock_alert_summary: bool = False, immediate_start: bool = False, use_state_cache: bool = False):
+def get_initial_state(sheet_id: str | None = None, index_cache_minutes: int = 60, one_cycle: bool = False, skip_monitoring: bool = False, skip_sheets: bool = False, skip_update_board: bool = False, skip_send_email: bool = False, skip_send_slack: bool = False, mock_veps: bool = False, mock_analyzed_combined: bool = False, mock_alert_summary: bool = False, immediate_start: bool = False, use_state_cache: bool = False):
     """Create initial state for the agent."""
     sheet_config = {
         "sheet_name": "VEP Status",  # Optional: name for the sheet/tab
@@ -551,7 +553,7 @@ def main():
     except KeyboardInterrupt:
         log("\nInterrupted by user. Exiting gracefully...", node="main", level="INFO")
         sys.exit(130)
-    except Exception as e:
+    except (OSError, ValueError, TypeError, KeyError, RuntimeError) as e:
         if is_shutdown_requested():
             log(f"Error occurred during shutdown: {e}", node="main", level="WARNING")
             sys.exit(130)
