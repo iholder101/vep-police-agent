@@ -28,9 +28,31 @@ if [ -f "$PROJECT_ROOT/SLACK_WEBHOOK_URL" ]; then
     CMD_ARGS+=(--slack-webhook-url /workspace/SLACK_WEBHOOK_URL)
 fi
 
+# Parse deploy-specific flags (--detach, --container-name) out of the
+# argument list before the rest are forwarded to the agent inside the container
+DETACH_MODE=false
+CONTAINER_NAME=""
+FORWARD_ARGS=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --detach)
+            DETACH_MODE=true
+            shift
+            ;;
+        --container-name)
+            CONTAINER_NAME="$2"
+            shift 2
+            ;;
+        *)
+            FORWARD_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
 # Check if --sheet-id is already in arguments (user override)
 SHEET_ID_IN_ARGS=false
-for arg in "$@"; do
+for arg in "${FORWARD_ARGS[@]}"; do
     if [[ "$arg" == --sheet-id* ]]; then
         SHEET_ID_IN_ARGS=true
         break
@@ -42,17 +64,22 @@ if [ "$SHEET_ID_IN_ARGS" = false ]; then
     CMD_ARGS+=(--sheet-id "$DEFAULT_SHEET_ID")
 fi
 
-# Pass through any additional arguments/flags
-if [ $# -gt 0 ]; then
-    for arg in "$@"; do
-        CMD_ARGS+=("$arg")
-    done
+# Pass through any remaining arguments/flags
+CMD_ARGS+=("${FORWARD_ARGS[@]}")
+
+# Build podman run flags - detached/named for production deploys, foreground otherwise
+PODMAN_FLAGS=(--rm --pull=newer)
+if [ "$DETACH_MODE" = true ]; then
+    PODMAN_FLAGS+=(--detach --log-driver=journald)
+fi
+if [ -n "$CONTAINER_NAME" ]; then
+    PODMAN_FLAGS+=(--name "$CONTAINER_NAME")
 fi
 
 # Execute the command
 # Set PYTHONUNBUFFERED=1 to ensure logs are flushed immediately (important for real-time log viewing)
 # Mount workspace as read-only, but cache directory as read-write for persistence
-podman run --rm --pull=newer \
+podman run "${PODMAN_FLAGS[@]}" \
     -e PYTHONUNBUFFERED=1 \
     --network=host \
     -v "$PROJECT_ROOT:/workspace:ro" \
