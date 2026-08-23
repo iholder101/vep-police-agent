@@ -16,6 +16,7 @@ VERSION_PROJECT_BOARDS: Dict[str, int] = {
     "1.7": 18,
     "1.8": 19,
     "1.9": 21,
+    "1.10": 22,
 }
 
 # Model configuration per node type
@@ -47,7 +48,7 @@ EMAIL_RECIPIENTS: List[str] = [
 
 # Agent operation interval (in seconds)
 # After each fetch, the full pipeline runs: fetch_veps -> run_monitoring -> analyze_combined -> update_sheets -> alert_summary
-FETCH_VEPS_INTERVAL_SECONDS: int = 4 * 60 * 60  # 4 hours
+FETCH_VEPS_INTERVAL_SECONDS: int = 12 * 60 * 60  # 12 hours
 
 # LLM rate limit retry configuration
 LLM_MAX_RETRIES: int = 3

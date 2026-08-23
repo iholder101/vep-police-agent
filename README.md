@@ -289,7 +289,7 @@ Alerts are color-coded by severity (Critical=red, High=orange, Medium=yellow, Lo
 
 ### Scheduling
 
-All operations run every 4 hours on round hours by default. Configure intervals in `config.py` (`FETCH_VEPS_INTERVAL_SECONDS`, etc.). Use `--immediate-start` to skip waiting for round hour.
+All operations run every 12 hours on round hours by default. Configure intervals in `config.py` (`FETCH_VEPS_INTERVAL_SECONDS`, etc.). Use `--immediate-start` to skip waiting for round hour.
 
 ### Caching
 
