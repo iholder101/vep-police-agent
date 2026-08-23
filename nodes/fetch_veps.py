@@ -5,15 +5,16 @@ without using LLM, making it fast, reliable, and not subject to token limits.
 """
 
 import re
-from datetime import datetime, timezone
-from typing import Any, List, Dict, Optional
-from state import VEPState, VEPInfo, VEPMilestone, VEPCompliance, VEPActivity, PRInfo
-from services.utils import log
-from services.indexer import create_indexed_context
+from datetime import UTC, datetime
+from typing import Any
+
 from config.config import DEFAULT_RELEASE, KNOWN_SIGS
+from services.indexer import create_indexed_context
+from services.utils import log
+from state import PRInfo, VEPActivity, VEPCompliance, VEPInfo, VEPMilestone, VEPState
 
 
-def _extract_vep_number_from_text(text: str) -> Optional[str]:
+def _extract_vep_number_from_text(text: str) -> str | None:
     """Extract VEP number from text (e.g., 'VEP 176' -> 'vep-0176')."""
     if not text:
         return None
@@ -23,7 +24,7 @@ def _extract_vep_number_from_text(text: str) -> Optional[str]:
     return None
 
 
-def _parse_owner_from_issue(issue: Dict[str, Any]) -> str:
+def _parse_owner_from_issue(issue: dict[str, Any]) -> str:
     """Extract owner from issue (assignee > author > 'unknown')."""
     # Priority: assignee > author
     assignee = issue.get("assignee")
@@ -37,7 +38,7 @@ def _parse_owner_from_issue(issue: Dict[str, Any]) -> str:
     return "unknown"
 
 
-def _parse_sig_from_labels(labels: List[str]) -> str:
+def _parse_sig_from_labels(labels: list[str]) -> str:
     """Extract SIG from labels (sig/compute, sig/network, sig/storage)."""
     for label in labels:
         if label.startswith("sig/"):
@@ -47,7 +48,7 @@ def _parse_sig_from_labels(labels: List[str]) -> str:
     return "unknown"
 
 
-def _parse_target_release_from_file(vep_file_content: str) -> Optional[str]:
+def _parse_target_release_from_file(vep_file_content: str) -> str | None:
     """Extract target release from VEP file content."""
     if not vep_file_content:
         return None
@@ -75,11 +76,11 @@ def _parse_target_release_from_file(vep_file_content: str) -> Optional[str]:
 
 def _create_vep_from_board_item(
     issue_number: int,
-    board_vep: Dict[str, Any],
-    issues_by_number: Dict[int, Dict[str, Any]],
-    vep_files_by_number: Dict[str, Dict[str, Any]],
+    board_vep: dict[str, Any],
+    issues_by_number: dict[int, dict[str, Any]],
+    vep_files_by_number: dict[str, dict[str, Any]],
     current_release: str
-) -> Optional[VEPInfo]:
+) -> VEPInfo | None:
     """Create VEPInfo from board item, enriching with issue and file data."""
 
     tracking_issue_id = int(issue_number)
@@ -117,17 +118,17 @@ def _create_vep_from_board_item(
     status = issue.get("state", "open") if issue else board_vep.get("status", "open")
 
     # Parse timestamps
-    created_at = datetime.fromisoformat(issue.get("created_at").replace('Z', '+00:00')) if issue and issue.get("created_at") else datetime.now()
-    last_updated = datetime.fromisoformat(issue.get("updated_at").replace('Z', '+00:00')) if issue and issue.get("updated_at") else datetime.now()
+    created_at = datetime.fromisoformat(issue.get("created_at")) if issue and issue.get("created_at") else datetime.now(UTC)
+    last_updated = datetime.fromisoformat(issue.get("updated_at")) if issue and issue.get("updated_at") else datetime.now(UTC)
 
     # Ensure timezone-aware (GitHub timestamps are UTC)
     if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=timezone.utc)
+        created_at = created_at.replace(tzinfo=UTC)
     if last_updated.tzinfo is None:
-        last_updated = last_updated.replace(tzinfo=timezone.utc)
+        last_updated = last_updated.replace(tzinfo=UTC)
 
     # Calculate days since update
-    days_since_update = (datetime.now(timezone.utc) - last_updated).days
+    days_since_update = (datetime.now(UTC) - last_updated).days
 
     # Parse target release from VEP file or use current release
     target_release = current_release
@@ -163,7 +164,7 @@ def _create_vep_from_board_item(
     compliance = VEPCompliance(
         template_complete=True,  # Assume true until checked
         all_sigs_signed_off=False,
-        vep_merged=True if status == "closed" else False,
+        vep_merged=status == "closed",
         prs_linked=len(board_vep.get("impl_prs", [])) > 0,
         docs_pr_created=False,
         labels_valid=owning_sig != "unknown"
@@ -189,7 +190,7 @@ def _create_vep_from_board_item(
                 continue
             # Use current time as placeholder for required datetime fields
             # These will be updated when full PR data is fetched
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             pr = PRInfo(
                 number=pr_data.get("number"),
                 title=f"PR #{pr_data.get('number')}",  # Placeholder title
@@ -243,7 +244,7 @@ def fetch_veps_node(state: VEPState) -> Any:
     log(f"Fetching VEPs from indexed context | Current VEPs: {existing_count}", node="fetch_veps")
 
     last_check_times = state.get("last_check_times", {})
-    last_check_times["fetch_veps"] = datetime.now()
+    last_check_times["fetch_veps"] = datetime.now(UTC)
 
     # Remove this task from queue
     next_tasks = state.get("next_tasks", [])
@@ -318,17 +319,17 @@ def fetch_veps_node(state: VEPState) -> Any:
                         pr.url = pr_data.get("html_url") or pr_data.get("url") or pr.url
                     if pr_data.get("created_at"):
                         try:
-                            pr.created_at = datetime.fromisoformat(pr_data["created_at"].replace('Z', '+00:00'))
+                            pr.created_at = datetime.fromisoformat(pr_data["created_at"])
                         except (ValueError, AttributeError):
                             pass
                     if pr_data.get("updated_at"):
                         try:
-                            pr.updated_at = datetime.fromisoformat(pr_data["updated_at"].replace('Z', '+00:00'))
+                            pr.updated_at = datetime.fromisoformat(pr_data["updated_at"])
                         except (ValueError, AttributeError):
                             pass
                     if pr_data.get("merged_at"):
                         try:
-                            pr.merged_at = datetime.fromisoformat(pr_data["merged_at"].replace('Z', '+00:00'))
+                            pr.merged_at = datetime.fromisoformat(pr_data["merged_at"])
                         except (ValueError, AttributeError):
                             pass
                     enriched_impl_prs.append(pr)
@@ -353,20 +354,20 @@ def fetch_veps_node(state: VEPState) -> Any:
                         continue
                     if pr_num and pr_num not in existing_pr_numbers:
                         existing_pr_numbers.add(pr_num)
-                        now = datetime.now(timezone.utc)
+                        now = datetime.now(UTC)
                         created = now
                         updated = now
                         try:
                             if pr_data.get("created_at"):
-                                created = datetime.fromisoformat(pr_data["created_at"].replace('Z', '+00:00'))
+                                created = datetime.fromisoformat(pr_data["created_at"])
                             if pr_data.get("updated_at"):
-                                updated = datetime.fromisoformat(pr_data["updated_at"].replace('Z', '+00:00'))
+                                updated = datetime.fromisoformat(pr_data["updated_at"])
                         except (ValueError, AttributeError):
                             pass
                         merged_at = None
                         if pr_data.get("merged_at"):
                             try:
-                                merged_at = datetime.fromisoformat(pr_data["merged_at"].replace('Z', '+00:00'))
+                                merged_at = datetime.fromisoformat(pr_data["merged_at"])
                             except (ValueError, AttributeError):
                                 pass
                         pr = PRInfo(
@@ -409,17 +410,17 @@ def fetch_veps_node(state: VEPState) -> Any:
                     continue
                 if pr_num and pr_num not in existing_pr_numbers:
                     existing_pr_numbers.add(pr_num)
-                    now = datetime.now(timezone.utc)
+                    now = datetime.now(UTC)
                     created = now
                     updated = now
                     merged_at = None
                     try:
                         if pr_data.get("created_at"):
-                            created = datetime.fromisoformat(pr_data["created_at"].replace('Z', '+00:00'))
+                            created = datetime.fromisoformat(pr_data["created_at"])
                         if pr_data.get("updated_at"):
-                            updated = datetime.fromisoformat(pr_data["updated_at"].replace('Z', '+00:00'))
+                            updated = datetime.fromisoformat(pr_data["updated_at"])
                         if pr_data.get("merged_at"):
-                            merged_at = datetime.fromisoformat(pr_data["merged_at"].replace('Z', '+00:00'))
+                            merged_at = datetime.fromisoformat(pr_data["merged_at"])
                     except (ValueError, AttributeError):
                         pass
                     pr = PRInfo(
@@ -440,17 +441,17 @@ def fetch_veps_node(state: VEPState) -> Any:
             except (ValueError, TypeError):
                 issue_num_int = issue_number
             for pr_data in enhancements_prs_by_vep.get(issue_num_int, []):
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 created = now
                 updated = now
                 merged_at = None
                 try:
                     if pr_data.get("created_at"):
-                        created = datetime.fromisoformat(pr_data["created_at"].replace('Z', '+00:00'))
+                        created = datetime.fromisoformat(pr_data["created_at"])
                     if pr_data.get("updated_at"):
-                        updated = datetime.fromisoformat(pr_data["updated_at"].replace('Z', '+00:00'))
+                        updated = datetime.fromisoformat(pr_data["updated_at"])
                     if pr_data.get("merged_at"):
-                        merged_at = datetime.fromisoformat(pr_data["merged_at"].replace('Z', '+00:00'))
+                        merged_at = datetime.fromisoformat(pr_data["merged_at"])
                 except (ValueError, AttributeError):
                     pass
                 pr_state = (pr_data.get("state") or "unknown").lower()

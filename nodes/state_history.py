@@ -5,9 +5,10 @@ for comparison, enabling real "changes since last" analysis.
 """
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from services.utils import log
 
 # History directory location
@@ -23,22 +24,22 @@ def ensure_history_dir() -> Path:
     return HISTORY_DIR
 
 
-def get_snapshot_path(timestamp: Optional[datetime] = None) -> Path:
+def get_snapshot_path(timestamp: datetime | None = None) -> Path:
     """Get path for a snapshot file."""
     if timestamp is None:
-        timestamp = datetime.now()
+        timestamp = datetime.now(UTC)
     filename = f"state_{timestamp.strftime('%Y%m%d_%H%M')}.json"
     return HISTORY_DIR / filename
 
 
-def list_snapshots() -> List[Path]:
+def list_snapshots() -> list[Path]:
     """List all snapshot files sorted by date (oldest first)."""
     ensure_history_dir()
     snapshots = sorted(HISTORY_DIR.glob("state_*.json"))
     return snapshots
 
 
-def get_latest_snapshot() -> Optional[Path]:
+def get_latest_snapshot() -> Path | None:
     """Get the most recent snapshot file."""
     snapshots = list_snapshots()
     if not snapshots:
@@ -46,7 +47,7 @@ def get_latest_snapshot() -> Optional[Path]:
     return snapshots[-1]
 
 
-def get_previous_snapshot() -> Optional[Path]:
+def get_previous_snapshot() -> Path | None:
     """Get the second-most-recent snapshot (previous run).
 
     This is used for comparing current state to previous state.
@@ -77,7 +78,7 @@ def cleanup_old_snapshots() -> int:
     return len(to_remove)
 
 
-def save_snapshot(cache_data: Dict[str, Any]) -> Optional[Path]:
+def save_snapshot(cache_data: dict[str, Any]) -> Path | None:
     """Save a timestamped snapshot of the state.
 
     Args:
@@ -107,7 +108,7 @@ def save_snapshot(cache_data: Dict[str, Any]) -> Optional[Path]:
         return None
 
 
-def load_snapshot(snapshot_path: Path) -> Optional[Dict[str, Any]]:
+def load_snapshot(snapshot_path: Path) -> dict[str, Any] | None:
     """Load a snapshot from disk.
 
     Args:
@@ -119,12 +120,12 @@ def load_snapshot(snapshot_path: Path) -> Optional[Dict[str, Any]]:
     try:
         with open(snapshot_path, "r") as f:
             return json.load(f)
-    except Exception as e:
+    except (ValueError, TypeError, OSError, KeyError, json.JSONDecodeError) as e:
         log(f"Failed to load snapshot {snapshot_path}: {e}", node="state_history", level="ERROR")
         return None
 
 
-def load_previous_snapshot() -> Optional[Dict[str, Any]]:
+def load_previous_snapshot() -> dict[str, Any] | None:
     """Load the previous snapshot for comparison.
 
     Returns:
@@ -152,7 +153,7 @@ def clear_all_history() -> int:
         try:
             snapshot.unlink()
             removed += 1
-        except Exception as e:
+        except (OSError, ValueError, TypeError, KeyError) as e:
             log(f"Failed to remove {snapshot.name}: {e}", node="state_history", level="WARNING")
 
     if removed > 0:
@@ -161,7 +162,7 @@ def clear_all_history() -> int:
     return removed
 
 
-def extract_vep_summary(vep_data: Dict[str, Any]) -> Dict[str, Any]:
+def extract_vep_summary(vep_data: dict[str, Any]) -> dict[str, Any]:
     """Extract key fields from VEP for comparison.
 
     Creates a normalized summary suitable for detecting meaningful changes.
@@ -185,9 +186,9 @@ def extract_vep_summary(vep_data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def compare_snapshots(
-    current: Dict[str, Any],
-    previous: Dict[str, Any]
-) -> Dict[str, Any]:
+    current: dict[str, Any],
+    previous: dict[str, Any]
+) -> dict[str, Any]:
     """Compare two snapshots and identify changes.
 
     Returns:
@@ -232,7 +233,7 @@ def compare_snapshots(
             })
 
     # Compare alerts by (vep_id, canonical_type)
-    def alert_key(alert: Dict) -> str:
+    def alert_key(alert: dict) -> str:
         vep_id = alert.get("vep_id", 0)
         subject = alert.get("subject", "general")
         return f"{vep_id}:{subject}"

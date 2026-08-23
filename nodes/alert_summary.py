@@ -7,13 +7,15 @@ This node receives alerts from analyze_combined and:
 """
 
 import json
-from datetime import datetime
-from typing import Any, List, Dict
-from state import VEPState
-from services.utils import log
-from services.llm_helper import invoke_llm_with_tools
+from datetime import UTC, datetime
+from typing import Any
+
 from pydantic import BaseModel
+
 from nodes.escalation import escalate_alerts
+from services.llm_helper import invoke_llm_with_tools
+from services.utils import log
+from state import VEPState
 
 
 class Alert(BaseModel):
@@ -25,12 +27,12 @@ class Alert(BaseModel):
     vep_title: str = ""  # VEP title/description (truncated)
     title: str  # Alert headline
     message: str  # Detailed message
-    metadata: Dict[str, Any] = {}
+    metadata: dict[str, Any] = {}
 
 
 class AlertSummaryResponse(BaseModel):
     """Response model for alert summary formatting."""
-    alerts: List[Alert] = []  # Prioritized/filtered alerts
+    alerts: list[Alert] = []  # Prioritized/filtered alerts
     executive_summary: str = ""  # 2-3 sentence overview
     changes_since_last: str = ""  # What changed since last report
     summary_text: str = ""  # Full formatted summary for email
@@ -73,7 +75,7 @@ def _normalize_subject(subject: str) -> str:
     return "general_risk"
 
 
-def _consolidate_alerts(alerts: List[Dict]) -> List[Dict]:
+def _consolidate_alerts(alerts: list[dict]) -> list[dict]:
     """Consolidate alerts by (vep_id, canonical_type).
 
     Merges multiple alerts about the same VEP and issue type into one,
@@ -83,7 +85,7 @@ def _consolidate_alerts(alerts: List[Dict]) -> List[Dict]:
         return []
 
     # Group by (vep_id, canonical_type)
-    grouped: Dict[str, List[Dict]] = {}
+    grouped: dict[str, list[dict]] = {}
     for alert in alerts:
         vep_id = alert.get("vep_id", 0)
         canonical = _normalize_subject(alert.get("subject", ""))
@@ -110,7 +112,7 @@ def _consolidate_alerts(alerts: List[Dict]) -> List[Dict]:
     return consolidated
 
 
-def _merge_alert_group(group: List[Dict]) -> Dict:
+def _merge_alert_group(group: list[dict]) -> dict:
     """Merge a group of alerts about the same VEP/issue into one."""
     # Use highest severity
     severities = [a.get("severity", "low") for a in group]
@@ -160,7 +162,7 @@ def alert_summary_node(state: VEPState) -> Any:
     log(f"Formatting alert summary: {len(incoming_alerts)} alert(s), {len(veps)} VEP(s)", node="alert_summary")
 
     last_check_times = state.get("last_check_times", {})
-    last_check_times["alert_summary"] = datetime.now()
+    last_check_times["alert_summary"] = datetime.now(UTC)
 
     if not veps:
         return {
@@ -313,7 +315,7 @@ Keep alerts concise. Limit to the top {MAX_ALERTS} by severity."""
     return output
 
 
-def _build_fallback_summary(alerts: List[Dict], veps: list, insights: List[str]) -> str:
+def _build_fallback_summary(alerts: list[dict], veps: list, insights: list[str]) -> str:
     """Build fallback summary if LLM doesn't return one."""
     lines = ["VEP Police Report", "=" * 40, ""]
 

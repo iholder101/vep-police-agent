@@ -8,8 +8,10 @@ Inspired by vladikr/vepMonitoring project.
 """
 
 import os
+from typing import Any
+
 import requests
-from typing import Dict, List, Any, Optional
+
 from services.utils import log
 
 # GitHub GraphQL API endpoint
@@ -198,13 +200,13 @@ mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: ProjectV2FieldVal
 """
 
 # Module-level cache for field metadata (keyed by project_number)
-_field_metadata_cache: Dict[int, Dict[str, Any]] = {}
+_field_metadata_cache: dict[int, dict[str, Any]] = {}
 
 
 def find_project_by_title(
     org_name: str = "kubevirt",
     title_pattern: str = "",
-) -> Optional[int]:
+) -> int | None:
     """Find a GitHub Project V2 by title pattern.
 
     Searches for projects in the organization that match the given title pattern.
@@ -273,7 +275,7 @@ def find_project_by_title(
     return None
 
 
-def execute_graphql_query(query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
+def execute_graphql_query(query: str, variables: dict[str, Any]) -> dict[str, Any]:
     """Execute a GraphQL query against GitHub API.
 
     Args:
@@ -288,7 +290,7 @@ def execute_graphql_query(query: str, variables: Dict[str, Any]) -> Dict[str, An
     """
     github_token = os.environ.get("GITHUB_TOKEN")
     if not github_token:
-        raise Exception("GITHUB_TOKEN environment variable not set")
+        raise ValueError("GITHUB_TOKEN environment variable not set")
 
     headers = {
         "Authorization": f"Bearer {github_token}",
@@ -305,7 +307,7 @@ def execute_graphql_query(query: str, variables: Dict[str, Any]) -> Dict[str, An
     return response.json()
 
 
-def _extract_field_value(field_node: Dict[str, Any]) -> tuple[Optional[str], Any]:
+def _extract_field_value(field_node: dict[str, Any]) -> tuple[str | None, Any]:
     """Extract field name and value from a fieldValues node.
 
     Args:
@@ -372,8 +374,8 @@ def _extract_field_value(field_node: Dict[str, Any]) -> tuple[Optional[str], Any
 def get_project_board_items(
     project_number: int,
     org_name: str = "kubevirt",
-    filter_repo: Optional[str] = None,
-) -> List[Dict[str, Any]]:
+    filter_repo: str | None = None,
+) -> list[dict[str, Any]]:
     """Fetch all items from a GitHub Project V2 board with all field metadata.
 
     Args:
@@ -466,7 +468,7 @@ def get_project_board_items(
 def get_veps_from_project_board(
     project_number: int,
     org_name: str = "kubevirt",
-) -> Dict[int, Dict[str, Any]]:
+) -> dict[int, dict[str, Any]]:
     """Fetch VEPs from project board, returning a mapping by issue number.
 
     Filters to only include issues from kubevirt/enhancements repository.
@@ -505,7 +507,7 @@ def get_veps_from_project_board(
 def get_project_field_metadata(
     project_number: int,
     org_name: str = "kubevirt",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Fetch project node ID and all field definitions from a Project V2 board.
 
     Results are cached per project_number for the lifetime of the process
@@ -581,7 +583,7 @@ def update_project_item_field(
     project_id: str,
     item_id: str,
     field_id: str,
-    value: Dict[str, Any],
+    value: dict[str, Any],
 ) -> bool:
     """Update a single field value on a project board item.
 
@@ -618,8 +620,8 @@ def update_project_item_field(
 def update_project_item_fields(
     project_id: str,
     item_id: str,
-    field_updates: Dict[str, str],
-    field_metadata: Dict[str, Any],
+    field_updates: dict[str, str],
+    field_metadata: dict[str, Any],
 ) -> int:
     """Update multiple fields on a project board item.
 

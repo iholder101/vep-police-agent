@@ -7,9 +7,9 @@ Produces diff-friendly output files after each agent cycle:
 Keeps the last 10 snapshots, older ones are pruned automatically.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 
@@ -46,7 +46,7 @@ def dump_snapshot(state: VEPState, cycle_duration: float = 0) -> None:
     summary_table = state.get("vep_summary_table", [])
     alerts = state.get("alerts", [])
     release_schedule = state.get("release_schedule")
-    now = datetime.now()
+    now = datetime.now(UTC)
 
     # Build urgency lookup from summary table
     urgency_by_vep = {}
@@ -56,7 +56,7 @@ def dump_snapshot(state: VEPState, cycle_duration: float = 0) -> None:
             urgency_by_vep[vep_num] = row.get("urgency")
 
     # Build alerts lookup by VEP ID
-    alerts_by_vep: Dict[int, List[Dict[str, Any]]] = {}
+    alerts_by_vep: dict[int, list[dict[str, Any]]] = {}
     for alert in alerts:
         vep_id = alert.get("vep_id")
         if vep_id is not None:
@@ -102,7 +102,7 @@ def generate_realizations(state: VEPState, cycle_duration: float = 0) -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     snapshots = _get_sorted_snapshots()
-    now = datetime.now()
+    now = datetime.now(UTC)
 
     if not snapshots:
         log("No snapshots found, skipping realizations", node="snapshot")
@@ -161,20 +161,20 @@ def snapshot_node(state: VEPState) -> Any:
         try:
             epoch = fetch_time.timestamp() if hasattr(fetch_time, 'timestamp') else 0
             cycle_duration = _time.time() - epoch
-        except Exception:
+        except (AttributeError, TypeError):
             pass
 
     try:
         dump_snapshot(state, cycle_duration=cycle_duration)
-    except Exception as e:
+    except (ValueError, TypeError, OSError, KeyError) as e:
         log(f"Snapshot failed: {e}", node="snapshot", level="ERROR")
 
     try:
         generate_realizations(state, cycle_duration=cycle_duration)
-    except Exception as e:
+    except (ValueError, TypeError, OSError, KeyError) as e:
         log(f"Realizations failed: {e}", node="snapshot", level="ERROR")
 
-    return {"last_check_times": {"snapshot": datetime.now()}}
+    return {"last_check_times": {"snapshot": datetime.now(UTC)}}
 
 
 # -- Internal helpers --
@@ -182,7 +182,7 @@ def snapshot_node(state: VEPState) -> Any:
 
 def _build_vep_record(
     vep, urgency_by_vep, alerts_by_vep, ef_date, cf_date, now
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Build a single VEP record for the snapshot."""
     vep_num = vep.tracking_issue_id
 
@@ -256,7 +256,7 @@ def _build_vep_record(
     }
 
 
-def _format_pr_list(prs) -> List[Dict[str, Any]]:
+def _format_pr_list(prs) -> list[dict[str, Any]]:
     """Format PR list sorted by number."""
     if not prs:
         return []
@@ -272,7 +272,7 @@ def _format_pr_list(prs) -> List[Dict[str, Any]]:
     return result
 
 
-def _format_alert_list(alerts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _format_alert_list(alerts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Format alert list sorted by severity then subject."""
     if not alerts:
         return []
@@ -290,7 +290,7 @@ def _format_alert_list(alerts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     ]
 
 
-def _get_sorted_snapshots() -> List[Path]:
+def _get_sorted_snapshots() -> list[Path]:
     """Return snapshot files sorted by timestamp (oldest first)."""
     return sorted(OUTPUT_DIR.glob("vep_snapshot_*.yaml"))
 
@@ -303,11 +303,11 @@ def _prune_snapshots() -> None:
 
 
 def _diff_snapshots(
-    previous: Dict[str, Any], current: Dict[str, Any]
-) -> tuple[List[str], List[str]]:
+    previous: dict[str, Any], current: dict[str, Any]
+) -> tuple[list[str], list[str]]:
     """Diff two snapshot JSONs, return (changes, anomalies)."""
-    changes: List[str] = []
-    anomalies: List[str] = []
+    changes: list[str] = []
+    anomalies: list[str] = []
 
     prev_veps = {v["vep_number"]: v for v in previous.get("veps", [])}
     curr_veps = {v["vep_number"]: v for v in current.get("veps", [])}
@@ -379,8 +379,8 @@ def _diff_snapshots(
 
 
 def _diff_pr_list(
-    prev_vep: Dict, curr_vep: Dict, field: str, label: str, vep_id: str,
-    changes: List[str], anomalies: Optional[List[str]] = None,
+    prev_vep: dict, curr_vep: dict, field: str, label: str, vep_id: str,
+    changes: list[str], anomalies: list[str] | None = None,
 ) -> None:
     """Diff PR lists by number, report added/removed/state-changed."""
     old_prs = {p["number"]: p["state"] for p in prev_vep.get(field, [])}
@@ -405,7 +405,7 @@ def _diff_pr_list(
 
 
 def _diff_alert_list(
-    prev_vep: Dict, curr_vep: Dict, vep_id: str, changes: List[str]
+    prev_vep: dict, curr_vep: dict, vep_id: str, changes: list[str]
 ) -> None:
     """Diff alert lists by (severity, subject)."""
     old_keys = {(a["severity"], a["subject"]) for a in prev_vep.get("alerts", [])}

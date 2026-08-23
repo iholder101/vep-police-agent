@@ -1,24 +1,26 @@
 """Update sheets node - syncs state to Google Sheets using LLM with MCP tools."""
 
 import json
-from datetime import datetime
-from typing import Any, List, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any
+
 from pydantic import BaseModel
-from state import VEPState
-from services.utils import log
-from services.llm_helper import invoke_llm_with_tools, NoToolsCalledException
-from services.indexer import create_indexed_context
+
 from nodes.alert_formatting import build_vep_summary_table, format_pr_links_plain
+from services.indexer import create_indexed_context
+from services.llm_helper import NoToolsCalledException, invoke_llm_with_tools
+from services.utils import log
+from state import VEPState
 
 
 class UpdateSheetsResponse(BaseModel):
     """Response model for sheet update operation."""
     success: bool = False  # Whether the update was successful
-    sheet_id: Optional[str] = None  # The sheet ID that was updated/created
-    table_schema: Optional[List[Dict[str, str]]] = None  # The schema/columns decided by LLM (renamed from 'schema' to avoid shadowing BaseModel.schema)
+    sheet_id: str | None = None  # The sheet ID that was updated/created
+    table_schema: list[dict[str, str]] | None = None  # The schema/columns decided by LLM (renamed from 'schema' to avoid shadowing BaseModel.schema)
     rows_updated: int = 0  # Number of rows updated
     rows_added: int = 0  # Number of rows added
-    errors: List[str] = []  # Any errors encountered
+    errors: list[str] = []  # Any errors encountered
 
 
 def update_sheets_node(state: VEPState) -> Any:
@@ -47,7 +49,7 @@ def update_sheets_node(state: VEPState) -> Any:
     if skip_sheets:
         log("Skip-sheets mode enabled, skipping Google Sheets update", node="update_sheets")
         last_check_times = state.get("last_check_times", {})
-        last_check_times["update_sheets"] = datetime.now()
+        last_check_times["update_sheets"] = datetime.now(UTC)
         next_tasks = state.get("next_tasks", [])
         if next_tasks and next_tasks[0] == "update_sheets":
             next_tasks = next_tasks[1:]
@@ -70,7 +72,7 @@ def update_sheets_node(state: VEPState) -> Any:
         log(f"Updating Google Sheets | VEPs: {len(veps)} | Need update: {sheets_need_update}", node="update_sheets")
     
     last_check_times = state.get("last_check_times", {})
-    last_check_times["update_sheets"] = datetime.now()
+    last_check_times["update_sheets"] = datetime.now(UTC)
     
     # Remove current task from queue (it was just completed)
     next_tasks = state.get("next_tasks", [])
@@ -275,7 +277,7 @@ update_cells(
                 errors.append({
                     "node": "update_sheets",
                     "error": error_msg,
-                    "timestamp": datetime.now().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 })
             
             return {
@@ -325,7 +327,7 @@ update_cells(
         errors.append({
             "node": "update_sheets",
             "error": str(e),
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
 
         # Keep sheets_need_update=True to retry on next cycle
@@ -356,14 +358,14 @@ update_cells(
         errors.append({
             "node": "update_sheets",
             "error": str(e),
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
 
         # If MCP is unavailable, clear the flag to prevent infinite retries
         # Otherwise, keep flag set for transient errors
         return {
             "last_check_times": last_check_times,
-            "sheets_need_update": False if is_mcp_unavailable else True,
+            "sheets_need_update": not is_mcp_unavailable,
             "_force_sheets_update": False,  # Clear force flag
             "next_tasks": next_tasks,
             "errors": errors,

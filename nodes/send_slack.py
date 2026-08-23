@@ -1,17 +1,18 @@
 """Send Slack node - sends alerts via Slack Incoming Webhook."""
 
 import os
+from datetime import UTC, datetime
+from typing import Any
+
 import requests
-from datetime import datetime
-from typing import Any, List, Dict
-from state import VEPState
-from services.utils import log
-from services.indexer import create_indexed_context
+
 from nodes.alert_formatting import (
     build_slack_table,
     get_phase_context_summary,
 )
-
+from services.indexer import create_indexed_context
+from services.utils import log
+from state import VEPState
 
 # Severity color mapping for Slack attachments
 SEVERITY_COLORS = {
@@ -22,7 +23,7 @@ SEVERITY_COLORS = {
 }
 
 
-def _format_slack_message(alerts: List[Dict[str, Any]], alert_summary_text: str, table_rows: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _format_slack_message(alerts: list[dict[str, Any]], alert_summary_text: str, table_rows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Format alerts as a Slack Block Kit message with color-coded attachments.
 
     Args:
@@ -148,7 +149,7 @@ def _format_slack_message(alerts: List[Dict[str, Any]], alert_summary_text: str,
     return message
 
 
-def _send_via_webhook(webhook_url: str, message: Dict[str, Any]) -> bool:
+def _send_via_webhook(webhook_url: str, message: dict[str, Any]) -> bool:
     """Send message to Slack via Incoming Webhook.
 
     Returns:
@@ -204,7 +205,7 @@ def send_slack_node(state: VEPState) -> Any:
     if skip_send_slack:
         log("Skip-send-slack mode: Slack alerts are disabled, skipping", node="send_slack")
         last_check_times = state.get("last_check_times", {})
-        last_check_times["send_slack"] = datetime.now()
+        last_check_times["send_slack"] = datetime.now(UTC)
         return {
             "last_check_times": last_check_times,
         }
@@ -212,7 +213,7 @@ def send_slack_node(state: VEPState) -> Any:
     log(f"Sending Slack alerts for {len(alerts)} alert(s)", node="send_slack")
 
     last_check_times = state.get("last_check_times", {})
-    last_check_times["send_slack"] = datetime.now()
+    last_check_times["send_slack"] = datetime.now(UTC)
 
     if not alerts:
         log("No alerts to send, skipping Slack", node="send_slack")

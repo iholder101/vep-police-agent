@@ -1,13 +1,15 @@
 """MCP (Model Context Protocol) tools integration for agents."""
 
-from typing import List, Any, Dict, Optional, Annotated
 import asyncio
 import os
 from contextlib import asynccontextmanager
+from typing import Annotated, Any
+
+from langchain_core.tools import StructuredTool
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from langchain_core.tools import StructuredTool
-from pydantic import Field, create_model, WithJsonSchema
+from pydantic import Field, WithJsonSchema, create_model
+
 from services.utils import log
 
 
@@ -36,7 +38,7 @@ FlexibleArray = Annotated[Any, WithJsonSchema({'type': 'array', 'items': {'type'
 Flexible2DArray = Annotated[Any, WithJsonSchema({'type': 'array', 'items': {'type': 'array', 'items': {'type': 'string'}}})]
 
 
-def _fix_schema_for_gemini(schema: Dict[str, Any]) -> Dict[str, Any]:
+def _fix_schema_for_gemini(schema: dict[str, Any]) -> dict[str, Any]:
     """
     Recursively fix JSON schema to be compatible with Gemini.
 
@@ -67,7 +69,7 @@ def _fix_schema_for_gemini(schema: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-def _create_args_schema_from_json_schema(tool_name: str, json_schema: Dict[str, Any]) -> Optional[type]:
+def _create_args_schema_from_json_schema(tool_name: str, json_schema: dict[str, Any]) -> type | None:
     """
     Create a Pydantic model from a JSON schema for use as args_schema.
 
@@ -113,7 +115,7 @@ def _create_args_schema_from_json_schema(tool_name: str, json_schema: Dict[str, 
                 # Use FlexibleArray for simple 1D arrays
                 python_type = FlexibleArray
         elif param_type == 'object':
-            python_type = Dict[str, Any]
+            python_type = dict[str, Any]
         else:
             python_type = Any
 
@@ -121,7 +123,7 @@ def _create_args_schema_from_json_schema(tool_name: str, json_schema: Dict[str, 
         if is_required:
             field_definitions[param_name] = (python_type, Field(description=param_desc))
         else:
-            field_definitions[param_name] = (Optional[python_type], Field(default=None, description=param_desc))
+            field_definitions[param_name] = (python_type | None, Field(default=None, description=param_desc))
 
     if not field_definitions:
         return None
@@ -167,7 +169,7 @@ MCP_CONFIGS = {
     },
 }
 
-async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[StructuredTool]:
+async def _get_mcp_tools_async(*mcp_configs: dict[str, Any]) -> list[StructuredTool]:
     """
     Retrieve tools from one or more MCP servers (async version).
     
@@ -207,16 +209,15 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[StructuredT
         )
         
         # Use context manager to ensure proper cleanup
-        async with _safe_stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                
-                # List available tools from the MCP server
-                tools_result = await session.list_tools()
-                
-                # List of write operations to exclude (agent should only read from GitHub)
-                # These tools modify GitHub repositories and should not be available to the agent
-                write_operations_to_exclude = {
+        async with _safe_stdio_client(server_params) as (read, write), ClientSession(read, write) as session:
+            await session.initialize()
+
+            # List available tools from the MCP server
+            tools_result = await session.list_tools()
+
+            # List of write operations to exclude (agent should only read from GitHub)
+            # These tools modify GitHub repositories and should not be available to the agent
+            write_operations_to_exclude = {
                     "create_or_update_file",
                     "create_issue",
                     "create_pull_request",
@@ -229,131 +230,130 @@ async def _get_mcp_tools_async(*mcp_configs: Dict[str, Any]) -> List[StructuredT
                     "create_pull_request_review",
                     "merge_pull_request",
                     "update_pull_request_branch",
-                }
+            }
+            
+            # Count tools before filtering for logging
+            total_tools = len(tools_result.tools)
+            excluded_count = 0
+            
+            # Convert MCP tools to LangChain tools
+            for mcp_tool in tools_result.tools:
+                # Skip write operations - agent should only read from GitHub
+                if mcp_tool.name in write_operations_to_exclude:
+                    excluded_count += 1
+                    log(f"Excluding write operation tool: {mcp_tool.name} (agent is read-only)", node="mcp_factory", level="DEBUG")
+                    continue
                 
-                # Count tools before filtering for logging
-                total_tools = len(tools_result.tools)
-                excluded_count = 0
+                # Get the tool's input schema to extract parameter names
+                input_schema = None
+                if hasattr(mcp_tool, 'inputSchema') and mcp_tool.inputSchema:
+                    input_schema = mcp_tool.inputSchema
                 
-                # Convert MCP tools to LangChain tools
-                for mcp_tool in tools_result.tools:
-                    # Skip write operations - agent should only read from GitHub
-                    if mcp_tool.name in write_operations_to_exclude:
-                        excluded_count += 1
-                        log(f"Excluding write operation tool: {mcp_tool.name} (agent is read-only)", node="mcp_factory", level="DEBUG")
-                        continue
-                    
-                    # Get the tool's input schema to extract parameter names
-                    input_schema = None
-                    if hasattr(mcp_tool, 'inputSchema') and mcp_tool.inputSchema:
-                        input_schema = mcp_tool.inputSchema
-                    
-                    # Create a closure to capture the tool config and name
-                    def make_tool_func(tool_name: str, tool_config: Dict[str, Any], tool_schema: Optional[Dict] = None):
-                        async def tool_func_async(**kwargs) -> str:
-                            """Async function that creates a session and calls the tool."""
-                            # Handle __arg1, __arg2, etc. by mapping to schema parameter names
-                            # This is a workaround for LLMs that use positional args
-                            if tool_schema and 'properties' in tool_schema:
-                                properties = tool_schema['properties']
-                                param_names = list(properties.keys())
-                                
-                                # If kwargs has __arg1, __arg2, etc., map them to actual parameter names
-                                mapped_kwargs = {}
-                                for key, value in kwargs.items():
-                                    if key.startswith('__arg') and key[5:].isdigit():
-                                        arg_index = int(key[5:]) - 1
-                                        if arg_index < len(param_names):
-                                            mapped_kwargs[param_names[arg_index]] = value
-                                        else:
-                                            mapped_kwargs[key] = value  # Keep original if no mapping
+                # Create a closure to capture the tool config and name
+                def make_tool_func(tool_name: str, tool_config: dict[str, Any], tool_schema: dict | None = None):
+                    async def tool_func_async(**kwargs) -> str:
+                        """Async function that creates a session and calls the tool."""
+                        # Handle __arg1, __arg2, etc. by mapping to schema parameter names
+                        # This is a workaround for LLMs that use positional args
+                        if tool_schema and 'properties' in tool_schema:
+                            properties = tool_schema['properties']
+                            param_names = list(properties.keys())
+                            
+                            # If kwargs has __arg1, __arg2, etc., map them to actual parameter names
+                            mapped_kwargs = {}
+                            for key, value in kwargs.items():
+                                if key.startswith('__arg') and key[5:].isdigit():
+                                    arg_index = int(key[5:]) - 1
+                                    if arg_index < len(param_names):
+                                        mapped_kwargs[param_names[arg_index]] = value
                                     else:
-                                        mapped_kwargs[key] = value
-                                kwargs = mapped_kwargs
-                            
-                            # Prepare environment - merge custom env with parent environment
-                            custom_env = tool_config.get("env", {}).copy()
-                            
-                            # Always merge with parent environment to ensure GITHUB_TOKEN and other vars are available
-                            # custom_env takes precedence over parent environment
-                            if custom_env:
-                                # Merge with parent environment - custom_env takes precedence
-                                env = {**os.environ, **custom_env}
-                            else:
-                                # No custom env vars, but still merge to ensure parent env vars are available
-                                env = os.environ.copy()
-                            
-                            server_params = StdioServerParameters(
-                                command=tool_config["command"],
-                                args=tool_config.get("args", []),
-                                env=env
-                            )
-                            
-                            async with _safe_stdio_client(server_params) as (read, write):
-                                async with ClientSession(read, write) as sess:
-                                    await sess.initialize()
-                                    try:
-                                        result = await sess.call_tool(tool_name, arguments=kwargs)
-                                        if result.content:
-                                            # Extract text from content blocks
-                                            text_parts = []
-                                            for content_block in result.content:
-                                                if hasattr(content_block, 'text'):
-                                                    text_parts.append(content_block.text)
-                                                elif isinstance(content_block, dict) and 'text' in content_block:
-                                                    text_parts.append(content_block['text'])
-                                                else:
-                                                    text_parts.append(str(content_block))
-                                            return "\n".join(text_parts) if text_parts else ""
-                                        return ""
-                                    except Exception as e:
-                                        return f"Error calling tool {tool_name}: {str(e)}"
+                                        mapped_kwargs[key] = value  # Keep original if no mapping
+                                else:
+                                    mapped_kwargs[key] = value
+                            kwargs = mapped_kwargs
                         
-                        # Wrap async function to be callable synchronously
-                        def sync_wrapper(**kwargs) -> str:
-                            return asyncio.run(tool_func_async(**kwargs))
+                        # Prepare environment - merge custom env with parent environment
+                        custom_env = tool_config.get("env", {}).copy()
                         
-                        return sync_wrapper
+                        # Always merge with parent environment to ensure GITHUB_TOKEN and other vars are available
+                        # custom_env takes precedence over parent environment
+                        if custom_env:
+                            # Merge with parent environment - custom_env takes precedence
+                            env = {**os.environ, **custom_env}
+                        else:
+                            # No custom env vars, but still merge to ensure parent env vars are available
+                            env = os.environ.copy()
+                        
+                        server_params = StdioServerParameters(
+                            command=tool_config["command"],
+                            args=tool_config.get("args", []),
+                            env=env
+                        )
+                        
+                        async with _safe_stdio_client(server_params) as (read, write), ClientSession(read, write) as sess:
+                            await sess.initialize()
+                            try:
+                                result = await sess.call_tool(tool_name, arguments=kwargs)
+                                if result.content:
+                                    # Extract text from content blocks
+                                    text_parts = []
+                                    for content_block in result.content:
+                                        if hasattr(content_block, 'text'):
+                                            text_parts.append(content_block.text)
+                                        elif isinstance(content_block, dict) and 'text' in content_block:
+                                            text_parts.append(content_block['text'])
+                                        else:
+                                            text_parts.append(str(content_block))
+                                    return "\n".join(text_parts) if text_parts else ""
+                                return ""
+                            except Exception as e:
+                                return f"Error calling tool {tool_name}: {e!s}"
                     
-                    tool_func = make_tool_func(mcp_tool.name, config, input_schema)
+                    # Wrap async function to be callable synchronously
+                    def sync_wrapper(**kwargs) -> str:
+                        return asyncio.run(tool_func_async(**kwargs))
                     
-                    # Build enhanced description with parameter info and examples
-                    description = mcp_tool.description or ""
-                    
-                    # Add tool-specific documentation and examples
-                    tool_docs = _get_tool_documentation(mcp_tool.name)
-                    if tool_docs:
-                        description += "\n\n" + tool_docs
-                    
-                    # Create Pydantic args_schema for proper Gemini compatibility
-                    args_schema = None
-                    if input_schema and 'properties' in input_schema:
-                        param_info = []
-                        properties = input_schema['properties']
-                        required = input_schema.get('required', [])
-                        for param_name, param_schema in properties.items():
-                            param_type = param_schema.get('type', 'string')
-                            param_desc = param_schema.get('description', '')
-                            required_marker = ' (required)' if param_name in required else ' (optional)'
-                            param_info.append(f"- {param_name} ({param_type}){required_marker}: {param_desc}")
-                        if param_info:
-                            description += "\n\nParameters:\n" + "\n".join(param_info)
-
-                        # Create args_schema for Gemini compatibility
-                        args_schema = _create_args_schema_from_json_schema(mcp_tool.name, input_schema)
-
-                    # Use StructuredTool for proper schema handling with Gemini
-                    langchain_tool = StructuredTool.from_function(
-                        func=tool_func,
-                        name=mcp_tool.name,
-                        description=description,
-                        args_schema=args_schema,
-                    )
-                    all_tools.append(langchain_tool)
+                    return sync_wrapper
                 
-                # Log filtering summary for GitHub MCP
-                if config.get("name") == "github" and excluded_count > 0:
-                    log(f"GitHub MCP: Filtered {excluded_count} write operation(s) from {total_tools} total tools ({len(all_tools)} read-only tools available)", node="mcp_factory")
+                tool_func = make_tool_func(mcp_tool.name, config, input_schema)
+                
+                # Build enhanced description with parameter info and examples
+                description = mcp_tool.description or ""
+                
+                # Add tool-specific documentation and examples
+                tool_docs = _get_tool_documentation(mcp_tool.name)
+                if tool_docs:
+                    description += "\n\n" + tool_docs
+                
+                # Create Pydantic args_schema for proper Gemini compatibility
+                args_schema = None
+                if input_schema and 'properties' in input_schema:
+                    param_info = []
+                    properties = input_schema['properties']
+                    required = input_schema.get('required', [])
+                    for param_name, param_schema in properties.items():
+                        param_type = param_schema.get('type', 'string')
+                        param_desc = param_schema.get('description', '')
+                        required_marker = ' (required)' if param_name in required else ' (optional)'
+                        param_info.append(f"- {param_name} ({param_type}){required_marker}: {param_desc}")
+                    if param_info:
+                        description += "\n\nParameters:\n" + "\n".join(param_info)
+
+                    # Create args_schema for Gemini compatibility
+                    args_schema = _create_args_schema_from_json_schema(mcp_tool.name, input_schema)
+
+                # Use StructuredTool for proper schema handling with Gemini
+                langchain_tool = StructuredTool.from_function(
+                    func=tool_func,
+                    name=mcp_tool.name,
+                    description=description,
+                    args_schema=args_schema,
+                )
+                all_tools.append(langchain_tool)
+            
+            # Log filtering summary for GitHub MCP
+            if config.get("name") == "github" and excluded_count > 0:
+                log(f"GitHub MCP: Filtered {excluded_count} write operation(s) from {total_tools} total tools ({len(all_tools)} read-only tools available)", node="mcp_factory")
     
     return all_tools
 
@@ -478,7 +478,7 @@ def _extract_error_messages(exc: Exception) -> list:
     return error_messages
 
 
-def get_mcp_tools_by_config(*mcp_configs: Dict[str, Any]) -> List[StructuredTool]:
+def get_mcp_tools_by_config(*mcp_configs: dict[str, Any]) -> list[StructuredTool]:
     """
     Retrieve tools from one or more MCP servers using configuration dictionaries.
     
@@ -514,7 +514,7 @@ def get_mcp_tools_by_config(*mcp_configs: Dict[str, Any]) -> List[StructuredTool
         raise
 
 
-def get_mcp_tools_by_name(*mcp_names: str) -> List[StructuredTool]:
+def get_mcp_tools_by_name(*mcp_names: str) -> list[StructuredTool]:
     """
     Retrieve tools from one or more MCP servers by name.
     
@@ -542,11 +542,13 @@ def get_mcp_tools_by_name(*mcp_names: str) -> List[StructuredTool]:
         config["env"] = config.get("env", {}).copy()
         
         if name == "google-sheets":
-            from services.utils import get_google_token
-            import tempfile
             import json
+
             # os is imported at module level, ensure it's available here
             import os as os_module
+            import tempfile
+
+            from services.utils import get_google_token
             try:
                 token = get_google_token()
                 if not token or not token.strip():
@@ -559,11 +561,11 @@ def get_mcp_tools_by_name(*mcp_names: str) -> List[StructuredTool]:
                         # Try to parse as JSON to validate
                         json.loads(token)
                         # Create a temporary file with the credentials
-                        temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
-                        temp_file.write(token)
-                        temp_file.close()
-                        config["env"]["GOOGLE_APPLICATION_CREDENTIALS"] = temp_file.name
-                        log(f"Google credentials written to temporary file: {temp_file.name}", node="mcp_factory", level="DEBUG")
+                        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as temp_file:
+                            temp_file.write(token)
+                            temp_path = temp_file.name
+                        config["env"]["GOOGLE_APPLICATION_CREDENTIALS"] = temp_path
+                        log(f"Google credentials written to temporary file: {temp_path}", node="mcp_factory", level="DEBUG")
                     except (json.JSONDecodeError, ValueError):
                         # If token is not valid JSON, try treating it as a file path
                         token_path = token.strip()
@@ -582,7 +584,6 @@ def get_mcp_tools_by_name(*mcp_names: str) -> List[StructuredTool]:
             except FileNotFoundError:
                 # If token file doesn't exist, continue without it (will fail at runtime)
                 log("GOOGLE_TOKEN not found - Google Sheets MCP will not be available", node="mcp_factory", level="WARNING")
-                pass
         elif name == "github":
             # Inject GitHub token from environment if available
             # The MCP server expects GITHUB_PERSONAL_ACCESS_TOKEN, not GITHUB_TOKEN
@@ -599,6 +600,6 @@ def get_mcp_tools_by_name(*mcp_names: str) -> List[StructuredTool]:
     
     return get_mcp_tools_by_config(*configs)
 
-def get_all_tools() -> List[StructuredTool]:
+def get_all_tools() -> list[StructuredTool]:
     """Get tools from all configured MCP servers."""
     return get_mcp_tools_by_name(*MCP_CONFIGS.keys())

@@ -5,12 +5,13 @@ Analysis is done by analyze_combined which has access to ALL context at once.
 """
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
-from state import VEPState
-from services.utils import log
+
 from services.llm_helper import invoke_llm_fetch
 from services.response_models import FetchResponse
+from services.utils import log
+from state import VEPState
 
 
 def check_activity_node(state: VEPState) -> Any:
@@ -28,7 +29,7 @@ def check_activity_node(state: VEPState) -> Any:
     log(f"Fetching activity context for {veps_count} VEP(s)", node="check_activity")
 
     last_check_times = state.get("last_check_times", {})
-    last_check_times["check_activity"] = datetime.now()
+    last_check_times["check_activity"] = datetime.now(UTC)
 
     if not veps:
         return {
@@ -72,7 +73,7 @@ Return context_updates with the raw activity data for each VEP."""
                   "tracking_issue": {"number": vep.tracking_issue.number, "updated_at": vep.tracking_issue.updated_at.isoformat()} if vep.tracking_issue else None,
                   "enhancement_prs": [{"number": pr.number, "updated_at": pr.updated_at.isoformat()} for pr in vep.enhancement_prs]} for vep in veps],
         "approved_vep_prs": approved_vep_prs,
-        "today": datetime.now().isoformat(),
+        "today": datetime.now(UTC).isoformat(),
     }
 
     user_prompt = f"""Fetch activity context for these VEPs:

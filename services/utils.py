@@ -1,8 +1,8 @@
 import os
-from datetime import datetime
-from typing import Optional
+from datetime import UTC, datetime
 
 from langgraph.graph.state import CompiledStateGraph
+
 
 def get_api_key() -> str:
     """Read and return the API key.
@@ -68,7 +68,7 @@ def invoke_agent(agent: CompiledStateGraph, prompt: str) -> str:
     # Handle string content directly
     return str(content) if content is not None else ""
 
-def get_model(model_name: Optional[str] = None):
+def get_model(model_name: str | None = None):
     """Get the LLM model instance.
     
     Args:
@@ -77,6 +77,7 @@ def get_model(model_name: Optional[str] = None):
     No timeout is set - requests will complete naturally without artificial time limits.
     """
     from langchain_google_genai import ChatGoogleGenerativeAI
+
     import config
     
     if model_name is None:
@@ -98,5 +99,5 @@ def log(message: str, node: str = "SYSTEM", level: str = "INFO") -> None:
         node: Node/component name (e.g., "scheduler", "fetch_data")
         level: Log level (INFO, WARNING, ERROR, DEBUG)
     """
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{timestamp}] [{level:5s}] [{node:15s}] {message}", flush=True)

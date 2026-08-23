@@ -1,17 +1,17 @@
 """Configuration values for VEP governance agent."""
 
-from typing import Dict, List
+
 from .util import FAST_MODEL, HEAVY_MODEL
 
 # Default release version (used when release cannot be auto-detected)
 DEFAULT_RELEASE: str = "v1.9"
 
 # Known SIGs in the kubevirt project
-KNOWN_SIGS: List[str] = ["compute", "network", "storage"]
+KNOWN_SIGS: list[str] = ["compute", "network", "storage"]
 
 # Project board numbers by release version
 # Each kubevirt release has its own GitHub Project V2 board
-VERSION_PROJECT_BOARDS: Dict[str, int] = {
+VERSION_PROJECT_BOARDS: dict[str, int] = {
     "1.6": 15,
     "1.7": 18,
     "1.8": 19,
@@ -21,7 +21,7 @@ VERSION_PROJECT_BOARDS: Dict[str, int] = {
 
 # Model configuration per node type
 # Architecture: fetch nodes use lightweight LLM to gather data, analysis nodes use powerful LLM to reason
-NODE_MODELS: Dict[str, str] = {
+NODE_MODELS: dict[str, str] = {
     # Deep reasoning nodes - use powerful model for analysis
     "analyze_combined": HEAVY_MODEL,  # Single node that does ALL analysis with full context
     "update_sheets": HEAVY_MODEL,
@@ -42,7 +42,7 @@ NODE_MODELS: Dict[str, str] = {
 }
 
 # Email notification configuration
-EMAIL_RECIPIENTS: List[str] = [
+EMAIL_RECIPIENTS: list[str] = [
     "iholder@redhat.com",
 ]
 

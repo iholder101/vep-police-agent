@@ -5,18 +5,19 @@ Analysis is done by analyze_combined which has access to ALL context at once.
 """
 
 import json
-from datetime import datetime
-from typing import Any, Optional
-from state import VEPState, ReleaseSchedule
-from services.utils import log
+from datetime import UTC, datetime
+from typing import Any
+
 from services.llm_helper import invoke_llm_fetch
 from services.response_models import FetchResponse
+from services.utils import log
+from state import ReleaseSchedule, VEPState
 
 
 class DeadlineFetchResponse(FetchResponse):
     """Response model for deadline fetch."""
-    current_release: Optional[str] = None
-    release_schedule: Optional[ReleaseSchedule] = None
+    current_release: str | None = None
+    release_schedule: ReleaseSchedule | None = None
 
 
 def check_deadlines_node(state: VEPState) -> Any:
@@ -34,7 +35,7 @@ def check_deadlines_node(state: VEPState) -> Any:
     log(f"Fetching deadline context for {veps_count} VEP(s)", node="check_deadlines")
 
     last_check_times = state.get("last_check_times", {})
-    last_check_times["check_deadlines"] = datetime.now()
+    last_check_times["check_deadlines"] = datetime.now(UTC)
 
     if not veps:
         return {
@@ -69,7 +70,7 @@ Return context_updates with the raw deadline data for each VEP."""
                   "target_release": vep.target_release, "compliance": vep.compliance.model_dump()} for vep in veps],
         "release_schedule": release_schedule.model_dump(mode='json') if release_schedule else None,
         "current_release": state.get("current_release"),
-        "today": datetime.now().strftime("%Y-%m-%d"),
+        "today": datetime.now(UTC).strftime("%Y-%m-%d"),
     }
 
     user_prompt = f"""Fetch deadline context for these VEPs:

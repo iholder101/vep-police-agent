@@ -1,9 +1,10 @@
 """Send notifications coordination node - triggers email and Slack in parallel."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
-from state import VEPState
+
 from services.utils import log
+from state import VEPState
 
 
 def send_notifications_node(state: VEPState) -> Any:
@@ -18,7 +19,7 @@ def send_notifications_node(state: VEPState) -> Any:
 
     # Update last check time for this coordination node
     last_check_times = state.get("last_check_times", {})
-    last_check_times["send_notifications"] = datetime.now()
+    last_check_times["send_notifications"] = datetime.now(UTC)
 
     return {
         "last_check_times": last_check_times,

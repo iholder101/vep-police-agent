@@ -4,6 +4,10 @@ target-version = "py311"
 ignore = [
     "E741",  # ambiguous variable name (subjective)
     "E722",  # bare except (common in scripts)
+    "BLE001",  # blind except Exception (exception handling patterns must be evaluated per-call-site)
+    "TRY002",  # create exceptions without re-raising (some sites intentionally catch and continue)
+    "S110",  # try-except-pass (acceptable for optional operations)
+    "S112",  # try-except-continue (acceptable for optional operations)
 ]
 
 [lint.per-file-ignores]

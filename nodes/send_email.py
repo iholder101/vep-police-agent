@@ -2,20 +2,22 @@
 
 import json
 import os
+from datetime import UTC, datetime
+from typing import Any
+
 import requests
-from datetime import datetime
-from typing import Any, List
-from state import VEPState
-from services.utils import log
-from services.indexer import create_indexed_context
+
+import config
 from nodes.alert_formatting import (
     build_markdown_table,
     get_phase_context_summary,
 )
-import config
+from services.indexer import create_indexed_context
+from services.utils import log
+from state import VEPState
 
 
-def _send_via_resend(recipients: List[str], subject: str, html_body: str, text_body: str) -> bool:
+def _send_via_resend(recipients: list[str], subject: str, html_body: str, text_body: str) -> bool:
     """Send email via Resend API (easiest email service - sends to real inboxes!).
 
     Resend: https://resend.com
@@ -69,7 +71,7 @@ def _send_via_resend(recipients: List[str], subject: str, html_body: str, text_b
             except:
                 log(f"Resend error response: {e.response.text}", node="send_email", level="ERROR")
         return False
-    except Exception as e:
+    except (ValueError, TypeError, OSError, KeyError, json.JSONDecodeError) as e:
         log(f"Error sending via Resend: {e}", node="send_email", level="ERROR")
         import traceback
         log(f"Traceback: {traceback.format_exc()}", node="send_email", level="DEBUG")
@@ -105,7 +107,7 @@ def send_email_node(state: VEPState) -> Any:
     if skip_send_email:
         log("Skip-send-email mode: email alerts are disabled, skipping", node="send_email")
         last_check_times = state.get("last_check_times", {})
-        last_check_times["send_email"] = datetime.now()
+        last_check_times["send_email"] = datetime.now(UTC)
         return {
             "last_check_times": last_check_times,
         }
@@ -113,7 +115,7 @@ def send_email_node(state: VEPState) -> Any:
     log(f"Sending email alerts for {len(alerts)} alert(s)", node="send_email")
     
     last_check_times = state.get("last_check_times", {})
-    last_check_times["send_email"] = datetime.now()
+    last_check_times["send_email"] = datetime.now(UTC)
     
     if not alerts:
         log("No alerts to send, skipping email", node="send_email")
@@ -143,7 +145,7 @@ def send_email_node(state: VEPState) -> Any:
         log("EMAIL CONTENT (would have been sent if RESEND_API_KEY was configured):", node="send_email", level="INFO")
         log("="*80, node="send_email", level="INFO")
         log(f"To: {', '.join(recipients)}", node="send_email", level="INFO")
-        log(f"Subject: VEP Governance Alerts - {datetime.now().strftime('%Y-%m-%d %H:%M')}", node="send_email", level="INFO")
+        log(f"Subject: VEP Governance Alerts - {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}", node="send_email", level="INFO")
         log(f"Body: {len(alerts)} alert(s) would have been sent", node="send_email", level="INFO")
         log("="*80, node="send_email", level="INFO")
         
@@ -176,7 +178,7 @@ def send_email_node(state: VEPState) -> Any:
     if phase_ctx["deadline_text"]:
         subject = f"KubeVirt {phase_ctx['release']} {phase_ctx['phase_display']}: {phase_ctx['deadline_text']} – {high_risk_count} VEPs at high risk"
     else:
-        subject = f"KubeVirt {phase_ctx['release']} VEP Governance Alerts - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        subject = f"KubeVirt {phase_ctx['release']} VEP Governance Alerts - {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
 
     # Group alerts by subject and severity (use "subject" field, not "type")
     alerts_by_subject = {}
@@ -211,7 +213,7 @@ def send_email_node(state: VEPState) -> Any:
 </style></head>
 <body>
 <h1>VEP Governance Alerts</h1>
-<p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+<p>Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')}</p>
 
 <div class="phase-banner">
   <strong>{phase_ctx['release']} {phase_ctx['phase_display']}</strong>
@@ -293,7 +295,7 @@ def send_email_node(state: VEPState) -> Any:
     
     # Also create plain text version
     text_body = "VEP Governance Alerts\n"
-    text_body += f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+    text_body += f"Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S')}\n\n"
 
     text_body += f"{phase_ctx['release']} {phase_ctx['phase_display']}\n"
     if phase_ctx['deadline_text']:

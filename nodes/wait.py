@@ -1,9 +1,10 @@
 """Wait node - waits until next round hour before returning to scheduler."""
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
-from state import VEPState
+
 from services.utils import log
+from state import VEPState
 
 
 def _get_next_round_hour(now: datetime) -> datetime:
@@ -19,7 +20,7 @@ def wait_node(state: VEPState) -> Any:
     Otherwise, waits until next round hour.
     After waiting, returns to scheduler which will check what needs to run.
     """
-    now = datetime.now()
+    now = datetime.now(UTC)
     immediate_start = state.get("immediate_start", False)
     
     if immediate_start:

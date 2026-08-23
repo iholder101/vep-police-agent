@@ -8,13 +8,14 @@ Provides utilities to build per-VEP summary tables with:
 """
 
 import re
-from datetime import date, datetime
-from typing import List, Dict, Any, Tuple
+from datetime import UTC, date, datetime
+from typing import Any
+
 from services.indexer import create_indexed_context
 from services.utils import log
 
 
-def get_urgency_level(vep: Any) -> Tuple[str, str]:
+def get_urgency_level(vep: Any) -> tuple[str, str]:
     """Determine urgency level and color for a VEP.
 
     Returns:
@@ -46,7 +47,7 @@ def get_urgency_level(vep: Any) -> Tuple[str, str]:
     return ("GREEN", "green")
 
 
-def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+def build_vep_summary_table(veps: list[Any], indexed_context: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """Build per-VEP summary table data.
 
     Args:
@@ -464,7 +465,7 @@ def build_vep_summary_table(veps: List[Any], indexed_context: Dict[str, Any] = N
     return table_rows
 
 
-def format_pr_links_markdown(prs: List[Dict[str, Any]]) -> str:
+def format_pr_links_markdown(prs: list[dict[str, Any]]) -> str:
     """Format PR list as markdown links (for email alerts).
 
     Args:
@@ -480,7 +481,7 @@ def format_pr_links_markdown(prs: List[Dict[str, Any]]) -> str:
     return ", ".join(links)
 
 
-def format_pr_links_slack(prs: List[Dict[str, Any]]) -> str:
+def format_pr_links_slack(prs: list[dict[str, Any]]) -> str:
     """Format PR list as Slack mrkdwn links.
 
     Args:
@@ -496,7 +497,7 @@ def format_pr_links_slack(prs: List[Dict[str, Any]]) -> str:
     return ", ".join(links)
 
 
-def format_pr_links_plain(prs: List[Dict[str, Any]]) -> str:
+def format_pr_links_plain(prs: list[dict[str, Any]]) -> str:
     """Format PR list as plain text.
 
     Args:
@@ -511,7 +512,7 @@ def format_pr_links_plain(prs: List[Dict[str, Any]]) -> str:
     return ", ".join([f"#{pr['number']}" for pr in prs])
 
 
-def format_pr_links_urls(prs: List[Dict[str, Any]]) -> str:
+def format_pr_links_urls(prs: list[dict[str, Any]]) -> str:
     """Format PR list as full URLs for GitHub Projects V2 (auto-linked).
 
     Args:
@@ -526,7 +527,7 @@ def format_pr_links_urls(prs: List[Dict[str, Any]]) -> str:
     return ", ".join(pr["url"] for pr in prs)
 
 
-def build_markdown_table(table_rows: List[Dict[str, Any]]) -> str:
+def build_markdown_table(table_rows: list[dict[str, Any]]) -> str:
     """Build markdown table from VEP summary data.
 
     Args:
@@ -564,7 +565,7 @@ def build_markdown_table(table_rows: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def build_slack_table(table_rows: List[Dict[str, Any]]) -> str:
+def build_slack_table(table_rows: list[dict[str, Any]]) -> str:
     """Build Slack-formatted table from VEP summary data.
 
     Args:
@@ -607,7 +608,7 @@ def build_slack_table(table_rows: List[Dict[str, Any]]) -> str:
     return "\n\n".join(lines)
 
 
-def get_phase_context_summary(indexed_context: Dict[str, Any] = None) -> Dict[str, Any]:
+def get_phase_context_summary(indexed_context: dict[str, Any] | None = None) -> dict[str, Any]:
     """Get phase context summary for alert subjects/headers.
 
     Args:
@@ -643,37 +644,45 @@ def get_phase_context_summary(indexed_context: Dict[str, Any] = None) -> Dict[st
     phase_display = phase_display_map.get(phase, phase.title())
 
     # Calculate days to deadlines
-    from datetime import timezone
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     days_to_ef = None
     days_to_cf = None
     days_to_ga = None
 
     if deadlines.get("enhancement_freeze"):
         try:
-            ef_date = datetime.fromisoformat(deadlines["enhancement_freeze"].replace('Z', '+00:00'))
+            ef_str = deadlines["enhancement_freeze"]
+            if isinstance(ef_str, str) and ef_str.endswith('Z'):
+                ef_str = ef_str[:-1] + '+00:00'
+            ef_date = datetime.fromisoformat(ef_str)
             if ef_date.tzinfo is None:
-                ef_date = ef_date.replace(tzinfo=timezone.utc)
+                ef_date = ef_date.replace(tzinfo=UTC)
             days_to_ef = (ef_date - now).days
-        except:
+        except (ValueError, TypeError):
             pass
 
     if deadlines.get("code_freeze"):
         try:
-            cf_date = datetime.fromisoformat(deadlines["code_freeze"].replace('Z', '+00:00'))
+            cf_str = deadlines["code_freeze"]
+            if isinstance(cf_str, str) and cf_str.endswith('Z'):
+                cf_str = cf_str[:-1] + '+00:00'
+            cf_date = datetime.fromisoformat(cf_str)
             if cf_date.tzinfo is None:
-                cf_date = cf_date.replace(tzinfo=timezone.utc)
+                cf_date = cf_date.replace(tzinfo=UTC)
             days_to_cf = (cf_date - now).days
-        except:
+        except (ValueError, TypeError):
             pass
 
     if deadlines.get("ga"):
         try:
-            ga_date = datetime.fromisoformat(deadlines["ga"].replace('Z', '+00:00'))
+            ga_str = deadlines["ga"]
+            if isinstance(ga_str, str) and ga_str.endswith('Z'):
+                ga_str = ga_str[:-1] + '+00:00'
+            ga_date = datetime.fromisoformat(ga_str)
             if ga_date.tzinfo is None:
-                ga_date = ga_date.replace(tzinfo=timezone.utc)
+                ga_date = ga_date.replace(tzinfo=UTC)
             days_to_ga = (ga_date - now).days
-        except:
+        except (ValueError, TypeError):
             pass
 
     # Build deadline text based on phase

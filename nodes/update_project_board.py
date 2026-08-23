@@ -7,17 +7,17 @@ the GitHub Project V2 board via GraphQL mutations.
 No LLM involved - pure data mapping and GraphQL.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
-from state import VEPState
-from services.utils import log
-from services.indexer import create_indexed_context
+from nodes.alert_formatting import format_pr_links_urls
 from services.graphql_client import (
     get_project_field_metadata,
     update_project_item_fields,
 )
-from nodes.alert_formatting import format_pr_links_urls
+from services.indexer import create_indexed_context
+from services.utils import log
+from state import VEPState
 
 
 def _resolve_board_number(version: str) -> int | None:
@@ -32,8 +32,8 @@ def _resolve_board_number(version: str) -> int | None:
     Returns:
         Project board number or None
     """
+    from config import board_search_patterns, get_project_board_for_version
     from services.graphql_client import find_project_by_title
-    from config import get_project_board_for_version, board_search_patterns
 
     if not version:
         return None
@@ -44,7 +44,7 @@ def _resolve_board_number(version: str) -> int | None:
             board_num = find_project_by_title(org_name="kubevirt", title_pattern=pattern)
             if board_num:
                 return board_num
-        except Exception:
+        except (ValueError, TypeError, RuntimeError, KeyError):
             pass
 
     # Fallback to config mapping
@@ -66,13 +66,13 @@ def update_project_board_node(state: VEPState) -> Any:
 
     if state.get("skip_update_board", False):
         log("skip_update_board enabled, skipping board update", node="update_board")
-        last_check_times["update_project_board"] = datetime.now()
+        last_check_times["update_project_board"] = datetime.now(UTC)
         return {"last_check_times": last_check_times}
 
     table_rows = state.get("vep_summary_table", [])
     if not table_rows:
         log("No vep_summary_table in state, skipping board update", node="update_board")
-        last_check_times["update_project_board"] = datetime.now()
+        last_check_times["update_project_board"] = datetime.now(UTC)
         return {"last_check_times": last_check_times}
 
     # Resolve the project board number from the current release version
@@ -81,7 +81,7 @@ def update_project_board_node(state: VEPState) -> Any:
     if board_number is None:
         log(f"Cannot resolve project board for release '{current_release}', skipping board update",
             node="update_board", level="WARNING")
-        last_check_times["update_project_board"] = datetime.now()
+        last_check_times["update_project_board"] = datetime.now(UTC)
         return {"last_check_times": last_check_times}
 
     # Fetch field metadata (project ID + field IDs)
@@ -89,7 +89,7 @@ def update_project_board_node(state: VEPState) -> Any:
     if not metadata:
         log("Failed to fetch project field metadata, skipping board update",
             node="update_board", level="WARNING")
-        last_check_times["update_project_board"] = datetime.now()
+        last_check_times["update_project_board"] = datetime.now(UTC)
         return {"last_check_times": last_check_times}
 
     project_id = metadata["project_id"]
@@ -102,7 +102,7 @@ def update_project_board_node(state: VEPState) -> Any:
         log(f"Missing expected fields on project board: {missing}. "
             "Create them as Text fields on the board first.",
             node="update_board", level="WARNING")
-        last_check_times["update_project_board"] = datetime.now()
+        last_check_times["update_project_board"] = datetime.now(UTC)
         return {"last_check_times": last_check_times}
 
     # Get board_veps from indexed context for item_id lookup
@@ -143,5 +143,5 @@ def update_project_board_node(state: VEPState) -> Any:
     log(f"Board update complete: {updated}/{total} items updated, {skipped} skipped",
         node="update_board")
 
-    last_check_times["update_project_board"] = datetime.now()
+    last_check_times["update_project_board"] = datetime.now(UTC)
     return {"last_check_times": last_check_times}
