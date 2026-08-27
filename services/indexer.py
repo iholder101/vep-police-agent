@@ -2297,7 +2297,7 @@ def _load_cached_index(cache_file: Path, max_age_minutes: int = 60) -> dict[str,
             log(f"Cache expired (age: {age_minutes:.1f} minutes, max: {max_age_minutes} minutes), will regenerate", node="indexer")
             return None
     
-    except (json.JSONDecodeError, ValueError, KeyError) as e:
+    except (json.JSONDecodeError, ValueError, KeyError, TypeError) as e:
         log(f"Error reading cache file: {e}, will regenerate", node="indexer", level="WARNING")
         return None
 
