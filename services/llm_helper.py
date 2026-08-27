@@ -248,11 +248,11 @@ def invoke_llm_with_tools(
                         if field_info.is_required():
                             # Provide sensible defaults based on field type
                             field_type = str(field_info.annotation) if hasattr(field_info, 'annotation') else ''
-                            if 'List' in field_type or field_name in ['updated_veps', 'alerts']:
+                            if 'list' in field_type.lower() or field_name in ['updated_veps', 'alerts']:
                                 defaults[field_name] = []
                             elif field_name == 'success':
                                 defaults[field_name] = False
-                            elif 'Dict' in field_type:
+                            elif 'dict' in field_type.lower():
                                 defaults[field_name] = {}
                             elif 'Optional' in field_type or field_name.endswith('_id'):
                                 defaults[field_name] = None
