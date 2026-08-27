@@ -12,6 +12,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from services.attribution import extract_tracking_issue
 from services.mcp_factory import get_mcp_tools_by_name
 from services.utils import log
 
@@ -85,22 +86,122 @@ def _call_with_retry(tool_func, max_retries=3, delay=5, **kwargs):
     return None
 
 
+def _coerce_page_to_dict(result):
+    """Normalize one list_issues page result into a dict (or None).
+
+    Handles native dicts, JSON strings (possibly double-encoded), and bare
+    lists (wrapped as {"issues": [...]}).
+    """
+    if isinstance(result, dict):
+        return result
+    if isinstance(result, str):
+        try:
+            parsed = json.loads(result)
+        except (ValueError, TypeError):
+            return None
+        _d = 0
+        while isinstance(parsed, str) and _d < 3:
+            try:
+                parsed = json.loads(parsed)
+            except (ValueError, TypeError):
+                return None
+            _d += 1
+        if isinstance(parsed, dict):
+            return parsed
+        if isinstance(parsed, list):
+            return {"issues": parsed}
+    if isinstance(result, list):
+        return {"issues": result}
+    return None
+
+
 def _call_list_issues(list_issues_tool):
-    """Call list_issues with retry, handling different MCP tool argument styles."""
-    try:
-        return _call_with_retry(
-            list_issues_tool.func,
-            owner="kubevirt",
-            repo="enhancements",
-            state="all",
-            per_page=100,
+    """Call list_issues with cursor pagination, returning all issue dicts.
+
+    The MCP list_issues tool is GraphQL-backed: each call returns
+    {issues:[...], totalCount, pageInfo{hasNextPage, endCursor}} and caps a
+    page at ~30 issues. search_issues is unusable here (GitHub's search API
+    returns 403 rate-limit errors), so this is the sole reliable source and it
+    MUST follow the endCursor - otherwise only the newest ~30 of ~169 issues
+    are indexed, silently dropping older VEP tracking issues and the impl PRs
+    they enumerate. Returns a flat list of issue dicts. Falls back to the raw
+    single-page result if the response is not a readable page (e.g. an error
+    string), so the caller's existing error handling still applies.
+    """
+    all_issues = []
+    cursor = None
+    seen_cursors = set()
+    for _page in range(30):  # safety cap (~30 pages)
+        kwargs = {"owner": "kubevirt", "repo": "enhancements", "state": "all", "perPage": 100}
+        if cursor:
+            kwargs["after"] = cursor
+        try:
+            result = _call_with_retry(list_issues_tool.func, **kwargs)
+        except TypeError:
+            try:
+                result = _call_with_retry(
+                    list_issues_tool.func, repo="kubevirt/enhancements", state="all"
+                )
+            except TypeError:
+                result = _call_with_retry(
+                    list_issues_tool.func, owner="kubevirt", repo="enhancements", state="all"
+                )
+        page_dict = _coerce_page_to_dict(result)
+        if page_dict is None:
+            if not all_issues:
+                return result  # let the caller handle raw / error responses
+            break
+        page_issues = page_dict.get("issues")
+        if not isinstance(page_issues, list):
+            page_issues = page_dict.get("items") if isinstance(page_dict.get("items"), list) else []
+        all_issues.extend(page_issues)
+        page_info = page_dict.get("pageInfo") or {}
+        log(
+            f"list_issues page {_page + 1}: +{len(page_issues)} "
+            f"(total {len(all_issues)}/{page_dict.get('totalCount')}), "
+            f"hasNextPage={page_info.get('hasNextPage')}",
+            node="indexer",
         )
-    except TypeError:
-        return _call_with_retry(
-            list_issues_tool.func,
-            repo="kubevirt/enhancements",
-            state="all",
-        )
+        if not page_info.get("hasNextPage"):
+            break
+        cursor = page_info.get("endCursor")
+        if not cursor or cursor in seen_cursors:
+            break
+        seen_cursors.add(cursor)
+    return all_issues
+
+
+def _unwrap_issues_dict(d: dict) -> list | None:
+    """Extract a list of issue dicts from an MCP dict / content wrapper.
+
+    ``list_issues`` (the fallback used when ``search_issues`` is unavailable or
+    rate-limited) returns the issue array wrapped in a dict rather than as a
+    bare list. Without unwrapping, the response used to fall through to a
+    truncated ``raw_data`` blob and every issue body was lost. Known shapes:
+      - ``{"items": [...]}`` / ``{"issues": [...]}`` / ``{"data": [...]}`` -> the list
+      - ``{"content": "<json>"}`` or ``{"content": [{"text": "<json>"}]}`` -> parse, recurse
+      - a single issue object ``{"number": ...}`` -> ``[d]``
+    Returns the extracted list, or None if nothing issue-like is found.
+    """
+    for key in ("items", "issues", "data", "results"):
+        val = d.get(key)
+        if isinstance(val, list):
+            return val
+    content = d.get("content")
+    if isinstance(content, list):
+        content = "".join(c.get("text", "") for c in content if isinstance(c, dict))
+    if isinstance(content, str) and content.strip():
+        try:
+            parsed = json.loads(content)
+        except (ValueError, TypeError):
+            parsed = None
+        if isinstance(parsed, list):
+            return parsed
+        if isinstance(parsed, dict):
+            return _unwrap_issues_dict(parsed)
+    if "number" in d:  # a single issue object
+        return [d]
+    return None
 
 
 def _parse_version(version_str: str) -> tuple:
@@ -506,7 +607,7 @@ def index_enhancements_issues(days_back: int | None = 365) -> list[dict[str, Any
         if not search_issues_tool and not list_issues_tool:
             log(f"Could not find issues listing tool. Available tools: {[t.name for t in tools]}", node="indexer", level="WARNING")
             return []
-        
+
         try:
             # Use search_issues if available (more comprehensive)
             if search_issues_tool:
@@ -548,10 +649,18 @@ def index_enhancements_issues(days_back: int | None = 365) -> list[dict[str, Any
                         # Parse result
                         items = []
                         result_dict = None
-                        
+
                         if isinstance(result, str):
                             try:
-                                result_dict = json.loads(result)
+                                parsed = json.loads(result)
+                                _pd = 0
+                                while isinstance(parsed, str) and _pd < 3:
+                                    parsed = json.loads(parsed)
+                                    _pd += 1
+                                if isinstance(parsed, dict):
+                                    result_dict = parsed
+                                elif isinstance(parsed, list):
+                                    items = parsed
                             except (ValueError, TypeError):
                                 pass
                         elif isinstance(result, dict):
@@ -560,10 +669,21 @@ def index_enhancements_issues(days_back: int | None = 365) -> list[dict[str, Any
                             items = result
                         
                         if result_dict:
+                            # The GitHub MCP server returns search results in a
+                            # GraphQL-style {issues:[...], totalCount, pageInfo}
+                            # envelope, not the REST {items, total_count} shape.
+                            # Accept both, else every search returns 0 items and
+                            # issue bodies are lost (breaking PR enumeration).
                             if "items" in result_dict:
                                 items = result_dict["items"]
+                            elif "issues" in result_dict:
+                                items = result_dict["issues"]
+                            elif isinstance(result_dict.get("data"), list):
+                                items = result_dict["data"]
                             if "total_count" in result_dict:
                                 total_count = result_dict["total_count"]
+                            elif "totalCount" in result_dict:
+                                total_count = result_dict["totalCount"]
                             if result_dict.get("incomplete_results"):
                                 log(f"Warning: Search results for {state} issues may be incomplete", node="indexer", level="WARNING")
                         
@@ -658,6 +778,18 @@ def index_enhancements_issues(days_back: int | None = 365) -> list[dict[str, Any
                 issues_result = _call_list_issues(list_issues_tool)
             
             # Parse result
+            # Some MCP servers (the list_issues fallback) wrap the issue array
+            # in a dict; unwrap it to a bare list so the list branch below can
+            # extract bodies. Previously this fell through to a raw_data blob.
+            if isinstance(issues_result, dict):
+                unwrapped = _unwrap_issues_dict(issues_result)
+                log(
+                    f"issues_result is a dict (keys={list(issues_result.keys())}); "
+                    f"unwrapped to {len(unwrapped) if unwrapped is not None else 'None'} issues",
+                    node="indexer",
+                )
+                if unwrapped is not None:
+                    issues_result = unwrapped
             if isinstance(issues_result, str):
                 # Check if it's a rate limit error
                 if "rate limit" in issues_result.lower() or "rate_limit" in issues_result.lower():
@@ -673,6 +805,30 @@ def index_enhancements_issues(days_back: int | None = 365) -> list[dict[str, Any
                 # Try to parse as JSON
                 try:
                     parsed_issues = json.loads(issues_result)
+                    # MCP servers may double-encode the payload (a JSON string
+                    # whose value is itself JSON) and/or wrap the issue array in
+                    # a dict / content envelope. Unwrap nested strings first,
+                    # then dicts, logging the resolved shape for visibility so
+                    # issue bodies are actually populated (not lost to a blob).
+                    _unwrap_depth = 0
+                    while isinstance(parsed_issues, str) and _unwrap_depth < 3:
+                        try:
+                            parsed_issues = json.loads(parsed_issues)
+                        except (ValueError, TypeError):
+                            break
+                        _unwrap_depth += 1
+                    log(
+                        f"list_issues payload resolved to type={type(parsed_issues).__name__}"
+                        + (f" keys={list(parsed_issues.keys())} "
+                           f"totalCount={parsed_issues.get('totalCount')} "
+                           f"pageInfo={parsed_issues.get('pageInfo')}"
+                           if isinstance(parsed_issues, dict) else ""),
+                        node="indexer",
+                    )
+                    if isinstance(parsed_issues, dict):
+                        unwrapped = _unwrap_issues_dict(parsed_issues)
+                        if unwrapped is not None:
+                            parsed_issues = unwrapped
                     if isinstance(parsed_issues, list):
                         # Process as list
                         issues = []
@@ -772,8 +928,12 @@ def index_enhancements_issues(days_back: int | None = 365) -> list[dict[str, Any
                         log(f"Parsed {len(issues)} issues from JSON string ({vep_related_count} VEP-related)", node="indexer")
                         return issues
                 except json.JSONDecodeError:
-                    log("Could not parse issues string as JSON, returning raw data", node="indexer", level="DEBUG")
-                return [{"raw_data": issues_result[:15000]}]
+                    log("Could not parse issues string as JSON", node="indexer", level="DEBUG")
+                    return []
+                # Parsed as JSON but not a list (e.g. a dict wrapper we could
+                # not turn into issues): drop it rather than emit a fake entry.
+                log("Issues JSON string was not a list; returning no issues", node="indexer", level="WARNING")
+                return []
             elif isinstance(issues_result, list):
                 issues = []
                 for issue in issues_result:
@@ -873,7 +1033,11 @@ def index_enhancements_issues(days_back: int | None = 365) -> list[dict[str, Any
                 log(f"Indexed {len(issues)} issues ({vep_related_count} VEP-related)", node="indexer")
                 return issues
             else:
-                return [{"raw_data": str(issues_result)[:15000]}]
+                log(
+                    f"Unexpected issues_result type: {type(issues_result).__name__}",
+                    node="indexer", level="WARNING",
+                )
+                return []
                 
         except Exception as e:
             log(f"Error listing issues: {e}", node="indexer", level="WARNING")
@@ -887,61 +1051,12 @@ def index_enhancements_issues(days_back: int | None = 365) -> list[dict[str, Any
 
 
 def _extract_vep_issue_number(title: str, body: str) -> int | None:
-    """Extract VEP tracking issue number from PR title and body.
+    """Extract the VEP tracking issue number a PR references.
 
-    Priority order (structured declarations beat generic URL scanning):
-    1. Keyword declarations: "Tracking issue: #80", "VEP Tracker: #21"
-    2. Keyword + URL: "Tracking issue: .../issues/80"
-    3. VEP number in title: "VEP 165: ..."
-    4. Generic close keywords: "fixes #N", "closes #N"
-    5. Any enhancements issue URL (least reliable - catches footnotes/deps)
-
-    Returns:
-        Issue number or None
+    Thin wrapper over services.attribution.extract_tracking_issue, the single
+    unit-tested implementation of PR -> tracking-issue reference extraction.
     """
-    text_to_search = f"{title} {body}"
-    if not text_to_search.strip():
-        return None
-
-    # Pattern 1: Keyword declarations with inline number (most intentional)
-    keyword_patterns = [
-        r'tracking\s+issue[\s:]+#?(\d+)',
-        r'vep\s+tracker[\s:]+#?(\d+)',
-        r'tracker[\s:]+#?(\d+)',
-        r'vep\s+issue[\s:]+#?(\d+)',
-    ]
-    for pattern in keyword_patterns:
-        match = re.search(pattern, text_to_search, re.IGNORECASE)
-        if match:
-            return int(match.group(1))
-
-    # Pattern 2: Keyword followed by issue URL on the same line
-    keyword_url_pattern = re.compile(
-        r'(?:tracking\s+issue|vep\s+tracker|tracker|vep\s+issue)'
-        r'[\s:]+\S*github\.com/kubevirt/enhancements/issues/(\d+)',
-        re.IGNORECASE,
-    )
-    match = keyword_url_pattern.search(text_to_search)
-    if match:
-        return int(match.group(1))
-
-    # Pattern 3: VEP number in title
-    if title:
-        vep_title_match = re.search(r'VEP[- #]*0*(\d+)', title, re.IGNORECASE)
-        if vep_title_match:
-            return int(vep_title_match.group(1))
-
-    # Pattern 4: Generic close keywords
-    generic_match = re.search(r'(?:fixes|closes)[\s:]+#?(\d+)', text_to_search, re.IGNORECASE)
-    if generic_match:
-        return int(generic_match.group(1))
-
-    # Pattern 5: Any enhancements issue URL (fallback - may match footnotes/deps)
-    issue_url_match = re.search(r'github\.com/kubevirt/enhancements/issues/(\d+)', text_to_search)
-    if issue_url_match:
-        return int(issue_url_match.group(1))
-
-    return None
+    return extract_tracking_issue(title, body)
 
 
 def index_enhancements_prs(days_back: int | None = 365) -> list[dict[str, Any]]:
@@ -1426,6 +1541,88 @@ def index_kubevirt_prs(days_back: int | None = 365, fetch_reviews: bool = True) 
         return []
 
     return []
+
+
+def fetch_pr_metadata_by_number(pr_numbers: list[int], owner: str = "kubevirt", repo: str = "kubevirt") -> dict[int, dict[str, Any]]:
+    """Fetch real state/merged_at/base_ref metadata for a small explicit set of PR numbers.
+
+    Used to backfill metadata for impl PRs that are enumerated in a tracking
+    issue but absent from the bulk-indexed prs_index (e.g. beyond the fetch
+    window), so cycle-scoping filters can still apply to them.
+
+    Args:
+        pr_numbers: Explicit list of PR numbers to fetch.
+        owner: Repo owner (default "kubevirt").
+        repo: Repo name (default "kubevirt").
+
+    Returns:
+        Dict mapping pr_number -> {"state": str, "merged_at": str|None, "base_ref": str|None}.
+        PR numbers that fail to fetch are omitted from the result.
+    """
+    if not pr_numbers:
+        return {}
+
+    log(f"Fetching PR metadata for {len(pr_numbers)} widened impl PR(s): {sorted(pr_numbers)}", node="indexer")
+
+    try:
+        tools = get_mcp_tools_by_name("github")
+    except Exception as e:
+        log(f"Error getting MCP tools for PR metadata fetch: {e}", node="indexer", level="WARNING")
+        return {}
+
+    get_pr_tool = None
+    tool_names_to_try = ["pull_request_read", "mcp_GitHub_pull_request_read", "get_pull_request", "mcp_GitHub_get_pull_request"]
+    for tool in tools:
+        if tool.name in tool_names_to_try:
+            get_pr_tool = tool
+            break
+    if not get_pr_tool:
+        for tool in tools:
+            tool_name_lower = tool.name.lower()
+            if "pull_request" in tool_name_lower and ("read" in tool_name_lower or "get" in tool_name_lower):
+                get_pr_tool = tool
+                break
+
+    if not get_pr_tool:
+        log(f"Could not find pull_request_read/get_pull_request tool. Available tools: {[t.name for t in tools]}", node="indexer", level="WARNING")
+        return {}
+
+    is_consolidated = "pull_request_read" in get_pr_tool.name.lower()
+
+    result: dict[int, dict[str, Any]] = {}
+    for pr_num in pr_numbers:
+        try:
+            kwargs: dict[str, Any] = {"owner": owner, "repo": repo, "pullNumber": pr_num}
+            if is_consolidated:
+                kwargs["method"] = "get"
+            pr_result = _call_with_retry(get_pr_tool.func, **kwargs)
+
+            if isinstance(pr_result, str) and "Error calling tool" in pr_result:
+                log(f"Error fetching metadata for widened PR #{pr_num}: {pr_result[:200]}", node="indexer", level="WARNING")
+                continue
+
+            if isinstance(pr_result, str):
+                pr_result = json.loads(pr_result)
+            if isinstance(pr_result, str):
+                pr_result = json.loads(pr_result)
+
+            if not isinstance(pr_result, dict):
+                log(f"Unexpected get_pull_request result type for PR #{pr_num}: {type(pr_result)}", node="indexer", level="WARNING")
+                continue
+
+            is_merged = pr_result.get("merged", False) or (pr_result.get("merged_at") is not None)
+            state = "merged" if is_merged else pr_result.get("state", "")
+            merged_at = pr_result.get("merged_at")
+            base = pr_result.get("base")
+            base_ref = pr_result.get("base_ref") or (base.get("ref") if isinstance(base, dict) else None)
+
+            result[pr_num] = {"state": state, "merged_at": merged_at, "base_ref": base_ref}
+        except Exception as e:
+            log(f"Error fetching metadata for widened PR #{pr_num}: {e}", node="indexer", level="WARNING")
+            continue
+
+    log(f"Fetched metadata for {len(result)}/{len(pr_numbers)} widened impl PR(s)", node="indexer")
+    return result
 
 
 def index_enhancements_readme() -> dict[str, Any] | None:
@@ -2150,28 +2347,6 @@ def index_vep_pr_mappings(prs_index: list[dict[str, Any]] | None = None) -> dict
     return mappings
 
 
-def _extract_proposal_prs_from_issue(issue_body: str) -> list[int]:
-    """Extract proposal PR numbers from tracking issue body.
-
-    The tracking issue is the authoritative source for proposal PRs.
-    Looks for enhancements PR URLs in the issue body.
-
-    Returns:
-        List of PR numbers
-    """
-    if not issue_body:
-        return []
-
-    pr_numbers = set()
-
-    # Pattern for enhancements PR URLs (most reliable)
-    pr_url_pattern = re.compile(r'github\.com/kubevirt/enhancements/pull/(\d+)')
-    for match in pr_url_pattern.finditer(issue_body):
-        pr_numbers.add(int(match.group(1)))
-
-    return sorted(pr_numbers)
-
-
 def index_approved_vep_prs(prs_index: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """Index PRs with 'approved-vep' label from kubevirt/kubevirt.
 
@@ -2654,22 +2829,28 @@ def create_indexed_context(days_back: int | None = 365, cache_max_age_minutes: i
     indexed_context["release_deadlines"] = release_info.get("release_deadlines", {}) if release_info else {}
     indexed_context["previous_release_code_freeze"] = release_info.get("previous_release_code_freeze") if release_info else None
 
-    # Compute cycle_start_date: earliest schedule date (primary) or prev CF + 14d (fallback)
+    # Compute cycle_start_date. The current cycle opens when the *previous*
+    # release hits Code Freeze (master reopens for the next release), so the
+    # previous release's Code Freeze is the authoritative boundary. The earliest
+    # schedule date is a poor proxy - it picks up unrelated rows (e.g. Kubernetes
+    # dependency dates) that predate the real cycle start - so it is only a
+    # fallback when the previous Code Freeze is unavailable.
     cycle_start_date = None
     deadlines = indexed_context.get("release_deadlines", {})
-    cycle_start_from_schedule = deadlines.get("cycle_start")
-    if cycle_start_from_schedule:
-        cycle_start_date = cycle_start_from_schedule
-        log(f"Cycle start date from schedule: {cycle_start_date}", node="indexer")
-    elif indexed_context["previous_release_code_freeze"]:
+    prev_cf = indexed_context.get("previous_release_code_freeze")
+    if prev_cf:
         try:
-            prev_cf = date.fromisoformat(indexed_context["previous_release_code_freeze"])
-            cycle_start_date = (prev_cf + timedelta(days=14)).isoformat()
-            log(f"Cycle start date from prev CF + 14d fallback: {cycle_start_date}", node="indexer")
+            cycle_start_date = date.fromisoformat(prev_cf).isoformat()
+            log(f"Cycle start date from previous release code freeze: {cycle_start_date}", node="indexer")
         except (ValueError, TypeError):
-            log("Could not compute cycle_start_date from previous_release_code_freeze", node="indexer", level="WARNING")
-    else:
-        log("No cycle_start_date available: no schedule dates and no previous CF", node="indexer", level="WARNING")
+            log("Could not parse previous_release_code_freeze for cycle_start_date", node="indexer", level="WARNING")
+    if not cycle_start_date:
+        cycle_start_from_schedule = deadlines.get("cycle_start")
+        if cycle_start_from_schedule:
+            cycle_start_date = cycle_start_from_schedule
+            log(f"Cycle start date fallback from earliest schedule date: {cycle_start_date}", node="indexer", level="WARNING")
+        else:
+            log("No cycle_start_date available: no previous CF and no schedule dates", node="indexer", level="WARNING")
     indexed_context["cycle_start_date"] = cycle_start_date
 
     # Log summary
