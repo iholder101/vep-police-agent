@@ -8,9 +8,11 @@ Provides utilities to build per-VEP summary tables with:
 """
 
 import re
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 from typing import Any
 
+from services.attribution import parse_enumerated_impl_prs, resolve_impl_owner
 from services.indexer import create_indexed_context
 from services.utils import log
 
@@ -47,12 +49,20 @@ def get_urgency_level(vep: Any) -> tuple[str, str]:
     return ("GREEN", "green")
 
 
-def build_vep_summary_table(veps: list[Any], indexed_context: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def build_vep_summary_table(
+    veps: list[Any],
+    indexed_context: dict[str, Any] | None = None,
+    pr_metadata_fetcher: Callable[[list[int]], dict[int, dict[str, Any]]] | None = None,
+) -> list[dict[str, Any]]:
     """Build per-VEP summary table data.
 
     Args:
         veps: List of VEPInfo objects
         indexed_context: Optional indexed context (will be fetched if not provided)
+        pr_metadata_fetcher: Optional override for fetching real metadata (state,
+            merged_at, base_ref) of impl PRs enumerated in a tracking issue but
+            absent from prs_index ("widened" PRs). Defaults to
+            services.indexer.fetch_pr_metadata_by_number. Injectable for tests.
 
     Returns:
         List of dicts with table row data:
@@ -73,12 +83,12 @@ def build_vep_summary_table(veps: list[Any], indexed_context: dict[str, Any] | N
 
     enhancements_prs = indexed_context.get("enhancements_prs", [])
     enhancements_by_number = {pr.get("number"): pr for pr in enhancements_prs}
-    board_veps = indexed_context.get("board_veps", {})
     issues_index = indexed_context.get("issues_index", [])
+    kubevirt_prs = indexed_context.get("prs_index", [])
 
     # Build base_ref lookup from prs_index for filtering backport impl PRs
     prs_by_number = {}
-    for pr in indexed_context.get("prs_index", []):
+    for pr in kubevirt_prs:
         if isinstance(pr, dict) and pr.get("number"):
             prs_by_number[pr["number"]] = pr
 
@@ -89,48 +99,107 @@ def build_vep_summary_table(veps: list[Any], indexed_context: dict[str, Any] | N
         if issue_num:
             issues_by_number[issue_num] = issue
 
+    # ---- Precompute implementation-PR ownership (one PR -> one VEP) ----
+    # Attribution is reference-based, never title-based. Two signals per PR:
+    # the PR's self-declared tracking issue and the tracking issue's own
+    # enumerated PR list; resolve_impl_owner reconciles them (a reciprocated
+    # link wins on conflict). Computed once so each PR lands on a single VEP.
+    in_scope_issues = {v.tracking_issue_id for v in veps}
+    enumerated_by_pr: dict[int, set[int]] = {}
+    for vep in veps:
+        issue = issues_by_number.get(vep.tracking_issue_id)
+        body = (issue.get("body") or issue.get("body_preview") or "") if issue else ""
+        for pr_num in parse_enumerated_impl_prs(body):
+            enumerated_by_pr.setdefault(pr_num, set()).add(vep.tracking_issue_id)
+
+    impl_by_vep: dict[int, list[dict[str, Any]]] = {}
+    for pr in kubevirt_prs:
+        if not isinstance(pr, dict):
+            continue
+        pr_num = pr.get("number")
+        if not pr_num:
+            continue
+        pr_url = pr.get("url") or pr.get("html_url") or f"https://github.com/kubevirt/kubevirt/pull/{pr_num}"
+        if "enhancements" in pr_url:
+            continue  # proposal PR, never an implementation PR
+        self_ref = pr.get("vep_issue_number")
+        if self_ref not in in_scope_issues:
+            self_ref = None
+        enumerating = enumerated_by_pr.get(pr_num, set()) & in_scope_issues
+        owner, conflict = resolve_impl_owner(self_ref, enumerating)
+        if owner is None:
+            continue
+        if conflict:
+            log(
+                f"Impl PR #{pr_num}: attribution conflict "
+                f"(self-ref {pr.get('vep_issue_number')}, enumerated by {sorted(enumerating)}) "
+                f"-> assigned VEP #{owner}",
+                node="alert_formatting",
+            )
+        impl_by_vep.setdefault(owner, []).append({
+            "number": pr_num,
+            "url": pr_url,
+            "_state": pr.get("state"),
+            "_merged_at": pr.get("merged_at"),
+        })
+
+    # Widen: attribute issue-enumerated impl PRs that never appeared in
+    # prs_index (e.g. old PRs beyond the ~1200-PR fetch window). They carry no
+    # self-ref, so resolve_impl_owner keys purely on the enumerating issue
+    # (unambiguous single issue -> that VEP). Real metadata is fetched below so
+    # they still go through the same cycle-scoping filters as indexed PRs.
+    already_placed = {p["number"] for prs in impl_by_vep.values() for p in prs}
+    widened: list[tuple[int, int]] = []  # (pr_num, owner)
+    for pr_num, enumerating_issues in enumerated_by_pr.items():
+        if pr_num in already_placed:
+            continue
+        enumerating = enumerating_issues & in_scope_issues
+        owner, conflict = resolve_impl_owner(None, enumerating)
+        if owner is None:
+            continue
+        if conflict:
+            log(
+                f"Impl PR #{pr_num}: enumerated by multiple in-scope issues "
+                f"{sorted(enumerating)} and absent from prs_index -> left unlinked",
+                node="alert_formatting",
+            )
+            continue
+        widened.append((pr_num, owner))
+
+    if widened:
+        fetcher = pr_metadata_fetcher
+        if fetcher is None:
+            from services.indexer import fetch_pr_metadata_by_number
+            fetcher = fetch_pr_metadata_by_number
+        meta = fetcher(sorted({pr_num for pr_num, _ in widened}))
+        for pr_num, owner in widened:
+            m = meta.get(pr_num, {})
+            if not m:
+                log(
+                    f"Impl PR #{pr_num}: could not fetch metadata for widened PR "
+                    f"-> including without cycle-scoping verification",
+                    node="alert_formatting",
+                    level="WARNING",
+                )
+            impl_by_vep.setdefault(owner, []).append({
+                "number": pr_num,
+                "url": f"https://github.com/kubevirt/kubevirt/pull/{pr_num}",
+                "_state": m.get("state"),
+                "_merged_at": m.get("merged_at"),
+                "_base_ref": m.get("base_ref"),
+            })
+
     table_rows = []
 
     for vep in veps:
-        # Get proposal PRs for this VEP from multiple sources
-        proposal_pr_numbers = set()
-
-        # Extract VEP number from VEP name (e.g., "vep-0016" -> 16)
-        vep_number = None
-        vep_match = re.search(r'vep-?(\d+)', vep.name, re.IGNORECASE)
-        if vep_match:
-            vep_number = int(vep_match.group(1))
-
-        # Source 1: Extract from tracking issue body
-        issue = issues_by_number.get(vep.tracking_issue_id)
-        if issue:
-            body = issue.get("body", "") or issue.get("body_preview", "")
-            if body:
-                # Extract enhancements PR URLs from issue body
-                pr_url_pattern = re.compile(r'github\.com/kubevirt/enhancements/pull/(\d+)')
-                for match in pr_url_pattern.finditer(body):
-                    proposal_pr_numbers.add(int(match.group(1)))
-
-        # Source 2: Match PRs by VEP number in PR title (MOST RELIABLE)
-        # Many proposal PRs have titles like "VEP 16: Title" or "vep-0016: Title"
-        if vep_number:
-            for pr in enhancements_prs:
-                pr_title = pr.get("title", "")
-                # Look for VEP number in PR title
-                title_vep_patterns = [
-                    rf'VEP[- ]?{vep_number}[\s:]',  # "VEP 16:" or "VEP-16:"
-                    rf'vep[- ]?{vep_number:04d}[\s:]',  # "vep-0016:"
-                    rf'vep[- ]?{vep_number}[\s:]',  # "vep-16:" or "vep 16:"
-                ]
-                for pattern in title_vep_patterns:
-                    if re.search(pattern, pr_title, re.IGNORECASE):
-                        proposal_pr_numbers.add(pr.get("number"))
-                        break
-
-        # Source 3: Match from enhancements_prs by vep_issue_number (fallback)
-        for pr in enhancements_prs:
-            if pr.get("vep_issue_number") == vep.tracking_issue_id:
-                proposal_pr_numbers.add(pr.get("number"))
+        # Proposal PRs: attribute strictly by the PR's own tracking-issue
+        # reference (one PR -> one VEP). vep_issue_number is set at index time
+        # by the hardened extractor; title / issue-body scanning is not used.
+        proposal_pr_numbers = {
+            pr.get("number")
+            for pr in enhancements_prs
+            if pr.get("vep_issue_number") == vep.tracking_issue_id and pr.get("number")
+        }
 
         # Build proposal PRs list with URLs and state/merged_at for filtering
         proposal_prs = []
@@ -174,114 +243,9 @@ def build_vep_summary_table(veps: list[Any], indexed_context: dict[str, Any] | N
         # Strip internal fields from proposal PRs
         proposal_prs = [{"number": p["number"], "url": p["url"]} for p in proposal_prs]
 
-        # Get implementation PRs from multiple sources
-        # IMPORTANT: Implementation PRs can NEVER be from kubevirt/enhancements (those are proposal PRs)
-        impl_pr_numbers = set()
-        impl_prs = []
-
-        # Source 1: Use vep.implementation_prs if available (from board data)
-        if vep.implementation_prs:
-            for pr in vep.implementation_prs:
-                # Skip enhancements PRs - they are proposal PRs, not implementation PRs
-                if "enhancements" in (pr.url or ""):
-                    continue
-                if pr.number not in impl_pr_numbers:
-                    impl_pr_numbers.add(pr.number)
-                    impl_prs.append({
-                        "number": pr.number,
-                        "url": pr.url,
-                        "_state": pr.state,
-                        "_merged_at": pr.merged_at,
-                    })
-        else:
-            # Fall back to board_veps (in case VEPInfo doesn't have them)
-            board_vep = board_veps.get(vep.tracking_issue_id, {})
-            board_impl_prs = board_vep.get("impl_prs", [])
-            for pr in board_impl_prs:
-                pr_num = pr.get("number")
-                pr_url = pr.get("url", "")
-                # Skip enhancements PRs
-                if "enhancements" in pr_url:
-                    continue
-                if pr_num and pr_num not in impl_pr_numbers:
-                    impl_pr_numbers.add(pr_num)
-                    impl_prs.append({
-                        "number": pr_num,
-                        "url": pr_url,
-                        "_state": pr.get("state"),
-                        "_merged_at": pr.get("merged_at"),
-                    })
-
-        # Cross-check board-sourced impl PRs: skip if PR title names a different VEP
-        if vep_number and impl_prs:
-            title_vep_re = re.compile(r'vep[-\s#]?0*(\d+)', re.IGNORECASE)
-            filtered = []
-            for p in impl_prs:
-                pr_data = prs_by_number.get(p["number"])
-                if pr_data:
-                    pr_title = pr_data.get("title", "")
-                    tveps = title_vep_re.findall(pr_title)
-                    if tveps and str(vep_number) not in tveps:
-                        log(f"VEP {vep.name}: skipping board impl PR #{p['number']} "
-                            f"(title references VEP {','.join(tveps)}, not {vep_number})",
-                            node="alert_formatting")
-                        impl_pr_numbers.discard(p["number"])
-                        continue
-                filtered.append(p)
-            impl_prs = filtered
-
-        # Source 2: Match from kubevirt PRs by vep_issue_number
-        # (PRs that reference this VEP issue in their description)
-        kubevirt_prs = indexed_context.get("prs_index", [])
-        for pr in kubevirt_prs:
-            if pr.get("vep_issue_number") == vep.tracking_issue_id:
-                pr_num = pr.get("number")
-                pr_url = pr.get("url", f"https://github.com/kubevirt/kubevirt/pull/{pr_num}")
-                if "enhancements" in pr_url:
-                    continue
-                base_ref = pr.get("base_ref")
-                if base_ref and base_ref not in ("main", "master"):
-                    continue
-                if pr_num and pr_num not in impl_pr_numbers:
-                    impl_pr_numbers.add(pr_num)
-                    impl_prs.append({
-                        "number": pr_num,
-                        "url": pr_url,
-                        "_state": pr.get("state"),
-                        "_merged_at": pr.get("merged_at"),
-                    })
-
-        # Source 3: Match from vep_to_pr_mappings (PRs with "vep-62" etc. in title/body)
-        # Skip PRs whose title clearly indicates a different VEP (body-only mentions
-        # are often references/dependencies, not implementations).
-        vep_to_pr_mappings = indexed_context.get("vep_to_pr_mappings", {})
-        vep_key = str(vep.tracking_issue_id)
-        title_vep_pattern = re.compile(r'vep[-\s#]?0*(\d+)', re.IGNORECASE)
-        for pr in vep_to_pr_mappings.get(vep_key, []):
-            pr_num = pr.get("number")
-            pr_url = pr.get("url", f"https://github.com/kubevirt/kubevirt/pull/{pr_num}")
-            if "enhancements" in pr_url:
-                continue
-            base_ref = pr.get("base_ref")
-            if not base_ref and pr_num:
-                idx = prs_by_number.get(pr_num)
-                if idx:
-                    base_ref = idx.get("base_ref")
-            if base_ref and base_ref not in ("main", "master"):
-                continue
-            # Skip if PR title references a different VEP number
-            pr_title = pr.get("title", "")
-            title_vep_matches = title_vep_pattern.findall(pr_title)
-            if title_vep_matches and vep_key not in title_vep_matches:
-                continue
-            if pr_num and pr_num not in impl_pr_numbers:
-                impl_pr_numbers.add(pr_num)
-                impl_prs.append({
-                    "number": pr_num,
-                    "url": pr_url,
-                    "_state": pr.get("state"),
-                    "_merged_at": pr.get("merged_at"),
-                })
+        # Implementation PRs: from the precomputed one-PR-one-VEP ownership map.
+        impl_prs = [dict(p) for p in impl_by_vep.get(vep.tracking_issue_id, [])]
+        impl_pr_numbers = {p["number"] for p in impl_prs}
 
         # Exclude impl PRs that are actually from the enhancements repo (proposal PRs)
         # Compare by URL since the same PR number can exist in both repos
@@ -316,10 +280,9 @@ def build_vep_summary_table(veps: list[Any], indexed_context: dict[str, Any] | N
         filtered = []
         for p in impl_prs:
             pr_index_data = prs_by_number.get(p["number"])
-            if pr_index_data:
-                base_ref = pr_index_data.get("base_ref")
-                if base_ref and base_ref not in ("main", "master"):
-                    continue
+            base_ref = (pr_index_data or {}).get("base_ref") or p.get("_base_ref")
+            if base_ref and base_ref not in ("main", "master"):
+                continue
             filtered.append(p)
         impl_prs = filtered
         removed = before_count - len(impl_prs)

@@ -342,6 +342,11 @@ def parse_args():
         action="store_true",
         help="Clear all history and caches (state_cache.json, index_cache.json, history snapshots, alert persistence) and exit. Useful for fresh starts."
     )
+    parser.add_argument(
+        "--attribution-dump",
+        action="store_true",
+        help="Dump per-VEP Proposal/Impl PR attribution as JSON (indexer + deterministic attribution only, no LLM, no board writes) and exit. For validating PR->VEP attribution."
+    )
     return parser.parse_args()
 
 
@@ -463,7 +468,50 @@ def main():
 
     # Set up credentials from CLI args
     setup_credentials(args)
-    
+
+    # Handle --attribution-dump: deterministic PR->VEP attribution only (indexer +
+    # attribution, no LLM, no board writes), printed as JSON, then exit. For
+    # validating attribution against the live board without running the full graph.
+    if args.attribution_dump:
+        from nodes.alert_formatting import build_vep_summary_table
+        from nodes.fetch_veps import fetch_veps_node
+        from services.indexer import create_indexed_context
+        dump_cache_minutes = 0 if args.no_index_cache else args.index_cache_minutes
+        veps = fetch_veps_node({"index_cache_minutes": dump_cache_minutes}).get("veps", [])
+        ctx = create_indexed_context(cache_max_age_minutes=dump_cache_minutes)
+        rows = build_vep_summary_table(veps, indexed_context=ctx)
+        dump = {
+            "current_release": ctx.get("current_release"),
+            "cycle_start_date": ctx.get("cycle_start_date"),
+            "previous_release_code_freeze": ctx.get("previous_release_code_freeze"),
+            "vep_count": len(rows),
+            "veps": [
+                {
+                    "vep": r["vep_number"],
+                    "name": r["vep_name"],
+                    "proposal_prs": sorted(p["number"] for p in r["proposal_prs"]),
+                    "impl_prs": sorted(p["number"] for p in r["impl_prs"]),
+                }
+                for r in sorted(rows, key=lambda r: r["vep_number"])
+            ],
+        }
+        # Also persist to a file in the rw-mounted output/ dir so the dump can
+        # be pulled cleanly. Scraping journald truncates this large JSON.
+        # main.py sits on a read-only mount, but output/ is mounted read-write.
+        dump_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output")
+        try:
+            os.makedirs(dump_dir, exist_ok=True)
+            dump_path = os.path.join(dump_dir, "attribution_dump.json")
+            with open(dump_path, "w") as _f:
+                json.dump(dump, _f, indent=2)
+            log(f"Wrote attribution dump to {dump_path}", node="main")
+        except OSError as e:
+            log(f"Could not write attribution dump file: {e}", node="main", level="WARNING")
+        print("ATTRIBUTION_DUMP_JSON_START")
+        print(json.dumps(dump, indent=2))
+        print("ATTRIBUTION_DUMP_JSON_END")
+        return
+
     # Handle index cache flags
     index_cache_minutes = 0 if args.no_index_cache else args.index_cache_minutes
     if args.no_index_cache:
