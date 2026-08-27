@@ -76,6 +76,7 @@ def _create_args_schema_from_json_schema(tool_name: str, json_schema: dict[str, 
     This ensures proper type information is available for Gemini's function calling.
     """
     if not json_schema or 'properties' not in json_schema:
+        log(f"No flat 'properties' in JSON schema for tool '{tool_name}' - cannot build typed args_schema; LLM will get a generic kwargs schema and may send empty args", node="mcp_factory", level="WARNING")
         return None
 
     # Fix the schema for Gemini compatibility
@@ -126,6 +127,7 @@ def _create_args_schema_from_json_schema(tool_name: str, json_schema: dict[str, 
             field_definitions[param_name] = (python_type | None, Field(default=None, description=param_desc))
 
     if not field_definitions:
+        log(f"No field definitions built for tool '{tool_name}' - cannot build typed args_schema; LLM will get a generic kwargs schema and may send empty args", node="mcp_factory", level="WARNING")
         return None
 
     # Create model with a unique name based on tool name
@@ -133,7 +135,7 @@ def _create_args_schema_from_json_schema(tool_name: str, json_schema: dict[str, 
     try:
         return create_model(model_name, **field_definitions)
     except Exception as e:
-        log(f"Failed to create args_schema for {tool_name}: {e}", node="mcp_factory", level="DEBUG")
+        log(f"Failed to create args_schema for {tool_name}: {e}", node="mcp_factory", level="WARNING")
         return None
 
 # ExceptionGroup is available in Python 3.11+ as a built-in

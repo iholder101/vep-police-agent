@@ -214,28 +214,17 @@ def scheduler_node(state: VEPState) -> Any:
                     next_tasks.append("run_monitoring")
                 # Note: update_sheets and alert_summary will be scheduled after analyze_combined completes
     
-    # Also check if sheets_need_update flag is set (from analyze_combined)
-    # Only add if VEPs have been analyzed (or if skip_monitoring is enabled)
-    sheets_need_update = state.get("sheets_need_update", False)
-    if sheets_need_update and "update_sheets" not in next_tasks:
-        if not veps_need_analysis or skip_monitoring:
-            log("sheets_need_update flag is set, adding update_sheets to queue", node="scheduler")
-            next_tasks.append("update_sheets")
-        else:
-            log("sheets_need_update flag is set, but VEPs need analysis first - will schedule after analyze_combined", node="scheduler")
-    
-    # After analyze_combined completes, schedule update_sheets, update_project_board, and alert_summary
-    # But only if they haven't run since analyze_combined completed
+    # Schedule post-analysis tasks. IMPORTANT ORDERING: the graph router runs
+    # only next_tasks[0] each tick and then rebuilds this list, so list order is
+    # effectively task priority. update_project_board and alert_summary must be
+    # queued BEFORE update_sheets - otherwise a persistently-failing update_sheets
+    # (which keeps sheets_need_update=True) sits at index 0 forever and starves
+    # the board and alerts.
     analyze_combined_time = last_check_times.get("analyze_combined")
+    update_sheets_time = last_check_times.get("update_sheets")
     if analyze_combined_time:
-        update_sheets_time = last_check_times.get("update_sheets")
         update_board_time = last_check_times.get("update_project_board")
         alert_summary_time = last_check_times.get("alert_summary")
-
-        # Schedule update_sheets if it hasn't run since analyze_combined
-        if "update_sheets" not in next_tasks and (update_sheets_time is None or update_sheets_time < analyze_combined_time):
-            log("analyze_combined completed, scheduling update_sheets", node="scheduler")
-            next_tasks.append("update_sheets")
 
         # Schedule update_project_board if it hasn't run since analyze_combined
         if "update_project_board" not in next_tasks and not state.get("skip_update_board", False) and (update_board_time is None or update_board_time < analyze_combined_time):
@@ -246,6 +235,25 @@ def scheduler_node(state: VEPState) -> Any:
         if "alert_summary" not in next_tasks and (alert_summary_time is None or alert_summary_time < analyze_combined_time):
             log("analyze_combined completed, scheduling alert_summary", node="scheduler")
             next_tasks.append("alert_summary")
+
+        # Schedule update_sheets LAST, and only once per analysis epoch. Gating on
+        # "hasn't run since analyze_combined" means a failing sheets write retries
+        # on the NEXT full cycle instead of tight-looping at index 0 every tick.
+        if "update_sheets" not in next_tasks and (update_sheets_time is None or update_sheets_time < analyze_combined_time):
+            log("analyze_combined completed, scheduling update_sheets", node="scheduler")
+            next_tasks.append("update_sheets")
+
+    # Skip-monitoring path: analyze_combined never runs, so the block above is
+    # inert. Fall back to the sheets_need_update flag ONLY when analysis has never
+    # completed (analyze_combined_time is None), keeping update_sheets after any
+    # board/alert tasks already queued this tick.
+    sheets_need_update = state.get("sheets_need_update", False)
+    if sheets_need_update and "update_sheets" not in next_tasks and not analyze_combined_time:
+        if not veps_need_analysis or skip_monitoring:
+            log("sheets_need_update flag is set, adding update_sheets to queue", node="scheduler")
+            next_tasks.append("update_sheets")
+        else:
+            log("sheets_need_update flag is set, but VEPs need analysis first - will schedule after analyze_combined", node="scheduler")
     
     # Log scheduling decision
     if next_tasks:

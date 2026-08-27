@@ -1,6 +1,3 @@
-Exit code: 0
-
---- stdout ---
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
