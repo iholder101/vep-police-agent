@@ -12,7 +12,7 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime
 from typing import Any
 
-from services.attribution import parse_enumerated_impl_prs, resolve_impl_owner
+from services.attribution import resolve_impl_pr_ownership
 from services.indexer import create_indexed_context
 from services.utils import log
 
@@ -130,17 +130,18 @@ def build_vep_summary_table(
     # ---- Precompute implementation-PR ownership (one PR -> one VEP) ----
     # Attribution is reference-based, never title-based. Two signals per PR:
     # the PR's self-declared tracking issue and the tracking issue's own
-    # enumerated PR list; resolve_impl_owner reconciles them (a reciprocated
-    # link wins on conflict). Computed once so each PR lands on a single VEP.
-    in_scope_issues = {v.tracking_issue_id for v in veps}
-    enumerated_by_pr: dict[int, set[int]] = {}
+    # enumerated PR list; resolve_impl_pr_ownership (shared with fetch_veps)
+    # reconciles them (a reciprocated link wins on conflict). Computed once so
+    # each PR lands on a single VEP.
+    issue_bodies_by_id: dict[int, str] = {}
     for vep in veps:
         issue = issues_by_number.get(vep.tracking_issue_id)
-        body = (issue.get("body") or issue.get("body_preview") or "") if issue else ""
-        for pr_num in parse_enumerated_impl_prs(body):
-            enumerated_by_pr.setdefault(pr_num, set()).add(vep.tracking_issue_id)
+        issue_bodies_by_id[vep.tracking_issue_id] = (
+            (issue.get("body") or issue.get("body_preview") or "") if issue else ""
+        )
 
-    impl_by_vep: dict[int, list[dict[str, Any]]] = {}
+    pr_self_refs: dict[int, int | None] = {}
+    kubevirt_impl_prs_by_number: dict[int, dict[str, Any]] = {}
     for pr in kubevirt_prs:
         if not isinstance(pr, dict):
             continue
@@ -150,18 +151,21 @@ def build_vep_summary_table(
         pr_url = pr.get("url") or pr.get("html_url") or f"https://github.com/kubevirt/kubevirt/pull/{pr_num}"
         if "enhancements" in pr_url:
             continue  # proposal PR, never an implementation PR
-        self_ref = pr.get("vep_issue_number")
-        if self_ref not in in_scope_issues:
-            self_ref = None
-        enumerating = enumerated_by_pr.get(pr_num, set()) & in_scope_issues
-        owner, conflict = resolve_impl_owner(self_ref, enumerating)
+        pr_self_refs[pr_num] = pr.get("vep_issue_number")
+        kubevirt_impl_prs_by_number[pr_num] = pr
+
+    ownership = resolve_impl_pr_ownership(issue_bodies_by_id, pr_self_refs)
+
+    impl_by_vep: dict[int, list[dict[str, Any]]] = {}
+    for pr_num, pr in kubevirt_impl_prs_by_number.items():
+        owner, conflict = ownership.get(pr_num, (None, False))
         if owner is None:
             continue
+        pr_url = pr.get("url") or pr.get("html_url") or f"https://github.com/kubevirt/kubevirt/pull/{pr_num}"
         if conflict:
             log(
                 f"Impl PR #{pr_num}: attribution conflict "
-                f"(self-ref {pr.get('vep_issue_number')}, enumerated by {sorted(enumerating)}) "
-                f"-> assigned VEP #{owner}",
+                f"(self-ref {pr.get('vep_issue_number')}) -> assigned VEP #{owner}",
                 node="alert_formatting",
             )
         impl_by_vep.setdefault(owner, []).append({
@@ -173,24 +177,21 @@ def build_vep_summary_table(
 
     # Widen: attribute issue-enumerated impl PRs that never appeared in
     # prs_index (e.g. old PRs beyond the ~1200-PR fetch window). They carry no
-    # self-ref, so resolve_impl_owner keys purely on the enumerating issue
+    # self-ref, so ownership was resolved purely from the enumerating issues
     # (unambiguous single issue -> that VEP). Real metadata is fetched below so
     # they still go through the same cycle-scoping filters as indexed PRs.
     already_placed = {p["number"] for prs in impl_by_vep.values() for p in prs}
     widened: list[tuple[int, int]] = []  # (pr_num, owner)
-    for pr_num, enumerating_issues in enumerated_by_pr.items():
-        if pr_num in already_placed:
+    for pr_num, (owner, conflict) in ownership.items():
+        if pr_num in already_placed or pr_num in pr_self_refs:
             continue
-        enumerating = enumerating_issues & in_scope_issues
-        owner, conflict = resolve_impl_owner(None, enumerating)
         if owner is None:
-            continue
-        if conflict:
-            log(
-                f"Impl PR #{pr_num}: enumerated by multiple in-scope issues "
-                f"{sorted(enumerating)} and absent from prs_index -> left unlinked",
-                node="alert_formatting",
-            )
+            if conflict:
+                log(
+                    f"Impl PR #{pr_num}: enumerated by multiple in-scope issues "
+                    "and absent from prs_index -> left unlinked",
+                    node="alert_formatting",
+                )
             continue
         widened.append((pr_num, owner))
 

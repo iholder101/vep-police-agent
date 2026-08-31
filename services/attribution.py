@@ -147,3 +147,49 @@ def resolve_impl_owner(
     if len(enum) >= 2:
         return None, True                   # several issues, no self-ref -> ambiguous
     return None, False                      # unlinked
+
+
+def resolve_impl_pr_ownership(
+    issue_bodies_by_id: dict[int, str],
+    pr_self_refs: dict[int, int | None],
+) -> dict[int, tuple[int | None, bool]]:
+    """Resolve the single owning VEP for a batch of implementation PRs.
+
+    This is the shared reconciliation step behind both the alert/board
+    summary table (``nodes.alert_formatting.build_vep_summary_table``) and
+    VEP discovery (``nodes.fetch_veps``). Both need the same answer to "which
+    VEP owns impl PR N" - keeping it in one place prevents the two call sites
+    from drifting apart and re-introducing cross-VEP double-listing (e.g. the
+    same impl PR appearing on two different tracking issues because each
+    issue's body happens to link it).
+
+    Args:
+        issue_bodies_by_id: in-scope tracking-issue id -> issue body text.
+            Used to build the global "which issues enumerate this PR" map
+            (see ``parse_enumerated_impl_prs``).
+        pr_self_refs: impl PR number -> the PR's own declared tracking-issue
+            reference, or None if the PR declares nothing in scope. PRs with
+            no self-ref info at all (not present in the caller's PR index)
+            should simply be omitted from this dict - they are still resolved
+            below via the enumerated-issues map alone.
+
+    Returns:
+        dict mapping every PR number that appears in ``pr_self_refs`` and/or
+        is enumerated by an issue body, to ``(owner_issue_id | None,
+        conflict)`` per ``resolve_impl_owner``'s semantics.
+    """
+    in_scope_issues = set(issue_bodies_by_id.keys())
+    enumerated_by_pr: dict[int, set[int]] = {}
+    for issue_id, body in issue_bodies_by_id.items():
+        for pr_num in parse_enumerated_impl_prs(body):
+            enumerated_by_pr.setdefault(pr_num, set()).add(issue_id)
+
+    all_pr_numbers = set(pr_self_refs.keys()) | set(enumerated_by_pr.keys())
+    ownership: dict[int, tuple[int | None, bool]] = {}
+    for pr_num in all_pr_numbers:
+        self_ref = pr_self_refs.get(pr_num)
+        if self_ref not in in_scope_issues:
+            self_ref = None
+        enumerating = enumerated_by_pr.get(pr_num, set()) & in_scope_issues
+        ownership[pr_num] = resolve_impl_owner(self_ref, enumerating)
+    return ownership
