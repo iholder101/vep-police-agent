@@ -12,6 +12,7 @@ from typing import Any
 
 from nodes.alert_formatting import format_pr_links_urls
 from services.graphql_client import (
+    clear_project_item_fields,
     get_project_field_metadata,
     update_project_item_fields,
 )
@@ -114,8 +115,17 @@ def update_project_board_node(state: VEPState) -> Any:
     skipped = 0
     total = len(table_rows)
 
+    # In-scope VEPs are exactly the ones in the (already scope-filtered)
+    # summary table, keyed by tracking issue number.
+    in_scope_ids: set[int] = set()
+
     for row in table_rows:
         vep_number = row.get("vep_number")
+        try:
+            in_scope_ids.add(int(vep_number))
+        except (TypeError, ValueError):
+            pass
+
         # board_veps keys may be int (in-memory) or str (after JSON cache round-trip)
         board_vep = board_veps.get(vep_number) or board_veps.get(str(vep_number)) or {}
         item_id = board_vep.get("item_id")
@@ -142,6 +152,41 @@ def update_project_board_node(state: VEPState) -> Any:
 
     log(f"Board update complete: {updated}/{total} items updated, {skipped} skipped",
         node="update_board")
+
+    # Reconciliation pass: clear the 4 agent-owned fields on every board item
+    # that is NOT in scope (e.g. "Removed from Milestone", "Complete", or
+    # next-cycle-only). Without this, an item that leaves scope keeps
+    # whatever stale values a prior cycle wrote forever, since fetch_veps
+    # drops out-of-scope items before the summary table is ever built.
+    cleared = 0
+    clear_skipped = 0
+    out_of_scope_total = 0
+
+    for raw_issue_number, board_vep in board_veps.items():
+        try:
+            issue_number = int(raw_issue_number)
+        except (TypeError, ValueError):
+            issue_number = raw_issue_number
+
+        if issue_number in in_scope_ids:
+            continue
+
+        out_of_scope_total += 1
+        item_id = board_vep.get("item_id")
+        if not item_id:
+            clear_skipped += 1
+            continue
+
+        count = clear_project_item_fields(project_id, item_id, expected_fields, fields_meta)
+        if count > 0:
+            cleared += 1
+        else:
+            clear_skipped += 1
+
+    if out_of_scope_total:
+        log(f"Board reconciliation complete: {cleared}/{out_of_scope_total} "
+            f"out-of-scope items cleared, {clear_skipped} skipped",
+            node="update_board")
 
     last_check_times["update_project_board"] = datetime.now(UTC)
     return {"last_check_times": last_check_times}

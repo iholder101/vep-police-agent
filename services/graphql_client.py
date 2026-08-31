@@ -242,6 +242,20 @@ mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: ProjectV2FieldVal
 }
 """
 
+# clearProjectV2ItemFieldValue actually unsets the field (no stored value at
+# all), unlike updateProjectV2ItemFieldValue with an empty string which sets
+# a real (empty) value. Use this for reconciliation-clearing so out-of-scope
+# items end up with a genuinely empty field, not a stray empty-string value.
+_CLEAR_FIELD_MUTATION = """
+mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!) {
+  clearProjectV2ItemFieldValue(
+    input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId }
+  ) {
+    projectV2Item { id }
+  }
+}
+"""
+
 # Module-level cache for field metadata (keyed by project_number)
 _field_metadata_cache: dict[int, dict[str, Any]] = {}
 
@@ -726,6 +740,83 @@ def update_project_item_fields(
         value = {"text": text_value}
 
         if update_project_item_field(project_id, item_id, field_id, value):
+            success_count += 1
+
+    return success_count
+
+
+def clear_project_item_field(
+    project_id: str,
+    item_id: str,
+    field_id: str,
+) -> bool:
+    """Unset a single field value on a project board item.
+
+    Uses clearProjectV2ItemFieldValue, which removes the field's stored
+    value entirely (as opposed to updateProjectV2ItemFieldValue with an
+    empty string, which stores an actual empty-string value).
+
+    Args:
+        project_id: Project node ID (e.g., "PVT_...")
+        item_id: Item node ID (e.g., "PVTI_...")
+        field_id: Field node ID (e.g., "PVTF_...")
+
+    Returns:
+        True on success, False on error
+    """
+    variables = {
+        "projectId": project_id,
+        "itemId": item_id,
+        "fieldId": field_id,
+    }
+
+    try:
+        result = execute_graphql_query(_CLEAR_FIELD_MUTATION, variables)
+    except Exception as e:
+        log(f"GraphQL clear mutation failed for field {field_id}: {e}", node="graphql", level="ERROR")
+        return False
+
+    if "errors" in result:
+        log(f"GraphQL clear mutation errors for field {field_id}: {result['errors']}", node="graphql", level="ERROR")
+        return False
+
+    return True
+
+
+def clear_project_item_fields(
+    project_id: str,
+    item_id: str,
+    field_names: list[str],
+    field_metadata: dict[str, Any],
+) -> int:
+    """Unset multiple fields on a project board item.
+
+    Looks up field IDs from metadata and calls clear_project_item_field()
+    for each field name. Used to reconcile agent-owned fields on board
+    items that are no longer in scope (e.g. removed from milestone).
+
+    Args:
+        project_id: Project node ID (e.g., "PVT_...")
+        item_id: Item node ID (e.g., "PVTI_...")
+        field_names: List of field names to clear, e.g.
+                     ["Agent Urgency", "Agent Comment"]
+        field_metadata: Field metadata from get_project_field_metadata(),
+                        specifically the "fields" sub-dict
+
+    Returns:
+        Count of successfully cleared fields
+    """
+    success_count = 0
+
+    for field_name in field_names:
+        field_info = field_metadata.get(field_name)
+        if not field_info:
+            log(f"Field '{field_name}' not found in project metadata, skipping", node="graphql", level="WARNING")
+            continue
+
+        field_id = field_info["id"]
+
+        if clear_project_item_field(project_id, item_id, field_id):
             success_count += 1
 
     return success_count
