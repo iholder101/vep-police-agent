@@ -31,8 +31,9 @@ _COMPLIANCE_FIELDS = {
 # Alert severity ordering (lower = higher priority)
 _SEVERITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 
-# Merge probability change threshold (percentage points) for anomaly detection
-_MERGE_PROB_ANOMALY_THRESHOLD = 40
+# Attention levels ordered from healthiest to most urgent, for level-transition
+# anomaly detection (e.g. ok -> needs_attention is worth flagging).
+_ATTENTION_ORDER = {"ok": 0, "watch": 1, "needs_attention": 2}
 
 # Maximum number of snapshot files to keep
 _MAX_SNAPSHOTS = 10
@@ -186,15 +187,11 @@ def _build_vep_record(
     """Build a single VEP record for the snapshot."""
     vep_num = vep.tracking_issue_id
 
-    # Sentiment and merge probability from analysis
-    risk = vep.analysis.get("risk_assessment", {}) if vep.analysis else {}
-    sentiment = risk.get("reviewer_sentiment", "unknown")
-    merge_prob = risk.get("merge_probability")
-    if merge_prob is not None:
-        try:
-            merge_prob = int(merge_prob)
-        except (ValueError, TypeError):
-            merge_prob = None
+    # Attention assessment from analysis
+    attention = vep.analysis.get("attention", {}) if vep.analysis else {}
+    attention_level = attention.get("attention_level", "unknown")
+    staleness = attention.get("staleness", {}) or {}
+    is_stale = staleness.get("is_stale", False)
 
     # Compliance
     compliance = {}
@@ -244,8 +241,8 @@ def _build_vep_record(
         "status": status,
         "promotion_phase": promotion_phase,
         "urgency": urgency_by_vep.get(vep_num),
-        "merge_probability": merge_prob,
-        "sentiment": sentiment,
+        "attention_level": attention_level,
+        "is_stale": is_stale,
         "compliance": compliance,
         "days_since_update": days_since_update,
         "review_lag_days": review_lag_days,
@@ -333,28 +330,24 @@ def _diff_snapshots(
         # Scalar fields
         # Exclude days_since_update and review_lag_days - they change daily and
         # create noise in every diff. They're still in the snapshot for reading.
-        for field in ["status", "promotion_phase", "urgency", "sentiment", "owner",
+        for field in ["status", "promotion_phase", "urgency", "attention_level", "owner",
                        "target_release"]:
             old_val = pv.get(field)
             new_val = cv.get(field)
             if old_val != new_val:
                 changes.append(f"{vep_id}: {field} {old_val} -> {new_val}")
 
-        # Merge probability
-        old_mp = pv.get("merge_probability")
-        new_mp = cv.get("merge_probability")
-        if old_mp != new_mp:
-            changes.append(f"{vep_id}: merge_probability {old_mp} -> {new_mp}")
-            # Anomaly: large change between two numeric values
-            if old_mp is not None and new_mp is not None:
-                try:
-                    if abs(int(new_mp) - int(old_mp)) > _MERGE_PROB_ANOMALY_THRESHOLD:
-                        anomalies.append(
-                            f"{vep_id}: merge probability changed by "
-                            f">{_MERGE_PROB_ANOMALY_THRESHOLD}pp ({old_mp} -> {new_mp})"
-                        )
-                except (ValueError, TypeError):
-                    pass
+        # Attention level-transition anomaly (e.g. ok -> needs_attention is a
+        # regression worth flagging; the reverse or same-severity moves are not).
+        old_level = pv.get("attention_level")
+        new_level = cv.get("attention_level")
+        if old_level != new_level:
+            old_rank = _ATTENTION_ORDER.get(old_level)
+            new_rank = _ATTENTION_ORDER.get(new_level)
+            if old_rank is not None and new_rank is not None and new_rank > old_rank:
+                anomalies.append(
+                    f"{vep_id}: attention regressed {old_level} -> {new_level}"
+                )
 
         # Compliance sub-fields
         old_comp = pv.get("compliance", {})

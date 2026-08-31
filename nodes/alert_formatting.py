@@ -4,7 +4,7 @@ Provides utilities to build per-VEP summary tables with:
 - VEP #, Title
 - Proposal PR(s) and Impl PR(s) links
 - Urgency indicators (RED/YELLOW/GREEN)
-- Status comments from LLM risk assessment
+- Status comments from the VEP's attention assessment
 """
 
 import re
@@ -16,37 +16,65 @@ from services.attribution import parse_enumerated_impl_prs, resolve_impl_owner
 from services.indexer import create_indexed_context
 from services.utils import log
 
+# Attention level -> (urgency text, color). Keeps the RED/YELLOW/GREEN color
+# vocabulary so email/slack/board/snapshot consumers are unaffected by the
+# switch from merge-probability to the attention contract.
+_ATTENTION_TO_URGENCY = {
+    "needs_attention": ("RED", "red"),
+    "watch": ("YELLOW", "orange"),
+    "ok": ("GREEN", "green"),
+}
+
 
 def get_urgency_level(vep: Any) -> tuple[str, str]:
-    """Determine urgency level and color for a VEP.
+    """Determine urgency level and color for a VEP from its attention assessment.
 
     Returns:
         (urgency_text, color) tuple
-        - RED: probability <50% or blocked
-        - YELLOW: probability 50-80% or concerned or escalation recommended
-        - GREEN: >80% and positive/neutral
+        - RED: attention_level == "needs_attention"
+        - YELLOW: attention_level == "watch"
+        - GREEN: attention_level == "ok"
+        - OK/green: analysis exists but no attention assessment yet
+        - UNKNOWN/gray: no analysis at all
     """
     if not hasattr(vep, 'analysis') or not vep.analysis:
         return ("UNKNOWN", "gray")
 
-    risk_assessment = vep.analysis.get("risk_assessment")
-    if not risk_assessment:
+    attention = vep.analysis.get("attention")
+    if not attention:
         return ("OK", "green")
 
-    prob = risk_assessment.get("merge_probability", 100)
-    sentiment = risk_assessment.get("reviewer_sentiment", "neutral")
-    recommend_escalation = risk_assessment.get("recommend_escalation", False)
+    level = attention.get("attention_level", "ok")
+    return _ATTENTION_TO_URGENCY.get(level, ("OK", "green"))
 
-    # RED: High risk - low probability or blocked sentiment
-    if prob < 50 or sentiment == "blocked":
-        return ("RED", "red")
 
-    # YELLOW: Medium risk - moderate probability, concern, or escalation recommended
-    if prob < 80 or sentiment == "concerned" or recommend_escalation:
-        return ("YELLOW", "orange")
+def status_comment(vep: Any) -> str:
+    """Render a board/table status comment from a VEP's attention assessment.
 
-    # GREEN: Low risk
-    return ("GREEN", "green")
+    Format: "<health_summary> - <top reason>" with a trailing "[STALE]" marker
+    when the VEP's staleness signal is set. Falls back gracefully when
+    analysis/attention data is missing.
+    """
+    if not hasattr(vep, 'analysis') or not vep.analysis:
+        return "No analysis available"
+
+    attention = vep.analysis.get("attention")
+    if not attention:
+        return "No attention assessment"
+
+    comment = attention.get("health_summary") or "No summary"
+
+    reasons = attention.get("attention_reasons") or []
+    if reasons:
+        top_reason = reasons[0].get("text", "")
+        if top_reason and top_reason not in comment:
+            comment = f"{comment} - {top_reason}"
+
+    staleness = attention.get("staleness") or {}
+    if staleness.get("is_stale"):
+        comment += " [STALE]"
+
+    return comment
 
 
 def build_vep_summary_table(
@@ -74,7 +102,7 @@ def build_vep_summary_table(
             "impl_prs": [{"number": int, "url": str}],
             "urgency": str (RED/YELLOW/GREEN),
             "urgency_color": str,
-            "status_comment": str (from risk_assessment reasoning),
+            "status_comment": str (from the VEP's attention health_summary/reasons),
             "escalate": bool
         }
     """
@@ -377,29 +405,6 @@ def build_vep_summary_table(
         # Get urgency level
         urgency, urgency_color = get_urgency_level(vep)
 
-        # Get status comment from risk_assessment
-        status_comment = "No risk assessment"
-        if hasattr(vep, 'analysis') and vep.analysis:
-            risk_assessment = vep.analysis.get("risk_assessment")
-            if risk_assessment:
-                prob = risk_assessment.get("merge_probability", "?")
-                sentiment = risk_assessment.get("reviewer_sentiment", "unknown")
-                recent_progress = risk_assessment.get("recent_progress", True)
-
-                # Build status comment
-                if prob != "?":
-                    if prob >= 80:
-                        status_comment = f"Likely to merge ({prob}%) - {sentiment}"
-                    elif prob >= 50:
-                        status_comment = f"Moderate risk ({prob}%) - {sentiment}"
-                    else:
-                        status_comment = f"At risk ({prob}%) - {sentiment}"
-
-                    if not recent_progress:
-                        status_comment += " [STALE]"
-                else:
-                    status_comment = f"Sentiment: {sentiment}"
-
         table_rows.append({
             "vep_number": vep.tracking_issue_id,
             "vep_name": vep.name,
@@ -408,9 +413,9 @@ def build_vep_summary_table(
             "impl_prs": impl_prs,
             "urgency": urgency,
             "urgency_color": urgency_color,
-            "status_comment": status_comment,
+            "status_comment": status_comment(vep),
             "escalate": (
-                vep.analysis.get("risk_assessment", {}).get("recommend_escalation", False)
+                vep.analysis.get("attention", {}).get("attention_level") == "needs_attention"
                 if hasattr(vep, 'analysis') and vep.analysis else False
             ),
         })

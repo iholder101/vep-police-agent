@@ -177,10 +177,16 @@ def _check_design_phase_risks(
         # Check proximity to deadline
         near_deadline = days_to_ef <= DESIGN_PHASE_THRESHOLDS["deadline_extension_days"]
 
-        # Flag if stale AND (low reviews OR near deadline)
-        has_risks = is_stale and (low_reviews or near_deadline)
+        # WS3 grounded signal: an outstanding, unaddressed change request is a
+        # strong risk signal on its own, independent of staleness thresholds.
+        conversation = pr.get("conversation") or {}
+        changes_requested_unaddressed = bool(conversation.get("changes_requested_unaddressed"))
+
+        # Flag if stale AND (low reviews OR near deadline), or unaddressed changes requested
+        has_risks = (is_stale and (low_reviews or near_deadline)) or changes_requested_unaddressed
 
         if has_risks:
+            risk_level = "high" if (near_deadline and low_reviews) or changes_requested_unaddressed else "medium"
             risks_by_vep[vep_issue_num] = {
                 "has_risks": True,
                 "phase": "design",
@@ -192,14 +198,16 @@ def _check_design_phase_risks(
                     "review_count": review_count,
                     "is_stale": is_stale,
                     "low_reviews": low_reviews,
+                    "changes_requested_unaddressed": changes_requested_unaddressed,
                 },
                 "days_to_deadline": days_to_ef,
                 "days_to_ef": days_to_ef,
                 "near_deadline": near_deadline,
-                "risk_level": "high" if (near_deadline and low_reviews) else "medium",
+                "risk_level": risk_level,
             }
 
-            log(f"Design risk: VEP {vep_issue_num} - stale proposal PR #{pr.get('number')} ({days_since_update}d, {review_count} reviews)", node="check_phase_risks")
+            log(f"Design risk: VEP {vep_issue_num} - stale proposal PR #{pr.get('number')} ({days_since_update}d, {review_count} reviews, "
+                f"changes_requested_unaddressed={changes_requested_unaddressed})", node="check_phase_risks")
 
     return risks_by_vep
 
@@ -397,19 +405,28 @@ def _check_development_phase_risks(
             review_count = pr_data.get("review_count") or 0
             low_reviews = review_count < DEVELOPMENT_PHASE_THRESHOLDS["min_reviews"]
 
-            if is_stale and low_reviews:
+            # WS3 grounded signal: an outstanding, unaddressed change request is
+            # a strong risk signal on its own, independent of staleness.
+            conversation = pr_data.get("conversation") or {}
+            changes_requested_unaddressed = bool(conversation.get("changes_requested_unaddressed"))
+
+            if (is_stale and low_reviews) or changes_requested_unaddressed:
                 stale_prs.append({
                     "number": pr_num,
                     "url": impl_pr.get("url"),
                     "days_since_update": days_since_update,
                     "review_count": review_count,
+                    "changes_requested_unaddressed": changes_requested_unaddressed,
                 })
 
         if stale_prs:
             proposal_merged = _check_proposal_merged(vep_issue_num, enhancements_prs)
             near_deadline = days_to_cf <= DEVELOPMENT_PHASE_THRESHOLDS["deadline_extension_days"]
+            any_unaddressed = any(p.get("changes_requested_unaddressed") for p in stale_prs)
 
-            if proposal_merged and phase_fraction < 0.3:
+            if any_unaddressed:
+                risk_level = "high"
+            elif proposal_merged and phase_fraction < 0.3:
                 risk_level = "low"
             elif proposal_merged:
                 risk_level = "low" if phase_fraction < 0.6 else "medium"
@@ -426,6 +443,7 @@ def _check_development_phase_risks(
                 "near_deadline": near_deadline,
                 "risk_level": risk_level,
             }
-            log(f"Development risk: VEP {vep_issue_num} - {len(stale_prs)} stale impl PR(s) (proposal_merged={proposal_merged}, phase={phase_fraction:.0%}, risk={risk_level})", node="check_phase_risks")
+            log(f"Development risk: VEP {vep_issue_num} - {len(stale_prs)} stale impl PR(s) (proposal_merged={proposal_merged}, phase={phase_fraction:.0%}, "
+                f"risk={risk_level}, unaddressed_cr={any_unaddressed})", node="check_phase_risks")
 
     return risks_by_vep
