@@ -1,0 +1,35 @@
+Generated: 2026-08-26T11:37:42 | cycle: 3191s
+
+=== Changes ===
+- VEP-0010: target_release v1.10 -> v1.9
+- VEP-0014: target_release v1.10 -> v1.6
+- VEP-0014: new alert [high] activity_issue
+- VEP-0016: target_release v1.10 -> v1.6
+- VEP-0021: target_release v1.10 -> v1.8
+- VEP-0031: new alert [critical] deadline_violation
+- VEP-0080: new alert [medium] compliance_issue
+- VEP-0156: target_release v1.10 -> v1.8
+- VEP-0160: target_release v1.10 -> v1.8
+- VEP-0160: new alert [high] activity_issue
+- VEP-0165: target_release v1.8 -> v1.10
+- VEP-0168: target_release v1.9 -> v1.10
+- VEP-0183: target_release v1.9 -> v1.10
+- VEP-0183: new alert [medium] activity_issue
+- VEP-0183: new alert [medium] compliance_issue
+- VEP-0190: target_release v1.9. -> v1.10
+- VEP-0190: new alert [medium] compliance_issue
+- VEP-0233: new alert [critical] activity_issue
+- VEP-0287: proposal-pr #442 added (open)
+- VEP-0287: impl-pr #17553 closed -> open
+- VEP-0337: new alert [critical] deadline_violation
+- VEP-0338: new alert [critical] deadline_violation
+- VEP-0344: new alert [high] activity_issue
+- VEP-0349: new alert [medium] deadline_violation
+- VEP-0381: new alert [medium] compliance_issue
+- VEP-0389: new alert [medium] compliance_issue
+- VEP-0395: new alert [high] deadline_violation
+- VEP-0405: new alert [medium] deadline_violation
+- VEP-0419: new alert [critical] deadline_violation
+
+=== Anomalies ===
+(none)
