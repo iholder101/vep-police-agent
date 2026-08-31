@@ -332,6 +332,7 @@ def fetch_veps_node(state: VEPState) -> Any:
                             pr.merged_at = datetime.fromisoformat(pr_data["merged_at"])
                         except (ValueError, AttributeError):
                             pass
+                    pr.conversation = pr_data.get("conversation") or {}
                     enriched_impl_prs.append(pr)
                 else:
                     log(f"VEP {vep_info.name}: dropping board PR #{pr.number} "
@@ -379,6 +380,7 @@ def fetch_veps_node(state: VEPState) -> Any:
                             updated_at=updated,
                             author=pr_data.get("author") or "unknown",
                             merged_at=merged_at,
+                            conversation=pr_data.get("conversation") or {},
                         )
                         vep_info.implementation_prs.append(pr)
 
@@ -423,6 +425,12 @@ def fetch_veps_node(state: VEPState) -> Any:
                             merged_at = datetime.fromisoformat(pr_data["merged_at"])
                     except (ValueError, AttributeError):
                         pass
+                    # vep_to_pr_mappings entries lack conversation; fall back to prs_index
+                    conversation = pr_data.get("conversation")
+                    if not conversation and pr_num:
+                        idx = kubevirt_prs_by_number.get(pr_num)
+                        if idx:
+                            conversation = idx.get("conversation")
                     pr = PRInfo(
                         number=pr_num,
                         title=pr_data.get("title", f"PR #{pr_num}"),
@@ -432,6 +440,7 @@ def fetch_veps_node(state: VEPState) -> Any:
                         updated_at=updated,
                         author="unknown",
                         merged_at=merged_at,
+                        conversation=conversation or {},
                     )
                     vep_info.implementation_prs.append(pr)
 
@@ -464,6 +473,7 @@ def fetch_veps_node(state: VEPState) -> Any:
                     updated_at=updated,
                     author="unknown",
                     merged_at=merged_at,
+                    conversation=pr_data.get("conversation") or {},
                 )
                 vep_info.enhancement_prs.append(pr)
 

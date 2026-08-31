@@ -100,6 +100,12 @@ class PRInfo(BaseModel):
     on_hold: bool = False  # Marked as on hold
     review_count: int = 0  # Number of reviews
 
+    # Grounded conversation signals (see services.indexer.derive_pr_conversation_signals):
+    # reviews, approved_count, changes_requested_count, changes_requested_unaddressed,
+    # unaddressed_by, last_comment_author, last_comment_date,
+    # days_since_last_human_activity, last_commit_pushed_at. Empty dict if not enriched.
+    conversation: dict[str, Any] = Field(default_factory=dict)
+
     # Full GitHub API response stored here for reference
     # Allows access to any field not explicitly defined above
     github_data: dict[str, Any] = Field(default_factory=dict)

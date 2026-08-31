@@ -13,11 +13,197 @@ from pathlib import Path
 from typing import Any
 
 from services.attribution import extract_tracking_issue
+from services.graphql_client import fetch_pr_conversation
 from services.mcp_factory import get_mcp_tools_by_name
 from services.utils import log
 
 # Cache file path (relative to project root)
 CACHE_FILE = Path(__file__).parent.parent / "cache" / "index_cache.json"
+
+# Bot logins excluded from human-activity staleness / last-comment attribution
+# when grounding reviewer sentiment (see derive_pr_conversation_signals).
+BOT_LOGINS = {"kubevirt-bot", "k8s-ci-robot"}
+
+
+def _is_bot_login(login: str | None) -> bool:
+    """Return True if login is a known bot account (exact match or *[bot])."""
+    if not login:
+        return False
+    return login in BOT_LOGINS or login.endswith("[bot]")
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    """Parse an ISO-8601 timestamp (GitHub GraphQL 'Z' suffix) into an aware datetime."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except (ValueError, TypeError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def derive_pr_conversation_signals(payload: dict[str, Any], now: datetime) -> dict[str, Any]:
+    """Pure derivation of grounded reviewer-sentiment signals from a PR conversation payload.
+
+    No I/O — this is the testable core of WS3's conversation grounding. Takes the
+    raw `pullRequest` GraphQL payload (see graphql_client.fetch_pr_conversation)
+    and `now` (injected for testability) and derives:
+    - Latest per-reviewer review state (approved/changes-requested counts).
+    - Whether an outstanding CHANGES_REQUESTED is unaddressed (no newer commit
+      push and no later review-dismissal event for that reviewer).
+    - Last human comment/review author + date, and days since last human
+      activity (bot accounts excluded).
+
+    Args:
+        payload: Raw `pullRequest` payload dict (possibly empty/partial).
+        now: Current time, injected so callers can test with fixed clocks.
+
+    Returns:
+        Dict matching the WS3 "Structured field shape" (see plan):
+        reviews, approved_count, changes_requested_count, review_count,
+        changes_requested_unaddressed, unaddressed_by, last_comment_author,
+        last_comment_date, days_since_last_human_activity, last_commit_pushed_at.
+    """
+    payload = payload or {}
+
+    # Latest review state per reviewer (GitHub already collapses to one per author).
+    latest_review_nodes = ((payload.get("latestReviews") or {}).get("nodes")) or []
+    reviews = []
+    for node in latest_review_nodes:
+        if not node:
+            continue
+        author = (node.get("author") or {}).get("login")
+        state = node.get("state")
+        if not author or not state:
+            continue
+        reviews.append({
+            "author": author,
+            "state": state,
+            "submitted_at": node.get("submittedAt"),
+        })
+
+    approved_count = sum(1 for r in reviews if r["state"] == "APPROVED")
+    changes_requested_count = sum(1 for r in reviews if r["state"] == "CHANGES_REQUESTED")
+    review_count = len(reviews)
+
+    # Most recent commit push (or commit date if push date is unavailable) —
+    # used to decide whether a changes-requested review has been addressed.
+    commit_nodes = ((payload.get("commits") or {}).get("nodes")) or []
+    last_commit_date = None
+    if commit_nodes:
+        commit = (commit_nodes[-1] or {}).get("commit") or {}
+        last_commit_date = (
+            _parse_iso_datetime(commit.get("pushedDate"))
+            or _parse_iso_datetime(commit.get("committedDate"))
+        )
+
+    # Review-dismissal events also "address" a changes-requested review.
+    timeline_nodes = ((payload.get("timelineItems") or {}).get("nodes")) or []
+    dismissal_dates = []
+    for node in timeline_nodes:
+        if not node or node.get("__typename") != "ReviewDismissedEvent":
+            continue
+        dismissed_at = _parse_iso_datetime(node.get("createdAt"))
+        if dismissed_at:
+            dismissal_dates.append(dismissed_at)
+    last_dismissal = max(dismissal_dates) if dismissal_dates else None
+
+    unaddressed_by = []
+    for r in reviews:
+        if r["state"] != "CHANGES_REQUESTED":
+            continue
+        submitted_at = _parse_iso_datetime(r["submitted_at"])
+        if submitted_at is None:
+            # No timestamp to compare against — treat conservatively as unaddressed.
+            unaddressed_by.append(r["author"])
+            continue
+        addressed_by_commit = last_commit_date is not None and last_commit_date > submitted_at
+        addressed_by_dismissal = last_dismissal is not None and last_dismissal > submitted_at
+        if not addressed_by_commit and not addressed_by_dismissal:
+            unaddressed_by.append(r["author"])
+
+    changes_requested_unaddressed = len(unaddressed_by) > 0
+
+    # Last human activity = max(comments, review submissions), bots excluded.
+    human_events: list[tuple[datetime, str]] = []
+
+    comment_nodes = ((payload.get("comments") or {}).get("nodes")) or []
+    for node in comment_nodes:
+        if not node:
+            continue
+        author = (node.get("author") or {}).get("login")
+        created_at = _parse_iso_datetime(node.get("createdAt"))
+        if created_at and not _is_bot_login(author):
+            human_events.append((created_at, author))
+
+    for r in reviews:
+        submitted_at = _parse_iso_datetime(r["submitted_at"])
+        if submitted_at and not _is_bot_login(r["author"]):
+            human_events.append((submitted_at, r["author"]))
+
+    last_comment_author = None
+    last_comment_date = None
+    days_since_last_human_activity = None
+    if human_events:
+        human_events.sort(key=lambda event: event[0])
+        most_recent_date, most_recent_author = human_events[-1]
+        last_comment_author = most_recent_author
+        last_comment_date = most_recent_date.isoformat()
+        days_since_last_human_activity = max(0, (now - most_recent_date).days)
+
+    return {
+        "reviews": reviews,
+        "approved_count": approved_count,
+        "changes_requested_count": changes_requested_count,
+        "review_count": review_count,
+        "changes_requested_unaddressed": changes_requested_unaddressed,
+        "unaddressed_by": unaddressed_by,
+        "last_comment_author": last_comment_author,
+        "last_comment_date": last_comment_date,
+        "days_since_last_human_activity": days_since_last_human_activity,
+        "last_commit_pushed_at": last_commit_date.isoformat() if last_commit_date else None,
+    }
+
+
+def _enrich_prs_with_conversation_signals(prs: list[dict[str, Any]], owner: str, repo: str) -> None:
+    """Ground reviewer sentiment for candidate PRs (open + VEP-linked) in-place.
+
+    Shared by index_kubevirt_prs (implementation PRs) and index_enhancements_prs
+    (proposal/design PRs) — attention during the design phase depends on the
+    same grounded conversation signals as implementation review. Fetches
+    review states/comments/dismissals via GraphQL and derives structured
+    signals (see derive_pr_conversation_signals) instead of relying on review
+    counts alone. Mutates each candidate dict in place, setting "conversation"
+    and back-filling "review_count" for back-compat.
+    """
+    candidate_prs = [
+        p for p in prs
+        if p.get("state") == "open" and p.get("vep_issue_number")
+    ]
+    log(f"Enriching conversation signals for {len(candidate_prs)} candidate PR(s) in {owner}/{repo}", node="indexer")
+    for pr_data in candidate_prs:
+        pr_number = pr_data.get("number")
+        if not pr_number:
+            continue
+        try:
+            time.sleep(API_DELAY)
+            payload = _call_with_retry(
+                fetch_pr_conversation,
+                owner=owner,
+                repo=repo,
+                number=pr_number,
+            )
+            conversation = derive_pr_conversation_signals(payload or {}, datetime.now(UTC))
+        except Exception as e:
+            log(f"Error fetching conversation for PR #{pr_number}: {e}", node="indexer", level="DEBUG")
+            conversation = {}
+        pr_data["conversation"] = conversation
+        # Keep back-compat review_count (consumed by check_phase_risks).
+        if conversation:
+            pr_data["review_count"] = conversation.get("review_count", pr_data.get("review_count"))
 
 
 def _get_api_delay() -> float:
@@ -1059,7 +1245,7 @@ def _extract_vep_issue_number(title: str, body: str) -> int | None:
     return extract_tracking_issue(title, body)
 
 
-def index_enhancements_prs(days_back: int | None = 365) -> list[dict[str, Any]]:
+def index_enhancements_prs(days_back: int | None = 365, fetch_reviews: bool = True) -> list[dict[str, Any]]:
     """Index PRs in kubevirt/enhancements repository.
 
     Indexes proposal PRs that create or modify VEP documents.
@@ -1067,11 +1253,14 @@ def index_enhancements_prs(days_back: int | None = 365) -> list[dict[str, Any]]:
 
     Args:
         days_back: Only include PRs from last N days (None = all PRs)
+        fetch_reviews: If True, ground reviewer sentiment for open + VEP-linked
+            proposal PRs — the primary attention target during the design
+            phase — via GraphQL (see _enrich_prs_with_conversation_signals).
 
     Returns:
         List of PR summaries with VEP issue references
     """
-    log(f"Indexing PRs from kubevirt/enhancements (days_back={days_back})", node="indexer")
+    log(f"Indexing PRs from kubevirt/enhancements (days_back={days_back}, fetch_reviews={fetch_reviews})", node="indexer")
 
     try:
         tools = get_mcp_tools_by_name("github")
@@ -1206,6 +1395,12 @@ def index_enhancements_prs(days_back: int | None = 365) -> list[dict[str, Any]]:
                     original_count = len(prs)
                     prs = _filter_by_date(prs, days_back)
                     log(f"Filtered enhancements PRs: {original_count} -> {len(prs)} (last {days_back} days)", node="indexer")
+
+                # Ground reviewer sentiment for candidate proposal PRs (open + VEP-linked) —
+                # the primary attention target during the design phase. See
+                # _enrich_prs_with_conversation_signals for details.
+                if fetch_reviews:
+                    _enrich_prs_with_conversation_signals(prs, owner="kubevirt", repo="enhancements")
 
                 # Log VEP-linked PRs
                 vep_linked = [p for p in prs if p.get("vep_issue_number")]
@@ -1346,10 +1541,14 @@ def index_kubevirt_prs(days_back: int | None = 365, fetch_reviews: bool = True) 
 
     Args:
         days_back: Only include PRs from last N days (None = all PRs)
-        fetch_reviews: If True, fetch review counts for open PRs (default: True)
+        fetch_reviews: If True, ground reviewer sentiment for open + VEP-linked
+            candidate PRs by fetching real review/comment/dismissal data via
+            GraphQL and deriving structured signals (default: True)
 
     Returns:
-        List of PR summaries (number, title, state, labels, review_count) for context
+        List of PR summaries (number, title, state, labels, review_count,
+        conversation) for context. `conversation` is only populated for
+        candidate PRs (open + vep_issue_number set) when fetch_reviews=True.
     """
     log(f"Indexing PRs from kubevirt/kubevirt (days_back={days_back}, fetch_reviews={fetch_reviews})", node="indexer")
 
@@ -1384,21 +1583,6 @@ def index_kubevirt_prs(days_back: int | None = 365, fetch_reviews: bool = True) 
         if not list_prs_tool:
             log(f"Could not find PR listing tool. Available tools: {[t.name for t in tools]}", node="indexer", level="WARNING")
             return []
-
-        # Find get_pull_request_reviews tool for review counts
-        get_reviews_tool = None
-        if fetch_reviews:
-            reviews_tool_names = [
-                "mcp_GitHub_get_pull_request_reviews",
-                "get_pull_request_reviews",
-            ]
-            for tool in tools:
-                if tool.name in reviews_tool_names or "review" in tool.name.lower():
-                    get_reviews_tool = tool
-                    log(f"Found reviews tool: {tool.name}", node="indexer", level="DEBUG")
-                    break
-            if not get_reviews_tool:
-                log("Could not find PR reviews tool, review counts will be None", node="indexer", level="DEBUG")
 
         try:
             # Fetch all pages of PRs
@@ -1499,28 +1683,11 @@ def index_kubevirt_prs(days_back: int | None = 365, fetch_reviews: bool = True) 
                     prs = _filter_by_date(prs, days_back)
                     log(f"Filtered PRs: {original_count} -> {len(prs)} (last {days_back} days)", node="indexer")
 
-                # Fetch review counts for open PRs only (to limit API calls)
-                if fetch_reviews and get_reviews_tool:
-                    open_prs = [p for p in prs if p.get("state") == "open"]
-                    log(f"Fetching review counts for {len(open_prs)} open PRs", node="indexer")
-                    for pr_data in open_prs:
-                        pr_number = pr_data.get("number")
-                        if pr_number:
-                            try:
-                                time.sleep(API_DELAY)
-                                reviews_result = _call_with_retry(
-                                    get_reviews_tool.func,
-                                    owner="kubevirt",
-                                    repo="kubevirt",
-                                    pull_number=pr_number
-                                )
-                                if isinstance(reviews_result, list):
-                                    pr_data["review_count"] = len(reviews_result)
-                                elif reviews_result:
-                                    # Try to parse if string
-                                    pr_data["review_count"] = 0
-                            except Exception as e:
-                                log(f"Error fetching reviews for PR #{pr_number}: {e}", node="indexer", level="DEBUG")
+                # Ground reviewer sentiment for candidate PRs only (open + VEP-linked)
+                # to bound API cost — NOT the full ~1200-PR index. See
+                # _enrich_prs_with_conversation_signals for details.
+                if fetch_reviews:
+                    _enrich_prs_with_conversation_signals(prs, owner="kubevirt", repo="kubevirt")
 
                 # Log VEP-linked PRs
                 vep_linked = [p for p in prs if p.get("vep_issue_number")]
