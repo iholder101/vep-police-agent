@@ -2653,6 +2653,68 @@ def compute_release_phase(release_info: dict) -> tuple[str, dict[str, str | None
 
     return phase, deadlines
 
+def compute_phase_detail(
+    phase: str,
+    deadlines: dict[str, str | None],
+    cycle_start_date: str | None,
+    today: date | None = None,
+) -> dict[str, Any]:
+    """Compute rich temporal context for the current release phase.
+
+    Given the coarse phase string, the parsed freeze deadlines, and the
+    authoritative cycle_start_date (previous release's Code Freeze), derive:
+    days_into_phase, days_left_in_phase, fraction_through_phase (0.0-1.0),
+    the phase start/end boundaries, and the next upcoming freeze (name + date).
+
+    All date-derived fields are None when the relevant boundary date is
+    unavailable (missing/unparseable), so callers degrade gracefully.
+    """
+    if today is None:
+        today = datetime.now(UTC).date()
+
+    def _parse(value: str | None) -> date | None:
+        if not value:
+            return None
+        try:
+            return date.fromisoformat(value)
+        except (ValueError, TypeError):
+            return None
+
+    ef = _parse(deadlines.get("enhancement_freeze"))
+    cf = _parse(deadlines.get("code_freeze"))
+    ga = _parse(deadlines.get("ga"))
+    cs = _parse(cycle_start_date)
+
+    # (phase_start, phase_end, human-readable name of the freeze that ends it)
+    boundaries: dict[str, tuple[date | None, date | None, str | None]] = {
+        "design": (cs, ef, "VEP Freeze"),
+        "development": (ef, cf, "Code Freeze"),
+        "stabilization": (cf, ga, "GA"),
+        "post_release": (ga, None, None),
+    }
+    start, end, next_freeze_name = boundaries.get(phase, (None, None, None))
+
+    detail: dict[str, Any] = {
+        "phase": phase,
+        "phase_start": start.isoformat() if start else None,
+        "phase_end": end.isoformat() if end else None,
+        "days_into_phase": (today - start).days if start else None,
+        "days_left_in_phase": (end - today).days if end else None,
+        "fraction_through_phase": None,
+        "next_freeze": None,
+    }
+
+    if start and end and end > start:
+        elapsed_days = (today - start).days
+        total_days = (end - start).days
+        detail["fraction_through_phase"] = round(min(max(elapsed_days / total_days, 0.0), 1.0), 3)
+
+    if next_freeze_name and end:
+        detail["next_freeze"] = {"name": next_freeze_name, "date": end.isoformat()}
+
+    log(f"Phase detail computed: {detail}", node="indexer")
+    return detail
+
 def compute_veps_missing_prs(
     project_board_items: dict[int, dict[str, Any]],
     vep_to_pr_mappings: dict[str, list[dict[str, Any]]]
@@ -2852,6 +2914,11 @@ def create_indexed_context(days_back: int | None = 365, cache_max_age_minutes: i
         else:
             log("No cycle_start_date available: no previous CF and no schedule dates", node="indexer", level="WARNING")
     indexed_context["cycle_start_date"] = cycle_start_date
+    indexed_context["phase_detail"] = compute_phase_detail(
+        indexed_context["release_phase"],
+        indexed_context["release_deadlines"],
+        cycle_start_date,
+    )
 
     # Log summary
     release = release_version if release_version else "unknown"

@@ -6,6 +6,7 @@ This node has access to ALL context at once and does holistic reasoning.
 
 import json
 from datetime import UTC, date, datetime, time
+from pathlib import Path
 from typing import Any
 
 from pydantic import Field
@@ -16,6 +17,21 @@ from services.llm_helper import invoke_llm_check
 from services.response_models import CheckResponse
 from services.utils import log
 from state import PRInfo, VEPState
+
+_GOVERNANCE_MODEL_CACHE: str | None = None
+
+
+def _load_governance_model() -> str:
+    """Load docs/governance-model.md once; return '' if unavailable."""
+    global _GOVERNANCE_MODEL_CACHE
+    if _GOVERNANCE_MODEL_CACHE is None:
+        try:
+            doc_path = Path(__file__).resolve().parent.parent / "docs" / "governance-model.md"
+            _GOVERNANCE_MODEL_CACHE = doc_path.read_text(encoding="utf-8")
+        except OSError as e:
+            log(f"Could not load governance-model.md: {e}", node="analyze_combined", level="WARNING")
+            _GOVERNANCE_MODEL_CACHE = ""
+    return _GOVERNANCE_MODEL_CACHE
 
 
 def classify_prs_by_release(impl_prs: list[PRInfo], cutoff: datetime) -> tuple[list[PRInfo], list[PRInfo]]:
@@ -250,6 +266,7 @@ def analyze_combined_node(state: VEPState) -> Any:
     release_phase = indexed_context.get("release_phase", "unknown")
     release_deadlines = indexed_context.get("release_deadlines", {})
     board_veps = indexed_context.get("board_veps", {})
+    phase_detail = indexed_context.get("phase_detail", {})
 
     # Parse cycle start date for release-aware PR classification
     cycle_start_str = indexed_context.get("cycle_start_date")
@@ -286,13 +303,19 @@ def analyze_combined_node(state: VEPState) -> Any:
     }
 
     # Build system prompt for comprehensive analysis
+    governance_model = _load_governance_model()
     system_prompt = f"""You are a VEP governance analyst. Your job is to analyze VEP status using ALL available context and generate actionable insights.
 
 RELEASE CONTEXT:
 - Phase: {release_phase} (design=pre-EF proposal review, development=EF-CF implementation, stabilization=CF-GA testing, post_release=done)
+- Temporal position: {json.dumps(phase_detail, default=str)}
+  (days_into_phase / days_left_in_phase / fraction_through_phase 0.0-1.0 / next_freeze = the upcoming freeze; use these to calibrate urgency - the SAME state is healthy early in a phase and alarming late in it)
 - Deadlines: {json.dumps(release_deadlines, default=str)}
 - Board VEPs: {len(board_veps)} VEPs tracked on project board
 - Phase-specific risks detected: {len(phase_risks)}
+
+GOVERNANCE MODEL (authoritative reference - anchor your reasoning to this):
+{governance_model}
 
 INPUT: Each VEP has raw context data from fetch nodes:
 - context.deadline: {{days_until_ef, days_until_cf, ef_passed, cf_passed, vep_merged, target_release}}
