@@ -124,7 +124,9 @@ Return: table_schema, sheet_id, rows_updated, rows_added."""
     
     # Get indexed context for rich VEP summary data
     indexed_context = create_indexed_context(cache_max_age_minutes=60)
-    table_rows = build_vep_summary_table(veps, indexed_context)
+    # Reuse the table already computed this cycle by analyze_combined to avoid
+    # re-running the PR-widening fetch; fall back to rebuilding if not cached.
+    table_rows = state.get("vep_summary_table") or build_vep_summary_table(veps, indexed_context)
 
     # Build lookup for table row data
     table_data_by_id = {row["vep_number"]: row for row in table_rows}
