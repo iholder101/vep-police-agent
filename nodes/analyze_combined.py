@@ -9,12 +9,16 @@ from datetime import UTC, date, datetime, time
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field, ValidationError
+from pydantic import ValidationError
 
 from nodes.alert_formatting import build_markdown_table, build_vep_summary_table
 from services.indexer import create_indexed_context
 from services.llm_helper import invoke_llm_check
-from services.response_models import AttentionLevel, CheckResponse, VEPAttention
+from services.response_models import (
+    AnalyzeAttentionResponse,
+    AttentionLevel,
+    VEPAttention,
+)
 from services.utils import log
 from state import PRInfo, VEPState
 
@@ -132,12 +136,6 @@ def _set_vep_attention(vep, attention: dict[str, Any], deterministic: bool = Fal
     vep.analysis["attention"] = validated.model_dump(mode="json")
     if deterministic:
         vep.analysis["_deterministic_attention"] = True
-
-
-class AnalyzeCombinedResponse(CheckResponse):
-    """Response model for combined analysis."""
-    sheets_need_update: bool = False
-    general_insights: list[str] = Field(default_factory=list)
 
 
 def _prefill_phase_risk_attention(
@@ -548,15 +546,14 @@ YOUR ANALYSIS TASKS:
       that exceeds ~7 days during active phases.
    g) phase: echo the current release phase string.
 
-   Store this under vep.analysis["attention"] as a single JSON object with exactly these fields.
+   This `attention` object becomes this VEP's entry in the top-level `analyses` list (see task 7).
 
 7. OUTPUT FOR EACH VEP:
-   Update vep.analysis with:
-   - combined_insights: string summary of overall status
-   - priority: "low", "medium", "high", or "critical"
-   - risk_factors: list of identified risks
-   - recommended_actions: list of suggested next steps
-   - attention: object per task 6 (for every VEP, unless "_deterministic_attention" is set)
+   Add ONE entry to the top-level `analyses` list per VEP (skip VEPs with
+   "_deterministic_attention" set - those are pre-assessed and must NOT be included):
+   - tracking_issue_id: the VEP's tracking_issue_id (GitHub issue number)
+   - attention: the object built in task 6
+   Do NOT echo back the full VEP object - only tracking_issue_id + attention.
 
 8. GENERAL INSIGHTS (release-wide):
    Return a list of strings covering:
@@ -566,7 +563,7 @@ YOUR ANALYSIS TASKS:
 
 9. SHEETS UPDATE DECISION:
    Set sheets_need_update=True if:
-   - Any VEP has critical/high priority
+   - Any VEP has attention_level "needs_attention"
    - Significant status changes detected
    - New compliance or exception issues
    Set to False if only minor internal updates.
@@ -649,18 +646,20 @@ ANALYSIS INSTRUCTIONS:
 For EACH VEP:
 1. Review all context fields (deadline, activity, compliance, exceptions, phase_risks) and
    each PR's `conversation` dict.
-2. Perform cross-domain reasoning to identify risks.
-3. Update analysis with combined_insights, priority, risk_factors, recommended_actions.
+2. Perform cross-domain reasoning to identify risks (low activity + close deadline = urgent,
+   compliance issues + close deadline = critical, post-freeze work + no exception = blocker).
 
 For EVERY VEP (skip any with "_deterministic_attention" in analysis):
-4. Decide attention_level (needs_attention/watch/ok) per the governance model's phase
+3. Decide attention_level (needs_attention/watch/ok) per the governance model's phase
    playbook - judge against fraction_through_phase / days_left_in_phase, not a fixed rule.
-5. List concrete attention_reasons (PR numbers, day counts, unaddressed change requests).
-6. Write a one-sentence health_summary suitable for a board comment.
-7. Note any obvious compliance_flags (policy checklist violations).
-8. Give one suggested_action, or null if ok.
-9. Populate staleness from PR conversation data (fallback: context.activity.days_since_update).
-10. Store the full object in vep.analysis["attention"].
+4. List concrete attention_reasons (PR numbers, day counts, unaddressed change requests).
+5. Write a one-sentence health_summary suitable for a board comment.
+6. Note any obvious compliance_flags (policy checklist violations).
+7. Give one suggested_action, or null if ok.
+8. Populate staleness from PR conversation data (fallback: context.activity.days_since_update).
+9. Add ONE entry to `analyses`: {{"tracking_issue_id": <this VEP's tracking_issue_id>,
+   "attention": {{attention_level, attention_reasons, health_summary, compliance_flags,
+   suggested_action, staleness, phase}}}}.
 
 RELEASE-AWARENESS: PRs merged before the cycle start date ({cycle_start_str or 'unknown'})
 are PREVIOUS-RELEASE work, not current-release progress. Ignore previous-release PRs when
@@ -673,82 +672,40 @@ merged / we are past the relevant freeze): attention_level = "ok" - these VEPs a
 track or fully landed.
 
 For ALL VEPs:
-11. Generate alerts for issues needing attention.
+10. Generate alerts for issues needing attention.
 
-Return updated VEPs with complete analysis, general_insights list, and sheets_need_update decision."""
+Return `analyses` (one entry per VEP with tracking_issue_id + attention object, omitting
+VEPs with "_deterministic_attention" set), `general_insights`, `alerts`, and
+`sheets_need_update`. Do NOT echo back full VEP objects."""
 
         try:
-            result = invoke_llm_check("analyze_combined", batch_context, system_prompt, batch_user_prompt, AnalyzeCombinedResponse)
+            result = invoke_llm_check("analyze_combined", batch_context, system_prompt, batch_user_prompt, AnalyzeAttentionResponse)
 
-            batch_updated = result.updated_veps
-
-            # Validate/coerce any LLM-produced attention objects; drop invalid
-            # ones so the fallback layer below can fill them in deterministically.
-            for updated_vep in batch_updated:
-                if not hasattr(updated_vep, 'analysis') or not updated_vep.analysis:
-                    continue
-                if updated_vep.analysis.get("_deterministic_attention"):
-                    continue
-                raw_attention = updated_vep.analysis.get("attention")
-                if not raw_attention:
-                    continue
-                try:
-                    updated_vep.analysis["attention"] = VEPAttention.model_validate(raw_attention).model_dump(mode="json")
-                except ValidationError as e:
-                    log(f"Invalid attention object from LLM for {updated_vep.name}: {e}. Will use fallback.",
-                        node="analyze_combined", level="WARNING")
-                    updated_vep.analysis.pop("attention", None)
-
-            # Carry over fields from original VEPs that the LLM can't produce.
-            # The LLM returns fresh VEPInfo objects with analysis filled in,
-            # but without implementation_prs, enhancement_prs, board_fields, etc.
+            # Merge the LLM's lean attention updates onto the ORIGINAL VEP objects
+            # (matched by tracking_issue_id) - the LLM no longer echoes full VEPInfo.
             originals_by_id = {vep.tracking_issue_id: vep for vep in batch_veps}
-            for updated_vep in batch_updated:
-                original = originals_by_id.get(updated_vep.tracking_issue_id)
-                if not original:
+            merged_count = 0
+            for update in result.analyses:
+                original = originals_by_id.get(update.tracking_issue_id)
+                if original is None:
+                    log(f"Batch {batch_num}: LLM returned attention for unknown tracking_issue_id {update.tracking_issue_id}",
+                        node="analyze_combined", level="WARNING")
                     continue
-                # Preserve deterministic attention - don't let LLM overwrite
                 orig_analysis = original.analysis if hasattr(original, 'analysis') and original.analysis else {}
                 if orig_analysis.get("_deterministic_attention"):
-                    if not hasattr(updated_vep, 'analysis') or updated_vep.analysis is None:
-                        updated_vep.analysis = {}
-                    updated_vep.analysis["attention"] = orig_analysis["attention"]
-                    updated_vep.analysis["_deterministic_attention"] = True
-                if original.implementation_prs:
-                    updated_vep.implementation_prs = original.implementation_prs
-                if original.enhancement_prs:
-                    updated_vep.enhancement_prs = original.enhancement_prs
-                if original.board_fields:
-                    updated_vep.board_fields = original.board_fields
-                if not updated_vep.context.deadline and original.context.deadline:
-                    updated_vep.context.deadline = original.context.deadline
-                if not updated_vep.context.activity and original.context.activity:
-                    updated_vep.context.activity = original.context.activity
-                if not updated_vep.context.compliance and original.context.compliance:
-                    updated_vep.context.compliance = original.context.compliance
-                if not updated_vep.context.exceptions and original.context.exceptions:
-                    updated_vep.context.exceptions = original.context.exceptions
-                if not updated_vep.context.phase_risks and original.context.phase_risks:
-                    updated_vep.context.phase_risks = original.context.phase_risks
-                if updated_vep.tracking_issue is None and original.tracking_issue is not None:
-                    updated_vep.tracking_issue = original.tracking_issue
+                    # Deterministic prefill wins - don't let the LLM overwrite it.
+                    continue
+                original.analysis = orig_analysis or {}
+                original.analysis["attention"] = update.attention.model_dump(mode="json")
+                merged_count += 1
 
-            # Preserve VEPs that LLM might have dropped within this batch
-            if len(batch_updated) < len(batch_veps):
-                log(f"Batch {batch_num}: LLM returned {len(batch_updated)}/{len(batch_veps)} VEPs, preserving dropped", node="analyze_combined", level="WARNING")
-                existing_names = {vep.name for vep in batch_updated}
-                for vep in batch_veps:
-                    if vep.name not in existing_names:
-                        log(f"Preserving dropped VEP {vep.name}", node="analyze_combined", level="DEBUG")
-                        batch_updated.append(vep)
-
-            all_updated_veps.extend(batch_updated)
+            all_updated_veps.extend(batch_veps)
             all_alerts.extend(result.alerts)
             all_insights.extend(result.general_insights)
             if result.sheets_need_update:
                 sheets_need_update_any = True
 
-            log(f"Batch {batch_num} complete: {len(batch_updated)} VEPs analyzed, {len(result.alerts)} alerts", node="analyze_combined")
+            log(f"Batch {batch_num} complete: {merged_count}/{len(batch_veps)} VEPs got LLM attention, {len(result.alerts)} alerts", node="analyze_combined")
 
         except (RuntimeError, ValueError, TypeError, KeyError) as e:
             log(f"Batch {batch_num} failed: {e}. Preserving original VEPs.", node="analyze_combined", level="WARNING")

@@ -66,3 +66,28 @@ class FetchResponse(BaseModel):
     No analysis is done - that's handled by analyze_combined with full context.
     """
     context_updates: list[VEPContextUpdate]  # Context data per VEP
+
+
+class VEPAttentionUpdate(BaseModel):
+    """A single VEP's attention verdict, keyed by tracking issue id.
+
+    Lean alternative to echoing a full VEPInfo back from the LLM - the
+    caller merges `attention` onto the existing in-memory VEP object.
+    """
+    tracking_issue_id: int
+    attention: VEPAttention
+
+
+class AnalyzeAttentionResponse(BaseModel):
+    """Response model for analyze_combined - lean per-VEP attention only.
+
+    Deeply nested response schemas (e.g. list[VEPInfo], with VEPInfo ->
+    VEPMilestone/VEPCompliance/VEPActivity/VEPContext/PRInfo/IssueInfo) are
+    rejected by Gemini's response_schema validation (400 INVALID_ARGUMENT).
+    This model stays shallow: one attention verdict per VEP, matched back
+    onto the existing VEP objects by tracking_issue_id.
+    """
+    analyses: list[VEPAttentionUpdate] = Field(default_factory=list)
+    alerts: list[dict[str, Any]] = Field(default_factory=list)
+    general_insights: list[str] = Field(default_factory=list)
+    sheets_need_update: bool = False
