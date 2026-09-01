@@ -203,14 +203,14 @@ def invoke_llm_with_tools(
             # Add tool results and continue
             messages.append(response)
             messages.extend(tool_messages)
-        
+
         # Now get structured output with final messages (including tool results)
-        # Add a final message asking for structured output
         messages.append(HumanMessage(content="Based on the information gathered, please provide your response in the required structured format."))
-        
-        # Use structured output - LLM will return validated Pydantic model
+        # Bind the schema on the TOOL-FREE llm: langchain-google-genai merges the
+        # response schema onto any bound tools, and Gemini rejects tools+response_schema
+        # in one call (400). The tool loop is done, so no tools are needed here.
         log(f"Requesting structured output for {operation_type}...", node=operation_type, level="DEBUG")
-        structured_llm = llm_with_tools.with_structured_output(response_model)
+        structured_llm = llm.with_structured_output(response_model)
         result = _invoke_with_retry(structured_llm, messages, operation_type)
         log(f"Structured output received for {operation_type}", node=operation_type, level="DEBUG")
         

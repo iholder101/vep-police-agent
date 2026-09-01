@@ -321,8 +321,8 @@ cat output/realizations.txt
 ```
 
 The realizations file flags anomalies automatically (VEPs disappearing, PR counts
-decreasing, compliance regressions, large merge probability swings) - no LLM involved,
-purely deterministic checks.
+decreasing, compliance regressions, attention level regressing e.g. ok -> needs_attention)
+- no LLM involved, purely deterministic checks.
 
 **Snapshot validation** (integration test equivalent):
 

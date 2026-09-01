@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from config.config import DEFAULT_RELEASE, KNOWN_SIGS
+from services.attribution import resolve_impl_pr_ownership
 from services.indexer import create_indexed_context
 from services.utils import log
 from state import PRInfo, VEPActivity, VEPCompliance, VEPInfo, VEPMilestone, VEPState
@@ -332,6 +333,7 @@ def fetch_veps_node(state: VEPState) -> Any:
                             pr.merged_at = datetime.fromisoformat(pr_data["merged_at"])
                         except (ValueError, AttributeError):
                             pass
+                    pr.conversation = pr_data.get("conversation") or {}
                     enriched_impl_prs.append(pr)
                 else:
                     log(f"VEP {vep_info.name}: dropping board PR #{pr.number} "
@@ -379,6 +381,7 @@ def fetch_veps_node(state: VEPState) -> Any:
                             updated_at=updated,
                             author=pr_data.get("author") or "unknown",
                             merged_at=merged_at,
+                            conversation=pr_data.get("conversation") or {},
                         )
                         vep_info.implementation_prs.append(pr)
 
@@ -423,6 +426,12 @@ def fetch_veps_node(state: VEPState) -> Any:
                             merged_at = datetime.fromisoformat(pr_data["merged_at"])
                     except (ValueError, AttributeError):
                         pass
+                    # vep_to_pr_mappings entries lack conversation; fall back to prs_index
+                    conversation = pr_data.get("conversation")
+                    if not conversation and pr_num:
+                        idx = kubevirt_prs_by_number.get(pr_num)
+                        if idx:
+                            conversation = idx.get("conversation")
                     pr = PRInfo(
                         number=pr_num,
                         title=pr_data.get("title", f"PR #{pr_num}"),
@@ -432,6 +441,7 @@ def fetch_veps_node(state: VEPState) -> Any:
                         updated_at=updated,
                         author="unknown",
                         merged_at=merged_at,
+                        conversation=conversation or {},
                     )
                     vep_info.implementation_prs.append(pr)
 
@@ -464,6 +474,7 @@ def fetch_veps_node(state: VEPState) -> Any:
                     updated_at=updated,
                     author="unknown",
                     merged_at=merged_at,
+                    conversation=pr_data.get("conversation") or {},
                 )
                 vep_info.enhancement_prs.append(pr)
 
@@ -477,6 +488,47 @@ def fetch_veps_node(state: VEPState) -> Any:
                     log(f"  VEP #{issue_number} ({vep_info.name}): {merged_count}/{total_count} impl PRs merged", node="fetch_veps", level="DEBUG")
 
             discovered_veps.append(vep_info)
+
+    # ---- Cross-VEP impl-PR reconciliation (one PR -> one VEP) ----
+    # Each VEP's implementation_prs above was gathered independently per VEP:
+    # board data (per-issue body enumeration via board_vep["impl_prs"]),
+    # prs_index self-references, and title-based vep_to_pr_mappings - with no
+    # cross-VEP dedup. The same impl PR can be enumerated by more than one
+    # tracking issue's body (e.g. both VEP 25's and VEP 416's issues linking
+    # PR #18750), which double-lists it across VEPs. Reuse the same
+    # reconciliation nodes/alert_formatting.py applies to the clean summary
+    # table so the two call sites can't drift apart.
+    issue_bodies_by_id = {
+        vep_info.tracking_issue_id: (
+            (issues_by_number.get(vep_info.tracking_issue_id) or {}).get("body")
+            or (issues_by_number.get(vep_info.tracking_issue_id) or {}).get("body_preview")
+            or ""
+        )
+        for vep_info in discovered_veps
+    }
+    pr_self_refs = {
+        pr_num: pr_data.get("vep_issue_number")
+        for pr_num, pr_data in kubevirt_prs_by_number.items()
+    }
+    ownership = resolve_impl_pr_ownership(issue_bodies_by_id, pr_self_refs)
+
+    for vep_info in discovered_veps:
+        reconciled_prs = []
+        for pr in vep_info.implementation_prs:
+            owner, conflict = ownership.get(pr.number, (None, False))
+            if owner == vep_info.tracking_issue_id or (owner is None and not conflict):
+                reconciled_prs.append(pr)
+            else:
+                reason = f"owned by VEP #{owner}" if owner is not None else "ambiguous cross-issue attribution"
+                log(f"VEP {vep_info.name}: dropping impl PR #{pr.number} ({reason}, reconciliation)",
+                    node="fetch_veps")
+        if len(reconciled_prs) != len(vep_info.implementation_prs):
+            vep_info.implementation_prs = reconciled_prs
+            if reconciled_prs:
+                all_merged = all(pr.state == "merged" for pr in reconciled_prs)
+                vep_info.current_milestone.all_code_prs_merged = all_merged
+            else:
+                vep_info.current_milestone.all_code_prs_merged = False
 
     # Log summary
     log("="*80, node="fetch_veps")

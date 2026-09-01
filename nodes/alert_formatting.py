@@ -4,7 +4,7 @@ Provides utilities to build per-VEP summary tables with:
 - VEP #, Title
 - Proposal PR(s) and Impl PR(s) links
 - Urgency indicators (RED/YELLOW/GREEN)
-- Status comments from LLM risk assessment
+- Status comments from the VEP's attention assessment
 """
 
 import re
@@ -12,41 +12,69 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime
 from typing import Any
 
-from services.attribution import parse_enumerated_impl_prs, resolve_impl_owner
+from services.attribution import resolve_impl_pr_ownership
 from services.indexer import create_indexed_context
 from services.utils import log
 
+# Attention level -> (urgency text, color). Keeps the RED/YELLOW/GREEN color
+# vocabulary so email/slack/board/snapshot consumers are unaffected by the
+# switch from merge-probability to the attention contract.
+_ATTENTION_TO_URGENCY = {
+    "needs_attention": ("RED", "red"),
+    "watch": ("YELLOW", "orange"),
+    "ok": ("GREEN", "green"),
+}
+
 
 def get_urgency_level(vep: Any) -> tuple[str, str]:
-    """Determine urgency level and color for a VEP.
+    """Determine urgency level and color for a VEP from its attention assessment.
 
     Returns:
         (urgency_text, color) tuple
-        - RED: probability <50% or blocked
-        - YELLOW: probability 50-80% or concerned or escalation recommended
-        - GREEN: >80% and positive/neutral
+        - RED: attention_level == "needs_attention"
+        - YELLOW: attention_level == "watch"
+        - GREEN: attention_level == "ok"
+        - OK/green: analysis exists but no attention assessment yet
+        - UNKNOWN/gray: no analysis at all
     """
     if not hasattr(vep, 'analysis') or not vep.analysis:
         return ("UNKNOWN", "gray")
 
-    risk_assessment = vep.analysis.get("risk_assessment")
-    if not risk_assessment:
+    attention = vep.analysis.get("attention")
+    if not attention:
         return ("OK", "green")
 
-    prob = risk_assessment.get("merge_probability", 100)
-    sentiment = risk_assessment.get("reviewer_sentiment", "neutral")
-    recommend_escalation = risk_assessment.get("recommend_escalation", False)
+    level = attention.get("attention_level", "ok")
+    return _ATTENTION_TO_URGENCY.get(level, ("OK", "green"))
 
-    # RED: High risk - low probability or blocked sentiment
-    if prob < 50 or sentiment == "blocked":
-        return ("RED", "red")
 
-    # YELLOW: Medium risk - moderate probability, concern, or escalation recommended
-    if prob < 80 or sentiment == "concerned" or recommend_escalation:
-        return ("YELLOW", "orange")
+def status_comment(vep: Any) -> str:
+    """Render a board/table status comment from a VEP's attention assessment.
 
-    # GREEN: Low risk
-    return ("GREEN", "green")
+    Format: "<health_summary> - <top reason>" with a trailing "[STALE]" marker
+    when the VEP's staleness signal is set. Falls back gracefully when
+    analysis/attention data is missing.
+    """
+    if not hasattr(vep, 'analysis') or not vep.analysis:
+        return "No analysis available"
+
+    attention = vep.analysis.get("attention")
+    if not attention:
+        return "No attention assessment"
+
+    comment = attention.get("health_summary") or "No summary"
+
+    reasons = attention.get("attention_reasons") or []
+    if reasons:
+        top_reason = reasons[0].get("text", "")
+        if top_reason and top_reason not in comment:
+            comment = f"{comment} - {top_reason}"
+
+    staleness = attention.get("staleness") or {}
+    if staleness.get("is_stale"):
+        comment += " [STALE]"
+
+    return comment
 
 
 def build_vep_summary_table(
@@ -74,7 +102,7 @@ def build_vep_summary_table(
             "impl_prs": [{"number": int, "url": str}],
             "urgency": str (RED/YELLOW/GREEN),
             "urgency_color": str,
-            "status_comment": str (from risk_assessment reasoning),
+            "status_comment": str (from the VEP's attention health_summary/reasons),
             "escalate": bool
         }
     """
@@ -102,17 +130,18 @@ def build_vep_summary_table(
     # ---- Precompute implementation-PR ownership (one PR -> one VEP) ----
     # Attribution is reference-based, never title-based. Two signals per PR:
     # the PR's self-declared tracking issue and the tracking issue's own
-    # enumerated PR list; resolve_impl_owner reconciles them (a reciprocated
-    # link wins on conflict). Computed once so each PR lands on a single VEP.
-    in_scope_issues = {v.tracking_issue_id for v in veps}
-    enumerated_by_pr: dict[int, set[int]] = {}
+    # enumerated PR list; resolve_impl_pr_ownership (shared with fetch_veps)
+    # reconciles them (a reciprocated link wins on conflict). Computed once so
+    # each PR lands on a single VEP.
+    issue_bodies_by_id: dict[int, str] = {}
     for vep in veps:
         issue = issues_by_number.get(vep.tracking_issue_id)
-        body = (issue.get("body") or issue.get("body_preview") or "") if issue else ""
-        for pr_num in parse_enumerated_impl_prs(body):
-            enumerated_by_pr.setdefault(pr_num, set()).add(vep.tracking_issue_id)
+        issue_bodies_by_id[vep.tracking_issue_id] = (
+            (issue.get("body") or issue.get("body_preview") or "") if issue else ""
+        )
 
-    impl_by_vep: dict[int, list[dict[str, Any]]] = {}
+    pr_self_refs: dict[int, int | None] = {}
+    kubevirt_impl_prs_by_number: dict[int, dict[str, Any]] = {}
     for pr in kubevirt_prs:
         if not isinstance(pr, dict):
             continue
@@ -122,18 +151,21 @@ def build_vep_summary_table(
         pr_url = pr.get("url") or pr.get("html_url") or f"https://github.com/kubevirt/kubevirt/pull/{pr_num}"
         if "enhancements" in pr_url:
             continue  # proposal PR, never an implementation PR
-        self_ref = pr.get("vep_issue_number")
-        if self_ref not in in_scope_issues:
-            self_ref = None
-        enumerating = enumerated_by_pr.get(pr_num, set()) & in_scope_issues
-        owner, conflict = resolve_impl_owner(self_ref, enumerating)
+        pr_self_refs[pr_num] = pr.get("vep_issue_number")
+        kubevirt_impl_prs_by_number[pr_num] = pr
+
+    ownership = resolve_impl_pr_ownership(issue_bodies_by_id, pr_self_refs)
+
+    impl_by_vep: dict[int, list[dict[str, Any]]] = {}
+    for pr_num, pr in kubevirt_impl_prs_by_number.items():
+        owner, conflict = ownership.get(pr_num, (None, False))
         if owner is None:
             continue
+        pr_url = pr.get("url") or pr.get("html_url") or f"https://github.com/kubevirt/kubevirt/pull/{pr_num}"
         if conflict:
             log(
                 f"Impl PR #{pr_num}: attribution conflict "
-                f"(self-ref {pr.get('vep_issue_number')}, enumerated by {sorted(enumerating)}) "
-                f"-> assigned VEP #{owner}",
+                f"(self-ref {pr.get('vep_issue_number')}) -> assigned VEP #{owner}",
                 node="alert_formatting",
             )
         impl_by_vep.setdefault(owner, []).append({
@@ -145,24 +177,21 @@ def build_vep_summary_table(
 
     # Widen: attribute issue-enumerated impl PRs that never appeared in
     # prs_index (e.g. old PRs beyond the ~1200-PR fetch window). They carry no
-    # self-ref, so resolve_impl_owner keys purely on the enumerating issue
+    # self-ref, so ownership was resolved purely from the enumerating issues
     # (unambiguous single issue -> that VEP). Real metadata is fetched below so
     # they still go through the same cycle-scoping filters as indexed PRs.
     already_placed = {p["number"] for prs in impl_by_vep.values() for p in prs}
     widened: list[tuple[int, int]] = []  # (pr_num, owner)
-    for pr_num, enumerating_issues in enumerated_by_pr.items():
-        if pr_num in already_placed:
+    for pr_num, (owner, conflict) in ownership.items():
+        if pr_num in already_placed or pr_num in pr_self_refs:
             continue
-        enumerating = enumerating_issues & in_scope_issues
-        owner, conflict = resolve_impl_owner(None, enumerating)
         if owner is None:
-            continue
-        if conflict:
-            log(
-                f"Impl PR #{pr_num}: enumerated by multiple in-scope issues "
-                f"{sorted(enumerating)} and absent from prs_index -> left unlinked",
-                node="alert_formatting",
-            )
+            if conflict:
+                log(
+                    f"Impl PR #{pr_num}: enumerated by multiple in-scope issues "
+                    "and absent from prs_index -> left unlinked",
+                    node="alert_formatting",
+                )
             continue
         widened.append((pr_num, owner))
 
@@ -377,29 +406,6 @@ def build_vep_summary_table(
         # Get urgency level
         urgency, urgency_color = get_urgency_level(vep)
 
-        # Get status comment from risk_assessment
-        status_comment = "No risk assessment"
-        if hasattr(vep, 'analysis') and vep.analysis:
-            risk_assessment = vep.analysis.get("risk_assessment")
-            if risk_assessment:
-                prob = risk_assessment.get("merge_probability", "?")
-                sentiment = risk_assessment.get("reviewer_sentiment", "unknown")
-                recent_progress = risk_assessment.get("recent_progress", True)
-
-                # Build status comment
-                if prob != "?":
-                    if prob >= 80:
-                        status_comment = f"Likely to merge ({prob}%) - {sentiment}"
-                    elif prob >= 50:
-                        status_comment = f"Moderate risk ({prob}%) - {sentiment}"
-                    else:
-                        status_comment = f"At risk ({prob}%) - {sentiment}"
-
-                    if not recent_progress:
-                        status_comment += " [STALE]"
-                else:
-                    status_comment = f"Sentiment: {sentiment}"
-
         table_rows.append({
             "vep_number": vep.tracking_issue_id,
             "vep_name": vep.name,
@@ -408,9 +414,9 @@ def build_vep_summary_table(
             "impl_prs": impl_prs,
             "urgency": urgency,
             "urgency_color": urgency_color,
-            "status_comment": status_comment,
+            "status_comment": status_comment(vep),
             "escalate": (
-                vep.analysis.get("risk_assessment", {}).get("recommend_escalation", False)
+                vep.analysis.get("attention", {}).get("attention_level") == "needs_attention"
                 if hasattr(vep, 'analysis') and vep.analysis else False
             ),
         })

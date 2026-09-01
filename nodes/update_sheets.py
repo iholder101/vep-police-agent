@@ -114,7 +114,7 @@ REQUIREMENTS:
 2. Column A = "VEP ID" containing tracking_issue_id (GitHub issue number)
 3. Row count (excluding header) must equal VEP count
 
-COLUMNS: VEP ID, Name, Title, Owner, SIG, Status, Target Release, Proposal PRs, Impl PRs, Urgency, Merge Probability, Sentiment, Status Comment
+COLUMNS: VEP ID, Name, Title, Owner, SIG, Status, Target Release, Proposal PRs, Impl PRs, Urgency, Attention, Attention Reasons, Status Comment
 
 WORKFLOW:
 1. Call update_cells with spreadsheet_id, range="Sheet1!A1", and values as 2D array
@@ -136,10 +136,13 @@ Return: table_schema, sheet_id, rows_updated, rows_added."""
     for vep in veps:
         table_row = table_data_by_id.get(vep.tracking_issue_id, {})
 
-        # Get risk assessment data
-        risk_assessment = {}
+        # Get attention assessment data
+        attention = {}
         if hasattr(vep, 'analysis') and vep.analysis:
-            risk_assessment = vep.analysis.get("risk_assessment", {})
+            attention = vep.analysis.get("attention", {})
+        attention_reasons = ", ".join(
+            r.get("text", "") for r in (attention.get("attention_reasons") or [])
+        )
 
         simplified_veps.append({
             "tracking_issue_id": vep.tracking_issue_id,
@@ -154,8 +157,8 @@ Return: table_schema, sheet_id, rows_updated, rows_added."""
             "proposal_prs": format_pr_links_plain(table_row.get("proposal_prs", [])),
             "impl_prs": format_pr_links_plain(table_row.get("impl_prs", [])),
             "urgency": table_row.get("urgency", "UNKNOWN"),
-            "merge_probability": risk_assessment.get("merge_probability", "N/A"),
-            "sentiment": risk_assessment.get("reviewer_sentiment", "N/A"),
+            "attention": attention.get("attention_level", "N/A"),
+            "attention_reasons": attention_reasons or "N/A",
             "status_comment": table_row.get("status_comment", "No assessment"),
             # Legacy fields for backward compatibility
             "compliance": {
@@ -193,8 +196,8 @@ update_cells(
   spreadsheet_id="{sheet_id}",
   range="VEP Information!A1",
   values=[
-    ["VEP ID", "Name", "Title", "Owner", "SIG", "Status", "Target Release", "Proposal PRs", "Impl PRs", "Urgency", "Merge Probability", "Sentiment", "Status Comment"],
-    [181, "vep-0181", "Example Title", "owner1", "compute", "Tracked", "v1.5", "#123", "#456, #457", "GREEN", 85, "positive", "Likely to merge (85%) - positive"],
+    ["VEP ID", "Name", "Title", "Owner", "SIG", "Status", "Target Release", "Proposal PRs", "Impl PRs", "Urgency", "Attention", "Attention Reasons", "Status Comment"],
+    [181, "vep-0181", "Example Title", "owner1", "compute", "Tracked", "v1.5", "#123", "#456, #457", "GREEN", "ok", "All implementation PRs are merged.", "All implementation PRs are merged."],
     ...
   ]
 )"""

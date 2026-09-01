@@ -188,11 +188,68 @@ query($orgName: String!, $projectNumber: Int!) {
 }
 """
 
+# GraphQL query to fetch grounded conversation data for a single PR: latest
+# per-reviewer review state, most recent commit push, recent comments, and
+# review-dismissal timeline. Used to derive real reviewer-sentiment signals
+# (see services.indexer.derive_pr_conversation_signals) instead of relying
+# on review *counts* alone.
+_PR_CONVERSATION_QUERY = """
+query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      latestReviews(last: 50) {
+        nodes {
+          author { login }
+          state
+          submittedAt
+        }
+      }
+      commits(last: 1) {
+        nodes {
+          commit {
+            committedDate
+            pushedDate
+          }
+        }
+      }
+      comments(last: 20) {
+        nodes {
+          author { login }
+          createdAt
+        }
+      }
+      timelineItems(last: 30, itemTypes: [REVIEW_DISMISSED_EVENT]) {
+        nodes {
+          __typename
+          ... on ReviewDismissedEvent {
+            createdAt
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
 # GraphQL mutation to update a single field value on a project item
 _UPDATE_FIELD_MUTATION = """
 mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: ProjectV2FieldValue!) {
   updateProjectV2ItemFieldValue(
     input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: $value }
+  ) {
+    projectV2Item { id }
+  }
+}
+"""
+
+# clearProjectV2ItemFieldValue actually unsets the field (no stored value at
+# all), unlike updateProjectV2ItemFieldValue with an empty string which sets
+# a real (empty) value. Use this for reconciliation-clearing so out-of-scope
+# items end up with a genuinely empty field, not a stray empty-string value.
+_CLEAR_FIELD_MUTATION = """
+mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!) {
+  clearProjectV2ItemFieldValue(
+    input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId }
   ) {
     projectV2Item { id }
   }
@@ -305,6 +362,38 @@ def execute_graphql_query(query: str, variables: dict[str, Any]) -> dict[str, An
     )
     response.raise_for_status()
     return response.json()
+
+
+def fetch_pr_conversation(owner: str, repo: str, number: int) -> dict[str, Any]:
+    """Fetch raw conversation data (reviews, commits, comments, dismissals) for one PR.
+
+    This is the raw fetcher only — no derivation/aggregation happens here.
+    See `services.indexer.derive_pr_conversation_signals` for the pure function
+    that turns this payload into grounded reviewer-sentiment signals.
+
+    Args:
+        owner: Repository owner (e.g. "kubevirt")
+        repo: Repository name (e.g. "kubevirt")
+        number: PR number
+
+    Returns:
+        The raw `pullRequest` payload dict, or {} if the PR wasn't found.
+
+    Raises:
+        Exception: If the GraphQL request itself fails (network error, missing
+            token, etc.) — callers are expected to handle this and fall back
+            to an empty dict, matching the rest of the enrichment pipeline.
+    """
+    variables = {"owner": owner, "repo": repo, "number": number}
+
+    result = execute_graphql_query(_PR_CONVERSATION_QUERY, variables)
+
+    if "errors" in result:
+        log(f"GraphQL errors fetching conversation for {owner}/{repo}#{number}: {result['errors']}",
+            node="graphql", level="DEBUG")
+
+    repository = (result.get("data") or {}).get("repository") or {}
+    return repository.get("pullRequest") or {}
 
 
 def _extract_field_value(field_node: dict[str, Any]) -> tuple[str | None, Any]:
@@ -651,6 +740,83 @@ def update_project_item_fields(
         value = {"text": text_value}
 
         if update_project_item_field(project_id, item_id, field_id, value):
+            success_count += 1
+
+    return success_count
+
+
+def clear_project_item_field(
+    project_id: str,
+    item_id: str,
+    field_id: str,
+) -> bool:
+    """Unset a single field value on a project board item.
+
+    Uses clearProjectV2ItemFieldValue, which removes the field's stored
+    value entirely (as opposed to updateProjectV2ItemFieldValue with an
+    empty string, which stores an actual empty-string value).
+
+    Args:
+        project_id: Project node ID (e.g., "PVT_...")
+        item_id: Item node ID (e.g., "PVTI_...")
+        field_id: Field node ID (e.g., "PVTF_...")
+
+    Returns:
+        True on success, False on error
+    """
+    variables = {
+        "projectId": project_id,
+        "itemId": item_id,
+        "fieldId": field_id,
+    }
+
+    try:
+        result = execute_graphql_query(_CLEAR_FIELD_MUTATION, variables)
+    except Exception as e:
+        log(f"GraphQL clear mutation failed for field {field_id}: {e}", node="graphql", level="ERROR")
+        return False
+
+    if "errors" in result:
+        log(f"GraphQL clear mutation errors for field {field_id}: {result['errors']}", node="graphql", level="ERROR")
+        return False
+
+    return True
+
+
+def clear_project_item_fields(
+    project_id: str,
+    item_id: str,
+    field_names: list[str],
+    field_metadata: dict[str, Any],
+) -> int:
+    """Unset multiple fields on a project board item.
+
+    Looks up field IDs from metadata and calls clear_project_item_field()
+    for each field name. Used to reconcile agent-owned fields on board
+    items that are no longer in scope (e.g. removed from milestone).
+
+    Args:
+        project_id: Project node ID (e.g., "PVT_...")
+        item_id: Item node ID (e.g., "PVTI_...")
+        field_names: List of field names to clear, e.g.
+                     ["Agent Urgency", "Agent Comment"]
+        field_metadata: Field metadata from get_project_field_metadata(),
+                        specifically the "fields" sub-dict
+
+    Returns:
+        Count of successfully cleared fields
+    """
+    success_count = 0
+
+    for field_name in field_names:
+        field_info = field_metadata.get(field_name)
+        if not field_info:
+            log(f"Field '{field_name}' not found in project metadata, skipping", node="graphql", level="WARNING")
+            continue
+
+        field_id = field_info["id"]
+
+        if clear_project_item_field(project_id, item_id, field_id):
             success_count += 1
 
     return success_count

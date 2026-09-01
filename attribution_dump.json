@@ -1,0 +1,711 @@
+{
+  "current_release": "v1.10",
+  "cycle_start_date": "2026-06-24",
+  "previous_release_code_freeze": "2026-06-24",
+  "vep_count": 79,
+  "veps": [
+    {
+      "vep": 10,
+      "name": "vep-0010",
+      "proposal_prs": [
+        320
+      ],
+      "impl_prs": [
+        18109,
+        18298,
+        18315,
+        18927
+      ]
+    },
+    {
+      "vep": 14,
+      "name": "vep-0014",
+      "proposal_prs": [],
+      "impl_prs": [
+        17399
+      ]
+    },
+    {
+      "vep": 16,
+      "name": "vep-0016",
+      "proposal_prs": [
+        114
+      ],
+      "impl_prs": [
+        18483
+      ]
+    },
+    {
+      "vep": 21,
+      "name": "vep-0021",
+      "proposal_prs": [],
+      "impl_prs": [
+        17878
+      ]
+    },
+    {
+      "vep": 24,
+      "name": "vep-0024",
+      "proposal_prs": [],
+      "impl_prs": [
+        18168,
+        18216
+      ]
+    },
+    {
+      "vep": 25,
+      "name": "vep-0025",
+      "proposal_prs": [
+        398
+      ],
+      "impl_prs": [
+        18313,
+        18416,
+        18470,
+        18537,
+        18725,
+        18750
+      ]
+    },
+    {
+      "vep": 31,
+      "name": "vep-0031",
+      "proposal_prs": [],
+      "impl_prs": []
+    },
+    {
+      "vep": 80,
+      "name": "vep-0080",
+      "proposal_prs": [],
+      "impl_prs": [
+        17638
+      ]
+    },
+    {
+      "vep": 90,
+      "name": "vep-0090",
+      "proposal_prs": [
+        433
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 106,
+      "name": "vep-0106",
+      "proposal_prs": [
+        391
+      ],
+      "impl_prs": [
+        18497
+      ]
+    },
+    {
+      "vep": 109,
+      "name": "vep-0109",
+      "proposal_prs": [],
+      "impl_prs": []
+    },
+    {
+      "vep": 111,
+      "name": "vep-0111",
+      "proposal_prs": [
+        347
+      ],
+      "impl_prs": [
+        18317
+      ]
+    },
+    {
+      "vep": 115,
+      "name": "vep-0115",
+      "proposal_prs": [
+        424
+      ],
+      "impl_prs": [
+        17886
+      ]
+    },
+    {
+      "vep": 118,
+      "name": "vep-0118",
+      "proposal_prs": [
+        117
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 141,
+      "name": "vep-0141",
+      "proposal_prs": [
+        368
+      ],
+      "impl_prs": [
+        18687
+      ]
+    },
+    {
+      "vep": 143,
+      "name": "vep-0143",
+      "proposal_prs": [
+        319,
+        439
+      ],
+      "impl_prs": [
+        18141,
+        18188,
+        18551,
+        18938
+      ]
+    },
+    {
+      "vep": 144,
+      "name": "vep-0144",
+      "proposal_prs": [
+        370
+      ],
+      "impl_prs": [
+        17816,
+        17850
+      ]
+    },
+    {
+      "vep": 152,
+      "name": "vep-0152",
+      "proposal_prs": [
+        414
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 156,
+      "name": "vep-0156",
+      "proposal_prs": [
+        369
+      ],
+      "impl_prs": [
+        18137,
+        18708
+      ]
+    },
+    {
+      "vep": 160,
+      "name": "vep-0160",
+      "proposal_prs": [],
+      "impl_prs": [
+        18198
+      ]
+    },
+    {
+      "vep": 161,
+      "name": "vep-0161",
+      "proposal_prs": [],
+      "impl_prs": [
+        17670
+      ]
+    },
+    {
+      "vep": 165,
+      "name": "vep-0165",
+      "proposal_prs": [
+        437
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 168,
+      "name": "vep-0168",
+      "proposal_prs": [
+        306
+      ],
+      "impl_prs": [
+        18095
+      ]
+    },
+    {
+      "vep": 183,
+      "name": "vep-0183",
+      "proposal_prs": [
+        331,
+        332,
+        443
+      ],
+      "impl_prs": [
+        17433,
+        18444,
+        18451,
+        18741
+      ]
+    },
+    {
+      "vep": 190,
+      "name": "vep-0190",
+      "proposal_prs": [
+        358,
+        407,
+        436
+      ],
+      "impl_prs": [
+        18001,
+        18102,
+        18148,
+        18892
+      ]
+    },
+    {
+      "vep": 192,
+      "name": "vep-0192",
+      "proposal_prs": [
+        425
+      ],
+      "impl_prs": [
+        17922,
+        18181
+      ]
+    },
+    {
+      "vep": 207,
+      "name": "vep-0207",
+      "proposal_prs": [],
+      "impl_prs": []
+    },
+    {
+      "vep": 210,
+      "name": "vep-0210",
+      "proposal_prs": [
+        318
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 222,
+      "name": "vep-0222",
+      "proposal_prs": [
+        387
+      ],
+      "impl_prs": [
+        17955,
+        18067,
+        18274
+      ]
+    },
+    {
+      "vep": 227,
+      "name": "vep-0227",
+      "proposal_prs": [
+        413
+      ],
+      "impl_prs": [
+        17135
+      ]
+    },
+    {
+      "vep": 233,
+      "name": "vep-0233",
+      "proposal_prs": [
+        341
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 246,
+      "name": "vep-0246",
+      "proposal_prs": [
+        408
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 248,
+      "name": "vep-0248",
+      "proposal_prs": [
+        329
+      ],
+      "impl_prs": [
+        17737,
+        17860,
+        18303
+      ]
+    },
+    {
+      "vep": 250,
+      "name": "vep-0250",
+      "proposal_prs": [],
+      "impl_prs": []
+    },
+    {
+      "vep": 254,
+      "name": "vep-0254",
+      "proposal_prs": [
+        255
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 256,
+      "name": "vep-0256",
+      "proposal_prs": [],
+      "impl_prs": [
+        18032
+      ]
+    },
+    {
+      "vep": 265,
+      "name": "vep-0258",
+      "proposal_prs": [],
+      "impl_prs": []
+    },
+    {
+      "vep": 282,
+      "name": "vep-0282",
+      "proposal_prs": [],
+      "impl_prs": []
+    },
+    {
+      "vep": 285,
+      "name": "vep-0285",
+      "proposal_prs": [
+        351
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 287,
+      "name": "vep-0287",
+      "proposal_prs": [
+        442
+      ],
+      "impl_prs": [
+        17553
+      ]
+    },
+    {
+      "vep": 291,
+      "name": "vep-0291",
+      "proposal_prs": [
+        409
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 293,
+      "name": "vep-0293",
+      "proposal_prs": [
+        328
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 297,
+      "name": "vep-0297",
+      "proposal_prs": [
+        298
+      ],
+      "impl_prs": [
+        18413
+      ]
+    },
+    {
+      "vep": 300,
+      "name": "vep-0300",
+      "proposal_prs": [
+        432
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 307,
+      "name": "vep-0307",
+      "proposal_prs": [
+        308
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 312,
+      "name": "vep-0312",
+      "proposal_prs": [
+        313
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 321,
+      "name": "vep-0321",
+      "proposal_prs": [
+        322
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 326,
+      "name": "vep-0326",
+      "proposal_prs": [
+        327
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 337,
+      "name": "vep-0337",
+      "proposal_prs": [],
+      "impl_prs": []
+    },
+    {
+      "vep": 338,
+      "name": "vep-0338",
+      "proposal_prs": [],
+      "impl_prs": []
+    },
+    {
+      "vep": 340,
+      "name": "vep-0340",
+      "proposal_prs": [
+        346
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 342,
+      "name": "vep-0342",
+      "proposal_prs": [
+        343
+      ],
+      "impl_prs": [
+        18249
+      ]
+    },
+    {
+      "vep": 344,
+      "name": "vep-0344",
+      "proposal_prs": [
+        345
+      ],
+      "impl_prs": [
+        17957
+      ]
+    },
+    {
+      "vep": 349,
+      "name": "vep-0349",
+      "proposal_prs": [
+        350
+      ],
+      "impl_prs": [
+        18727,
+        18728,
+        18729,
+        18730,
+        18731
+      ]
+    },
+    {
+      "vep": 356,
+      "name": "vep-0356",
+      "proposal_prs": [
+        357
+      ],
+      "impl_prs": [
+        18516
+      ]
+    },
+    {
+      "vep": 359,
+      "name": "vep-0359",
+      "proposal_prs": [
+        360
+      ],
+      "impl_prs": [
+        18277
+      ]
+    },
+    {
+      "vep": 362,
+      "name": "vep-0362",
+      "proposal_prs": [
+        363
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 366,
+      "name": "vep-0366",
+      "proposal_prs": [
+        367
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 371,
+      "name": "vep-0371",
+      "proposal_prs": [
+        348
+      ],
+      "impl_prs": [
+        18726,
+        18841
+      ]
+    },
+    {
+      "vep": 373,
+      "name": "vep-0373",
+      "proposal_prs": [
+        372
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 374,
+      "name": "vep-0374",
+      "proposal_prs": [
+        378
+      ],
+      "impl_prs": [
+        18192
+      ]
+    },
+    {
+      "vep": 376,
+      "name": "vep-0376",
+      "proposal_prs": [
+        377
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 379,
+      "name": "vep-0379",
+      "proposal_prs": [
+        380
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 381,
+      "name": "vep-0381",
+      "proposal_prs": [],
+      "impl_prs": []
+    },
+    {
+      "vep": 383,
+      "name": "vep-0383",
+      "proposal_prs": [
+        384
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 385,
+      "name": "vep-0385",
+      "proposal_prs": [
+        386
+      ],
+      "impl_prs": [
+        18771
+      ]
+    },
+    {
+      "vep": 389,
+      "name": "vep-0389",
+      "proposal_prs": [
+        390
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 392,
+      "name": "vep-0392",
+      "proposal_prs": [
+        393
+      ],
+      "impl_prs": [
+        18286
+      ]
+    },
+    {
+      "vep": 395,
+      "name": "vep-0395",
+      "proposal_prs": [
+        396
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 399,
+      "name": "vep-0025",
+      "proposal_prs": [
+        400
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 401,
+      "name": "vep-0401",
+      "proposal_prs": [
+        402
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 403,
+      "name": "vep-0403",
+      "proposal_prs": [
+        404
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 405,
+      "name": "vep-0405",
+      "proposal_prs": [
+        406
+      ],
+      "impl_prs": [
+        18564
+      ]
+    },
+    {
+      "vep": 411,
+      "name": "vep-0411",
+      "proposal_prs": [
+        412
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 416,
+      "name": "vep-0025",
+      "proposal_prs": [
+        417
+      ],
+      "impl_prs": []
+    },
+    {
+      "vep": 418,
+      "name": "vep-0418",
+      "proposal_prs": [],
+      "impl_prs": []
+    },
+    {
+      "vep": 419,
+      "name": "vep-0419",
+      "proposal_prs": [],
+      "impl_prs": [
+        18652
+      ]
+    },
+    {
+      "vep": 426,
+      "name": "vep-0426",
+      "proposal_prs": [],
+      "impl_prs": []
+    },
+    {
+      "vep": 427,
+      "name": "vep-0427",
+      "proposal_prs": [
+        428
+      ],
+      "impl_prs": []
+    }
+  ]
+}

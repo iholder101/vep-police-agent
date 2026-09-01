@@ -1,0 +1,3640 @@
+generated: '2026-08-26T02:45:29'
+cycle_duration_seconds: 2930
+vep_count: 79
+veps:
+- vep_number: 10
+  name: vep-0010
+  title: 'VEP 10: Support GPU DRA devices in KubeVirt'
+  owner: unknown
+  sig: unknown
+  target_release: v1.9
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 11
+    state: merged
+  - number: 65
+    state: merged
+  - number: 133
+    state: closed
+  - number: 155
+    state: merged
+  - number: 157
+    state: merged
+  - number: 158
+    state: closed
+  - number: 179
+    state: closed
+  - number: 292
+    state: merged
+  - number: 320
+    state: open
+  impl_prs:
+  - number: 16556
+    state: merged
+  - number: 17028
+    state: merged
+  - number: 17385
+    state: merged
+  - number: 17490
+    state: merged
+  - number: 17524
+    state: closed
+  - number: 17537
+    state: closed
+  - number: 17611
+    state: merged
+  - number: 17771
+    state: merged
+  - number: 17797
+    state: merged
+  - number: 17923
+    state: merged
+  - number: 18061
+    state: merged
+  - number: 18109
+    state: merged
+  - number: 18247
+    state: merged
+  - number: 18298
+    state: merged
+  - number: 18315
+    state: merged
+  - number: 18702
+    state: closed
+  - number: 18927
+    state: open
+  alerts:
+  - severity: high
+    subject: activity_issue
+    message: 'Proposal PR #320 has been inactive for 13 days. Needs immediate review
+      to meet the Enhancement Freeze in 9 days.'
+  - severity: high
+    subject: deadline_violation
+    message: 'Proposal PR #320 is stale (13 days inactive). EF deadline is in 10 days.
+      Immediate action required to unblock.'
+  - severity: medium
+    subject: deadline_violation
+    message: PR 320 is still open and EF is in 7 days. Expedite review to meet the
+      deadline.
+- vep_number: 14
+  name: vep-0014
+  title: 'VEP 14: Track the second phase of the firmware UUID implementation fix'
+  owner: unknown
+  sig: unknown
+  target_release: v1.6
+  status: Proposed for consideration
+  promotion_phase: Graduating
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 274
+    state: merged
+  impl_prs:
+  - number: 17399
+    state: open
+  alerts: []
+- vep_number: 16
+  name: vep-0016
+  title: 'VEP 16: Use ImageVolume to mount OCI images as volumes in virt-launcher'
+  owner: unknown
+  sig: unknown
+  target_release: v1.6
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 5
+    state: merged
+  - number: 114
+    state: open
+  impl_prs:
+  - number: 18483
+    state: merged
+  alerts:
+  - severity: high
+    subject: activity_issue
+    message: 'Proposal PR #114 has been inactive for 17 days. Needs urgent attention
+      as EF deadline is in 9 days.'
+  - severity: high
+    subject: activity_issue
+    message: PR 114 has been inactive for 19 days with EF only 7 days away. Immediate
+      escalation is needed to secure reviews and avoid missing the deadline.
+  - severity: high
+    subject: deadline_violation
+    message: 'Proposal PR #114 is stale (16 days inactive). EF deadline is in 10 days.
+      Immediate action required.'
+  - severity: medium
+    subject: activity_issue
+    message: Enhancement PR 114 has been inactive for 18 days. Reviewers need to be
+      pinged to avoid missing enhancement freeze.
+  - severity: medium
+    subject: activity_issue
+    message: 'Proposal PR #114 has been inactive for 18 days. Escalate to reviewers
+      to prevent missing the enhancement freeze deadline in 8 days.'
+- vep_number: 21
+  name: vep-0021
+  title: 'VEP 21: Passt seamless migration and core binding'
+  owner: unknown
+  sig: unknown
+  target_release: v1.8
+  status: Tracked
+  promotion_phase: Graduating
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 20
+    state: merged
+  - number: 88
+    state: merged
+  - number: 147
+    state: merged
+  impl_prs:
+  - number: 17878
+    state: open
+  alerts: []
+- vep_number: 24
+  name: vep-0024
+  title: 'VEP 24: Decentralized live migration'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 6
+    state: merged
+  - number: 44
+    state: closed
+  - number: 175
+    state: merged
+  impl_prs:
+  - number: 18157
+    state: merged
+  - number: 18168
+    state: merged
+  - number: 18216
+    state: merged
+  - number: 18217
+    state: merged
+  alerts: []
+- vep_number: 25
+  name: vep-0025
+  title: 'VEP 25: Incremental backup with CBT'
+  owner: unknown
+  sig: unknown
+  target_release: v1.6
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 26
+    state: merged
+  - number: 126
+    state: merged
+  - number: 226
+    state: merged
+  - number: 398
+    state: open
+  - number: 400
+    state: open
+  impl_prs:
+  - number: 16883
+    state: merged
+  - number: 16930
+    state: merged
+  - number: 18313
+    state: open
+  - number: 18416
+    state: open
+  - number: 18537
+    state: open
+  - number: 18725
+    state: open
+  - number: 18750
+    state: open
+  alerts:
+  - severity: high
+    subject: deadline_violation
+    message: Enhancement freeze is in 8 days, but PRs 398 and 400 are still open and
+      lack LGTM/approvals. Expedited review is needed.
+  - severity: high
+    subject: deadline_violation
+    message: Enhancement Freeze is 7 days away, but active proposal PRs (398, 400)
+      lack LGTM/Approve labels. Expedited review is required.
+  - severity: medium
+    subject: compliance_issue
+    message: The VEP has active PRs but is missing SIG storage signoff and valid labels
+      before the impending Enhancement Freeze.
+  - severity: medium
+    subject: deadline_violation
+    message: Enhancement Freeze is in 8 days, but active proposal PRs (398, 400) do
+      not have required LGTM/Approve labels. Immediate review is needed.
+  - severity: low
+    subject: compliance_issue
+    message: VEP is missing required labels and SIG sign-off approvals.
+- vep_number: 31
+  name: vep-0031
+  title: 'VEP 31: Declarative Volume Hotplug'
+  owner: unknown
+  sig: unknown
+  target_release: v1.6
+  status: Tracked
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 50
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs: []
+  impl_prs: []
+  alerts:
+  - severity: critical
+    subject: deadline_violation
+    message: Enhancement Freeze is 9 days away, but no enhancement proposal PR is
+      linked. A PR must be submitted immediately.
+  - severity: high
+    subject: activity_issue
+    message: No active proposal PR is linked for this VEP, and Enhancement Freeze
+      is in 8 days. Action required to avoid missing the release.
+  - severity: high
+    subject: compliance_issue
+    message: No enhancement PR is linked. With EF 8 days away, this VEP is severely
+      at risk of missing the deadline.
+  - severity: high
+    subject: deadline_violation
+    message: No enhancement PR is linked, and Enhancement Freeze is 10 days away.
+      Clarify intentions for v1.10 targeting.
+- vep_number: 80
+  name: vep-0080
+  title: 'VEP 80: Enable Intel TDX and AMD SEV-SNP'
+  owner: unknown
+  sig: unknown
+  target_release: v1.7
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 79
+    state: merged
+  - number: 296
+    state: merged
+  impl_prs:
+  - number: 17638
+    state: open
+  - number: 18048
+    state: merged
+  alerts:
+  - severity: low
+    subject: compliance_issue
+    message: Missing required SIG approvals and invalid labels.
+  - severity: low
+    subject: compliance_issue
+    message: VEP 80 is missing valid labels and SIG sign-off.
+  - severity: low
+    subject: compliance_issue
+    message: VEP 80 is missing required SIG signoffs and valid labels. Please ensure
+      these items are completed.
+- vep_number: 90
+  name: vep-0090
+  title: 'VEP 90: Utility Volumes for virt-launcher Pods'
+  owner: unknown
+  sig: unknown
+  target_release: v1.7
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 95
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 91
+    state: merged
+  - number: 279
+    state: merged
+  - number: 433
+    state: merged
+  impl_prs: []
+  alerts:
+  - severity: medium
+    subject: deadline_violation
+    message: The enhancement freeze is 9 days away. Proposal PR 433 was recently opened
+      and needs attention to merge on time.
+  - severity: low
+    subject: compliance_issue
+    message: Missing required SIG approvals and invalid labels.
+  - severity: low
+    subject: compliance_issue
+    message: VEP 90 is missing valid labels and SIG sign-off.
+  - severity: low
+    subject: compliance_issue
+    message: VEP 90 is missing required SIG signoffs and valid labels. Please ensure
+      these items are completed.
+- vep_number: 106
+  name: vep-0106
+  title: 'VEP 106: Decouple net-attach-def from KubeVirt'
+  owner: unknown
+  sig: unknown
+  target_release: v1.8
+  status: Proposed for consideration
+  promotion_phase: Graduating
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 107
+    state: merged
+  - number: 213
+    state: merged
+  - number: 391
+    state: merged
+  impl_prs:
+  - number: 16921
+    state: merged
+  - number: 18497
+    state: open
+  alerts:
+  - severity: low
+    subject: compliance_issue
+    message: Missing required SIG approvals and invalid labels.
+  - severity: low
+    subject: compliance_issue
+    message: VEP 106 is missing valid labels and SIG sign-off.
+  - severity: low
+    subject: compliance_issue
+    message: VEP 106 is missing required SIG signoffs and valid labels. Please ensure
+      these items are completed.
+- vep_number: 109
+  name: vep-0109
+  title: 'VEP 109: Implement vGPU Enabled Live Migration'
+  owner: unknown
+  sig: unknown
+  target_release: v1.9
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 95
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 110
+    state: merged
+  - number: 299
+    state: merged
+  impl_prs: []
+  alerts:
+  - severity: low
+    subject: compliance_issue
+    message: Missing required SIG approvals and invalid labels.
+  - severity: low
+    subject: compliance_issue
+    message: VEP 109 is missing valid labels and SIG sign-off.
+  - severity: low
+    subject: compliance_issue
+    message: VEP 109 is missing required SIG signoffs and valid labels. Please ensure
+      these items are completed.
+- vep_number: 111
+  name: vep-0111
+  title: 'VEP 111: Upgrade Path for VMs Using Ordinal Naming for Secondary Networks'
+  owner: unknown
+  sig: unknown
+  target_release: v1.8
+  status: Tracked
+  promotion_phase: Graduating
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 112
+    state: merged
+  - number: 275
+    state: merged
+  - number: 347
+    state: merged
+  impl_prs:
+  - number: 17127
+    state: merged
+  - number: 18317
+    state: open
+  alerts:
+  - severity: medium
+    subject: compliance_issue
+    message: VEP 111 is missing SIG sign-offs and has invalid tracking issue labels.
+      Please correct these before the freeze.
+- vep_number: 115
+  name: vep-0115
+  title: 'VEP 115: PCIe NUMA Topology Awareness'
+  owner: unknown
+  sig: unknown
+  target_release: v1.8
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 116
+    state: merged
+  - number: 264
+    state: closed
+  - number: 289
+    state: merged
+  - number: 424
+    state: open
+  impl_prs:
+  - number: 16632
+    state: merged
+  - number: 17493
+    state: closed
+  - number: 17886
+    state: merged
+  alerts:
+  - severity: medium
+    subject: compliance_issue
+    message: 'Proposal PR #424 lacks LGTM and Approved labels. Expedite review to
+      meet the Enhancement Freeze in 8 days.'
+  - severity: medium
+    subject: compliance_issue
+    message: VEP 115 is missing SIG sign-offs and has invalid tracking issue labels.
+      Please correct these before the freeze.
+- vep_number: 118
+  name: vep-0118
+  title: 'VEP#118:  Use Volume status to extract digest during live migration'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 80
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 117
+    state: open
+  impl_prs:
+  - number: 18715
+    state: open
+  alerts:
+  - severity: critical
+    subject: activity_issue
+    message: 'Proposal PR #117 has been highly inactive (last updated >40 days ago).
+      Immediate review and updates are needed to avoid missing the Enhancement Freeze
+      in 8 days.'
+  - severity: critical
+    subject: activity_issue
+    message: 'Proposal PR #117 has been inactive for 43 days. With EF in 7 days, this
+      VEP risks missing the v1.10 release.'
+  - severity: critical
+    subject: deadline_violation
+    message: Enhancement PR 117 for VEP 118 has had no activity for 42 days. With
+      Enhancement Freeze only 8 days away, immediate escalation is required to unblock
+      and merge.
+  - severity: high
+    subject: activity_issue
+    message: VEP 118 has an open proposal PR that has not been updated in ~40 days,
+      making it highly at risk of missing the Enhancement Freeze which is 10 days
+      away. Immediate action is required.
+  - severity: high
+    subject: activity_issue
+    message: PR 117 for VEP 118 has not been updated in 41 days. With the Enhancement
+      Freeze deadline only 9 days away, immediate action is required or the VEP should
+      be deferred.
+  - severity: medium
+    subject: compliance_issue
+    message: VEP 118 is missing SIG sign-offs and has invalid tracking issue labels.
+      Please correct these before the freeze.
+- vep_number: 141
+  name: vep-0141
+  title: 'VEP 141: Target-Side Pre-Migration Hooks for Domain XML Modification'
+  owner: unknown
+  sig: unknown
+  target_release: v1.8
+  status: Tracked
+  promotion_phase: Graduating
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 142
+    state: merged
+  - number: 154
+    state: merged
+  - number: 262
+    state: merged
+  - number: 368
+    state: merged
+  impl_prs:
+  - number: 16909
+    state: closed
+  - number: 17983
+    state: merged
+  - number: 18136
+    state: merged
+  - number: 18687
+    state: merged
+  alerts:
+  - severity: medium
+    subject: compliance_issue
+    message: VEP 141 is missing SIG sign-offs and has invalid tracking issue labels.
+      Please correct these before the freeze.
+- vep_number: 143
+  name: vep-0143
+  title: 'VEP 143: Monitoring Stack Separation via Hybrid Architecture'
+  owner: unknown
+  sig: unknown
+  target_release: v1.9
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 81
+    state: merged
+  - number: 319
+    state: merged
+  - number: 439
+    state: open
+  impl_prs:
+  - number: 17550
+    state: merged
+  - number: 18141
+    state: merged
+  - number: 18188
+    state: merged
+  - number: 18551
+    state: open
+  alerts:
+  - severity: medium
+    subject: compliance_issue
+    message: VEP 143 is missing SIG sign-offs and has invalid tracking issue labels.
+      Please correct these before the freeze.
+- vep_number: 144
+  name: vep-0144
+  title: 'VEP #144: Adjust virt-launcher memory lock requirements'
+  owner: unknown
+  sig: unknown
+  target_release: v1.8
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 145
+    state: merged
+  - number: 263
+    state: merged
+  - number: 316
+    state: closed
+  - number: 370
+    state: open
+  impl_prs:
+  - number: 17712
+    state: closed
+  - number: 17816
+    state: open
+  - number: 17850
+    state: open
+  alerts:
+  - severity: high
+    subject: activity_issue
+    message: 'PR #370 has had no activity for 6 days. With the Enhancement Freeze
+      only 8 days away, review cycles must accelerate.'
+  - severity: high
+    subject: deadline_violation
+    message: 'Proposal PR #370 needs immediate attention to merge before the Enhancement
+      Freeze.'
+  - severity: medium
+    subject: compliance_issue
+    message: VEP 144 is missing SIG sign-offs and has invalid tracking issue labels.
+      Please correct these before the freeze.
+- vep_number: 152
+  name: vep-0152
+  title: 'VEP 152: Add support for CPU DRA Driver'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 75
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 414
+    state: open
+  impl_prs: []
+  alerts:
+  - severity: medium
+    subject: compliance_issue
+    message: 'Proposal PR #414 lacks LGTM and Approved labels. Expedite review to
+      meet the Enhancement Freeze in 8 days.'
+  - severity: medium
+    subject: compliance_issue
+    message: VEP 152 is missing SIG sign-offs, has invalid tracking issue labels,
+      and its PRs are not correctly linked. Please correct these before the freeze.
+  - severity: low
+    subject: compliance_issue
+    message: VEP 152 is missing linked PRs in its tracking issue compliance data.
+      Ensure that relevant PRs are properly linked.
+- vep_number: 156
+  name: vep-0156
+  title: 'VEP 156: Expose Memory Overhead on VMI Status'
+  owner: unknown
+  sig: unknown
+  target_release: v1.8
+  status: Tracked
+  promotion_phase: Graduating
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 162
+    state: merged
+  - number: 239
+    state: merged
+  - number: 261
+    state: merged
+  - number: 369
+    state: merged
+  impl_prs:
+  - number: 17804
+    state: merged
+  - number: 18137
+    state: merged
+  - number: 18708
+    state: merged
+  alerts: []
+- vep_number: 160
+  name: vep-0160
+  title: 'VEP 160: Option to opt-out kubevirt RBAC aggregation'
+  owner: unknown
+  sig: unknown
+  target_release: v1.8
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 159
+    state: merged
+  - number: 276
+    state: merged
+  impl_prs:
+  - number: 16350
+    state: merged
+  - number: 17540
+    state: merged
+  - number: 18198
+    state: merged
+  alerts: []
+- vep_number: 161
+  name: vep-0161
+  title: 'VEP 161: Platform-specific (Hypervisor/Arch) Feature discovery'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Tracked
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 55
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs: []
+  impl_prs:
+  - number: 17670
+    state: open
+  alerts:
+  - severity: critical
+    subject: deadline_violation
+    message: VEP 161 has no active proposal PR tracked 7 days before Enhancement Freeze,
+      blocking design phase compliance.
+  - severity: high
+    subject: compliance_issue
+    message: VEP 161 has no proposal PRs linked in the tracking system, despite being
+      just 8 days away from Enhancement Freeze. A PR must be opened and reviewed immediately.
+  - severity: high
+    subject: compliance_issue
+    message: 'VEP 161 has 8 days until Enhancement Freeze but does not have its enhancement
+      PR (e.g., #122) linked to the tracking system. This obscures activity and poses
+      a high risk of missing the deadline.'
+  - severity: high
+    subject: deadline_violation
+    message: Enhancement Freeze is 10 days away, but no active proposal PR is linked
+      for the current cycle. Recommend urgent escalation.
+  - severity: medium
+    subject: compliance_issue
+    message: VEP 161 is missing required SIG sign-offs and valid tracking issue labels.
+      Please update the issue to comply with current processes.
+- vep_number: 165
+  name: vep-0165
+  title: 'VEP 165: ContainerPath Volumes'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 95
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 164
+    state: merged
+  - number: 437
+    state: open
+  impl_prs: []
+  alerts:
+  - severity: medium
+    subject: compliance_issue
+    message: VEP 165 is missing required SIG sign-offs and valid tracking issue labels.
+      Please update the issue to comply with current processes.
+  - severity: medium
+    subject: deadline_violation
+    message: PR 437 is open for v1.10 Beta promotion but lacks reviews. Expedite reviews
+      to meet the Enhancement Freeze deadline in 8 days.
+- vep_number: 168
+  name: vep-0168
+  title: 'VEP 168: Masquerade Port Ranges'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 167
+    state: merged
+  - number: 306
+    state: open
+  impl_prs:
+  - number: 18095
+    state: merged
+  alerts:
+  - severity: medium
+    subject: activity_issue
+    message: PR 306 has seen no activity for over 50 days. Needs to be concluded or
+      closed to clarify the status for the current release cycle.
+  - severity: medium
+    subject: compliance_issue
+    message: VEP 168 is missing required SIG sign-offs and valid tracking issue labels.
+      Please update the issue to comply with current processes.
+  - severity: low
+    subject: activity_issue
+    message: 'PR #306 has been inactive for 53 days. While the main code is merged,
+      this PR should be reviewed or closed.'
+- vep_number: 183
+  name: vep-0183
+  title: 'VEP 183: NetworkDevicesWithDRA'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Tracked
+  promotion_phase: Graduating
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 185
+    state: merged
+  - number: 331
+    state: open
+  - number: 332
+    state: merged
+  impl_prs:
+  - number: 16939
+    state: closed
+  - number: 16982
+    state: closed
+  - number: 17433
+    state: open
+  - number: 17490
+    state: merged
+  - number: 17611
+    state: merged
+  - number: 17661
+    state: merged
+  - number: 17771
+    state: merged
+  - number: 18444
+    state: open
+  - number: 18451
+    state: open
+  - number: 18741
+    state: open
+  alerts:
+  - severity: medium
+    subject: activity_issue
+    message: 'PR #331 has been inactive for 8 days with only 7 days left until Enhancement
+      Freeze. Reviewers should be pinged.'
+  - severity: medium
+    subject: compliance_issue
+    message: VEP 183 is missing required SIG sign-offs and valid tracking issue labels.
+      Please update the issue to comply with current processes.
+- vep_number: 190
+  name: vep-0190
+  title: 'VEP 190: Structured KubeVirt Plugins'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 191
+    state: merged
+  - number: 358
+    state: merged
+  - number: 407
+    state: merged
+  - number: 436
+    state: open
+  impl_prs:
+  - number: 17790
+    state: merged
+  - number: 17897
+    state: merged
+  - number: 18001
+    state: merged
+  - number: 18100
+    state: closed
+  - number: 18102
+    state: merged
+  - number: 18129
+    state: merged
+  - number: 18148
+    state: merged
+  - number: 18392
+    state: merged
+  - number: 18414
+    state: merged
+  - number: 18457
+    state: merged
+  - number: 18733
+    state: open
+  - number: 18892
+    state: open
+  alerts:
+  - severity: medium
+    subject: compliance_issue
+    message: VEP 190 is missing required SIG sign-offs and valid tracking issue labels.
+      Please update the issue to comply with current processes.
+  - severity: medium
+    subject: deadline_violation
+    message: PRs 407 and 436 are active but need prompt reviews from SIGs to secure
+      Alpha 2 merging before Enhancement Freeze.
+- vep_number: 192
+  name: vep-0192
+  title: 'VEP 192: Decentralized Live Migration LM network proxy support'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 198
+    state: merged
+  impl_prs:
+  - number: 17922
+    state: open
+  - number: 18181
+    state: merged
+  alerts:
+  - severity: medium
+    subject: compliance_issue
+    message: VEP 192 is missing required SIG sign-offs and valid tracking issue labels.
+      Please update the issue to comply with current processes.
+  - severity: medium
+    subject: compliance_issue
+    message: 'VEP 192 references PR #425 in its body description, but it is not linked
+      in the automated tracker. This missing link should be addressed to ensure all
+      requirements are effectively reviewed.'
+- vep_number: 207
+  name: vep-0207
+  title: 'VEP 207: Pause liveness probes'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 208
+    state: merged
+  impl_prs:
+  - number: 17664
+    state: merged
+  alerts: []
+- vep_number: 210
+  name: vep-0210
+  title: 'VEP 210: CentOS Stream 10 Support'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 95
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 237
+    state: merged
+  - number: 318
+    state: merged
+  impl_prs: []
+  alerts:
+  - severity: medium
+    subject: compliance_issue
+    message: VEP 210 is missing required SIG sign-offs and valid tracking issue labels.
+      Please update the issue to comply with current processes.
+- vep_number: 222
+  name: vep-0222
+  title: 'VEP 222: VSOCK network namespace confinement'
+  owner: unknown
+  sig: unknown
+  target_release: v0.59.0
+  status: Proposed for consideration
+  promotion_phase: Graduating
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 223
+    state: merged
+  - number: 387
+    state: merged
+  impl_prs:
+  - number: 17932
+    state: closed
+  - number: 17955
+    state: merged
+  - number: 18067
+    state: merged
+  - number: 18274
+    state: open
+  alerts:
+  - severity: low
+    subject: compliance_issue
+    message: Missing required SIG approvals and invalid labels.
+  - severity: low
+    subject: compliance_issue
+    message: VEP 222 is missing valid labels and SIG sign-off.
+  - severity: low
+    subject: compliance_issue
+    message: VEP 222 is missing required SIG signoffs and valid labels. Please ensure
+      these items are completed.
+- vep_number: 227
+  name: vep-0227
+  title: 'VEP 227: Enable Secure Boot for ARM64 Guests'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 228
+    state: merged
+  - number: 413
+    state: open
+  impl_prs:
+  - number: 17135
+    state: open
+  - number: 17263
+    state: merged
+  alerts:
+  - severity: high
+    subject: deadline_violation
+    message: The enhancement freeze is 9 days away. Proposal PR 413 is active but
+      lacks LGTM or approvals. Expedite review to meet the deadline.
+  - severity: medium
+    subject: activity_issue
+    message: 'Enhancement PR #413 has been inactive for 10 days. The Enhancement Freeze
+      is in 10 days.'
+  - severity: medium
+    subject: compliance_issue
+    message: VEP 227 lacks SIG signoff and necessary labels. With an open PR targeting
+      this release, ensure these are addressed.
+  - severity: medium
+    subject: deadline_violation
+    message: 'Enhancement Freeze is 8 days away and proposal PR #413 is still open.
+      Please expedite review to ensure it merges before the deadline.'
+  - severity: low
+    subject: compliance_issue
+    message: Missing required SIG approvals and invalid labels.
+  - severity: low
+    subject: compliance_issue
+    message: VEP 227 is missing valid labels and SIG sign-off.
+- vep_number: 233
+  name: vep-0233
+  title: 'VEP 233: Enforce Release Branch End-of-Life Policy'
+  owner: unknown
+  sig: unknown
+  target_release: v1.9
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 95
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 234
+    state: merged
+  - number: 305
+    state: closed
+  - number: 317
+    state: closed
+  - number: 334
+    state: closed
+  - number: 335
+    state: closed
+  - number: 341
+    state: open
+  impl_prs: []
+  alerts:
+  - severity: critical
+    subject: activity_issue
+    message: Proposal PR 341 has had no updates for 14 days, and the enhancement freeze
+      is in 9 days. Immediate intervention is required or this will slip the release.
+  - severity: high
+    subject: activity_issue
+    message: 'Enhancement PR #341 has been inactive for 13 days, putting it at high
+      risk of missing the upcoming Enhancement Freeze.'
+  - severity: high
+    subject: activity_issue
+    message: 'PR #341 for VEP 233 has not been updated in 15 days. With Enhancement
+      Freeze only 8 days away, immediate unblocking is needed. Also missing SIG signoff/labels.'
+  - severity: high
+    subject: activity_issue
+    message: 'Proposal PR #341 has been inactive for 15 days. Enhancement Freeze is
+      in 8 days. Immediate action is required to avoid missing the deadline.'
+  - severity: high
+    subject: activity_issue
+    message: Proposal PR 341 has been inactive for 16 days. Enhancement Freeze is
+      in 7 days. Urgent action is needed to unblock and merge the PR.
+  - severity: medium
+    subject: compliance_issue
+    message: Missing PR links, invalid labels, and missing SIG approvals.
+  - severity: low
+    subject: compliance_issue
+    message: VEP 233 is missing PR links, valid labels, and SIG sign-off.
+- vep_number: 246
+  name: vep-0246
+  title: 'VEP 246: Live Migration Compression'
+  owner: unknown
+  sig: unknown
+  target_release: v1.9
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 247
+    state: merged
+  - number: 304
+    state: closed
+  - number: 408
+    state: merged
+  impl_prs:
+  - number: 17509
+    state: merged
+  alerts: []
+- vep_number: 248
+  name: vep-0248
+  title: 'VEP 248: Live Migration Stability & Convergence Improvements'
+  owner: unknown
+  sig: unknown
+  target_release: v1.9.0
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 252
+    state: merged
+  - number: 329
+    state: open
+  impl_prs:
+  - number: 17544
+    state: merged
+  - number: 17737
+    state: open
+  - number: 17860
+    state: merged
+  - number: 18240
+    state: merged
+  - number: 18303
+    state: merged
+  - number: 18329
+    state: merged
+  - number: 18529
+    state: merged
+  alerts:
+  - severity: high
+    subject: activity_issue
+    message: PR 329 syncing the VEP has been inactive for 16 days. With Enhancement
+      Freeze only 10 days away, this PR requires immediate attention.
+  - severity: high
+    subject: activity_issue
+    message: Enhancement PR 329 has been inactive for 17 days. Needs review or update
+      before Enhancement Freeze on Sept 2.
+  - severity: high
+    subject: activity_issue
+    message: 'Proposal PR #329 has been inactive for 18 days. Enhancement Freeze is
+      in 8 days. Immediate attention required to unblock reviews and merge before
+      the deadline.'
+  - severity: high
+    subject: activity_issue
+    message: Proposal PR 329 has been inactive for 19 days and requires a rebase to
+      unblock reviews.
+  - severity: medium
+    subject: activity_issue
+    message: 'Update PR #329 has had no activity for 18 days. Ping the author for
+      a status update.'
+- vep_number: 250
+  name: vep-0250
+  title: 'VEP 250: Add serviceAccountName to VirtualMachineInstance Spec'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 251
+    state: merged
+  impl_prs:
+  - number: 17861
+    state: merged
+  alerts: []
+- vep_number: 254
+  name: vep-0254
+  title: 'VEP 254: Guest GPU Metrics via VSOCK'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Tracked
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 75
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 255
+    state: open
+  impl_prs: []
+  alerts:
+  - severity: high
+    subject: activity_issue
+    message: Proposal PR 255 has been inactive for 21 days with Enhancement Freeze
+      only 8 days away. Immediate action required to address feedback and unblock.
+  - severity: high
+    subject: deadline_violation
+    message: Enhancement Freeze is 10 days away, but proposal PR 255 has been inactive
+      for 19 days. Urgent review is required.
+  - severity: high
+    subject: deadline_violation
+    message: 'Enhancement Freeze is 9 days away, but PR #255 has been inactive for
+      20 days. Immediate action required to merge before the deadline.'
+  - severity: high
+    subject: deadline_violation
+    message: 'Proposal PR #255 has been inactive for 21 days and lacks approvals,
+      with Enhancement Freeze only 8 days away. Immediate escalation is needed to
+      avoid missing the deadline.'
+  - severity: high
+    subject: deadline_violation
+    message: 'VEP proposal PR #255 is stale (22 days inactive) and Enhancement Freeze
+      is just 7 days away. It lacks LGTM/approvals and is missing the API section
+      in the template.'
+- vep_number: 256
+  name: vep-0256
+  title: 'VEP 256: OCI Artifact Export for VirtualMachines and VirtualMachineTemplates'
+  owner: unknown
+  sig: unknown
+  target_release: v1.9
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 257
+    state: merged
+  impl_prs:
+  - number: 17944
+    state: merged
+  - number: 18032
+    state: merged
+  alerts: []
+- vep_number: 265
+  name: vep-0258
+  title: 'VEP-258: Support ppc64le Architecture'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 55
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs: []
+  impl_prs:
+  - number: 17685
+    state: open
+  alerts:
+  - severity: high
+    subject: activity_issue
+    message: VEP-258 targets v1.10 but lacks active proposal PRs in tracking data,
+      and Enhancement Freeze is only 7 days away. Board indicates it is 'lifecycle/stale'.
+  - severity: high
+    subject: compliance_issue
+    message: VEP is targeted for v1.10 but no active enhancement PR is linked or found
+      in current milestone context. With EF in 8 days, this is a major blocker.
+  - severity: high
+    subject: deadline_violation
+    message: Enhancement Freeze is 10 days away for v1.10, but the proposal PR 258
+      does not show any recent tracking activity or is missing from enhancement PRs.
+  - severity: high
+    subject: deadline_violation
+    message: 'Enhancement Freeze is 9 days away, but there are no tracked enhancement
+      PRs. The board mentions PR #258, which may be closed or unlinked. Immediate
+      escalation needed.'
+  - severity: medium
+    subject: compliance_issue
+    message: 'VEP PR #258 is referenced in the issue body but is not correctly linked
+      and tracked in the automated compliance data, obscuring its progress as we approach
+      the freeze deadline.'
+- vep_number: 282
+  name: vep-0282
+  title: 'VEP 282: VEP Proposal Governance'
+  owner: unknown
+  sig: unknown
+  target_release: v1.9
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 95
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 283
+    state: merged
+  impl_prs: []
+  alerts: []
+- vep_number: 285
+  name: vep-0285
+  title: 'VEP 285: Preset launch security defaults via preference'
+  owner: unknown
+  sig: unknown
+  target_release: v1.9.0
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 286
+    state: merged
+  - number: 351
+    state: merged
+  impl_prs:
+  - number: 17551
+    state: merged
+  alerts: []
+- vep_number: 287
+  name: vep-0287
+  title: 'VEP 287: TLS Group Preferences'
+  owner: unknown
+  sig: unknown
+  target_release: v1.9.0
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 288
+    state: merged
+  impl_prs:
+  - number: 17553
+    state: closed
+  alerts: []
+- vep_number: 291
+  name: vep-0291
+  title: 'VEP 291: Live Migration - Dynamic Downtime Tuning and Iteration-Based Convergence'
+  owner: unknown
+  sig: unknown
+  target_release: v1.9
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 95
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 249
+    state: merged
+  - number: 330
+    state: closed
+  - number: 409
+    state: merged
+  impl_prs: []
+  alerts: []
+- vep_number: 293
+  name: vep-0293
+  title: 'VEP 293: Extend Hot Plug APIs'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 75
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 295
+    state: closed
+  - number: 328
+    state: open
+  impl_prs: []
+  alerts:
+  - severity: high
+    subject: activity_issue
+    message: 'Enhancement PR #328 has not been updated in 17 days. Enhancement freeze
+      is in 10 days. Immediate action required.'
+  - severity: high
+    subject: activity_issue
+    message: Enhancement PR 328 has been inactive for 18 days with Enhancement Freeze
+      approaching in 9 days. Escalate immediately if targeting v1.10.
+  - severity: high
+    subject: compliance_issue
+    message: The proposal PR 328 has a 'do-not-merge/hold' label which must be resolved
+      before the impending Enhancement Freeze.
+  - severity: high
+    subject: deadline_violation
+    message: The Enhancement Freeze deadline is in 8 days and the proposal PR is still
+      open. Please expedite review.
+  - severity: medium
+    subject: compliance_issue
+    message: VEP is missing SIG signoffs, valid labels, and PR links. Please address
+      before enhancement freeze.
+  - severity: medium
+    subject: compliance_issue
+    message: VEP is missing SIG labels and LGTM/Approve on the proposal PR.
+  - severity: medium
+    subject: deadline_violation
+    message: Enhancement Freeze is in 7 days. The proposal PR lacks required approvals
+      (no LGTM/approve).
+- vep_number: 297
+  name: vep-0297
+  title: 'VEP 297: Adopting CodeRabbit for AI-Assisted Code Review'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 100
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 298
+    state: merged
+  impl_prs:
+  - number: 18413
+    state: merged
+  alerts: []
+- vep_number: 300
+  name: vep-0300
+  title: 'VEP 300: Device manager like policies for DRA resources'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 75
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 432
+    state: open
+  impl_prs: []
+  alerts:
+  - severity: high
+    subject: deadline_violation
+    message: The Enhancement Freeze deadline is in 8 days and the proposal PR is still
+      open. Please expedite review.
+  - severity: medium
+    subject: compliance_issue
+    message: VEP lacks SIG signoffs, PR links, and valid labels. Please resolve compliance
+      checks prior to enhancement freeze.
+  - severity: medium
+    subject: compliance_issue
+    message: VEP is missing SIG labels and LGTM/Approve on the proposal PR.
+  - severity: medium
+    subject: compliance_issue
+    message: The proposal PR 432 has a 'lifecycle/stale' label. It needs to be reviewed
+      and cleared before the Enhancement Freeze.
+  - severity: medium
+    subject: deadline_violation
+    message: Enhancement PR 432 was updated 3 days ago but has no recorded reviews.
+      Enhancement Freeze is in 9 days, requiring expedited review.
+  - severity: medium
+    subject: deadline_violation
+    message: Enhancement Freeze is in 7 days. The proposal PR lacks required approvals
+      (no LGTM/approve).
+- vep_number: 307
+  name: vep-0307
+  title: 'VEP 307: Network Binding Plugin for vhostuser Interfaces'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 95
+  sentiment: positive
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 308
+    state: merged
+  impl_prs: []
+  alerts: []
+- vep_number: 312
+  name: vep-0312
+  title: 'VEP 312: Declarative VMState PVC'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 75
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 313
+    state: open
+  impl_prs: []
+  alerts:
+  - severity: high
+    subject: deadline_violation
+    message: The Enhancement Freeze deadline is in 8 days and the proposal PR is still
+      open. Please expedite review.
+  - severity: medium
+    subject: compliance_issue
+    message: VEP is missing SIG signoffs, valid labels, and PR links. Please address
+      before enhancement freeze.
+  - severity: medium
+    subject: compliance_issue
+    message: VEP is missing SIG labels and LGTM/Approve on the proposal PR.
+  - severity: medium
+    subject: compliance_issue
+    message: The proposal PR 313 lacks required approvals ahead of the upcoming Enhancement
+      Freeze.
+  - severity: medium
+    subject: deadline_violation
+    message: Enhancement Freeze is in 7 days. The proposal PR lacks required approvals
+      (no LGTM/approve).
+- vep_number: 321
+  name: vep-0321
+  title: 'VEP 321: Online VMSnapshot Using QEMU External Snapshots'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 75
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 322
+    state: open
+  impl_prs: []
+  alerts:
+  - severity: high
+    subject: deadline_violation
+    message: The Enhancement Freeze deadline is in 8 days and the proposal PR is still
+      open. Please expedite review.
+  - severity: medium
+    subject: compliance_issue
+    message: VEP lacks SIG signoffs, PR links, and valid labels. Please address before
+      enhancement freeze.
+  - severity: medium
+    subject: compliance_issue
+    message: VEP is missing SIG labels and LGTM/Approve on the proposal PR.
+  - severity: medium
+    subject: compliance_issue
+    message: The proposal PR 322 lacks required approvals ahead of the upcoming Enhancement
+      Freeze.
+  - severity: medium
+    subject: deadline_violation
+    message: Enhancement Freeze is in 7 days. The proposal PR lacks required approvals
+      (no LGTM/approve).
+- vep_number: 326
+  name: vep-0326
+  title: 'VEP 326: expose disk cache modes'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 80
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 327
+    state: open
+  impl_prs:
+  - number: 17718
+    state: open
+  alerts:
+  - severity: critical
+    subject: activity_issue
+    message: The proposal PR has been inactive for 15 days. With EF in 8 days, please
+      escalate immediately.
+  - severity: high
+    subject: activity_issue
+    message: 'Enhancement PR #327 has been inactive for 13 days. Progress must resume
+      immediately to avoid missing the enhancement freeze.'
+  - severity: high
+    subject: activity_issue
+    message: Enhancement PR 327 has been inactive for 14 days with Enhancement Freeze
+      approaching in 9 days. Escalate immediately to merge on time.
+  - severity: high
+    subject: activity_issue
+    message: The proposal PR 327 has been inactive for 15 days, risking missing the
+      Enhancement Freeze deadline in 8 days.
+  - severity: high
+    subject: activity_issue
+    message: Proposal PR 327 has been inactive for 16 days. Enhancement Freeze is
+      in 7 days. Immediate action is required.
+  - severity: medium
+    subject: compliance_issue
+    message: VEP is missing SIG signoffs and valid labels. Please address before enhancement
+      freeze.
+  - severity: medium
+    subject: compliance_issue
+    message: VEP is missing SIG labels and LGTM/Approve on the proposal PR.
+- vep_number: 337
+  name: vep-0337
+  title: 'VEP 337: Structured Cloud-Init Hook for KubeVirt Plugins'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Tracked
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 55
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs: []
+  impl_prs:
+  - number: 18026
+    state: open
+  alerts:
+  - severity: critical
+    subject: compliance_issue
+    message: VEP-0337 lacks a proposal PR just 7 days before Enhancement Freeze. Create
+      and link immediately.
+  - severity: high
+    subject: compliance_issue
+    message: VEP is active but lacks an enhancement proposal PR with the Enhancement
+      Freeze 10 days away.
+  - severity: high
+    subject: compliance_issue
+    message: Enhancement freeze is 9 days away, but no proposal PR is linked. Urgent
+      action needed to create VEP PR.
+  - severity: high
+    subject: compliance_issue
+    message: VEP 337 has no Enhancement/Proposal PR linked but the Enhancement Freeze
+      is 8 days away.
+  - severity: high
+    subject: deadline_violation
+    message: 'VEP has no linked proposal PR and Enhancement Freeze is in 8 days. Action
+      required: Create and link proposal immediately.'
+- vep_number: 338
+  name: vep-0338
+  title: 'TEE: Enable ARM Confidential Compute Architecture (CCA) in KubeVirt'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 50
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs: []
+  impl_prs: []
+  alerts:
+  - severity: critical
+    subject: activity_issue
+    message: This VEP has been completely inactive for 41 days and missing a proposal
+      PR.
+  - severity: critical
+    subject: compliance_issue
+    message: VEP-0338 lacks a proposal PR just 7 days before Enhancement Freeze. Create
+      and link immediately.
+  - severity: high
+    subject: compliance_issue
+    message: Enhancement freeze is 9 days away, but no proposal PR is linked. Urgent
+      action needed to create VEP PR.
+  - severity: high
+    subject: compliance_issue
+    message: VEP 338 has no Enhancement/Proposal PR linked but the Enhancement Freeze
+      is 8 days away.
+  - severity: high
+    subject: deadline_violation
+    message: 'VEP has no linked proposal PR and Enhancement Freeze is in 8 days. Action
+      required: Create and link proposal immediately.'
+- vep_number: 340
+  name: vep-0340
+  title: 'VEP 340: launchsecurity: add injectInitdata subresource for TDX and SNP'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 80
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 346
+    state: open
+  impl_prs:
+  - number: 18064
+    state: open
+  alerts:
+  - severity: medium
+    subject: activity_issue
+    message: PR 346 is inactive for 6 days and needs approvals before Enhancement
+      Freeze in 9 days.
+  - severity: medium
+    subject: activity_issue
+    message: The proposal PR has seen no activity for 6 days. With the Enhancement
+      Freeze in 8 days, reviews need to be expedited.
+  - severity: medium
+    subject: compliance_issue
+    message: PR 346 is missing LGTM and approved labels with the Enhancement Freeze
+      deadline approaching.
+  - severity: medium
+    subject: compliance_issue
+    message: VEP 340 Enhancement PR is missing LGTM and approved labels with 8 days
+      until Enhancement Freeze.
+  - severity: medium
+    subject: general_risk
+    message: VEP-0340 has an active proposal PR but lacks LGTM and approvals 7 days
+      before Enhancement Freeze. Ping reviewers.
+- vep_number: 342
+  name: vep-0342
+  title: 'VEP 342: IOThread Virtqueue Mapping for virtio-scsi'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 80
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 343
+    state: open
+  impl_prs:
+  - number: 18249
+    state: open
+  alerts:
+  - severity: low
+    subject: activity_issue
+    message: PR 343 is actively being worked on but needs approvals to merge before
+      the 9-day deadline.
+  - severity: low
+    subject: compliance_issue
+    message: PR 343 has LGTM but is missing the final approved label.
+  - severity: low
+    subject: compliance_issue
+    message: The proposal PR is actively being worked on but still lacks required
+      LGTM/approve labels. Ensure it gets signed off before freeze.
+  - severity: low
+    subject: compliance_issue
+    message: VEP 342 Enhancement PR has LGTM but is missing the approved label.
+  - severity: low
+    subject: compliance_issue
+    message: VEP-0342 has LGTM but is missing final Approved label. Request reviewers
+      for approval.
+- vep_number: 344
+  name: vep-0344
+  title: 'VEP 344: VM-Scoped Persistent ResourceClaims for DRA Device Passthrough'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 80
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 345
+    state: open
+  impl_prs:
+  - number: 17957
+    state: open
+  alerts:
+  - severity: high
+    subject: activity_issue
+    message: VEP-0344 is stale (7 days inactive) and missing approvals 7 days before
+      EF. Ping reviewers immediately.
+  - severity: medium
+    subject: activity_issue
+    message: PR 345 is inactive for 5 days and requires reviews to merge before the
+      deadline.
+  - severity: medium
+    subject: activity_issue
+    message: The proposal PR has not been updated in 5 days. It requires attention
+      to ensure it passes the impending Enhancement Freeze.
+  - severity: medium
+    subject: compliance_issue
+    message: PR 345 is active but missing LGTM and approved labels ahead of Enhancement
+      Freeze.
+  - severity: medium
+    subject: compliance_issue
+    message: VEP 344 Enhancement PR is missing LGTM and approved labels with 8 days
+      until Enhancement Freeze.
+- vep_number: 349
+  name: vep-0349
+  title: 'VEP: Block-mode backend storage for persistent VM state (EFI NVRAM, vTPM)'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 80
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 350
+    state: open
+  impl_prs:
+  - number: 18727
+    state: open
+  - number: 18728
+    state: open
+  - number: 18729
+    state: open
+  - number: 18730
+    state: open
+  - number: 18731
+    state: open
+  alerts:
+  - severity: critical
+    subject: activity_issue
+    message: The proposal PR has been completely inactive for 28 days and will likely
+      miss the upcoming Enhancement Freeze. Check if abandoned.
+  - severity: high
+    subject: activity_issue
+    message: Proposal PR 350 has been inactive for 27 days and risks missing the upcoming
+      Enhancement Freeze.
+  - severity: high
+    subject: activity_issue
+    message: PR 350 has been inactive for 28 days and is at severe risk of missing
+      the upcoming Enhancement Freeze.
+  - severity: high
+    subject: activity_issue
+    message: VEP 349 Enhancement PR has been inactive for 29 days with 8 days until
+      Enhancement Freeze.
+  - severity: medium
+    subject: compliance_issue
+    message: VEP-0349 is active but lacks reviewers and approvals 7 days before EF.
+      Assign reviewers and request feedback.
+- vep_number: 356
+  name: vep-0356
+  title: 'VEP: Test Infrastructure Abstraction for Managed KubeVirt Environments'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 80
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 357
+    state: open
+  impl_prs:
+  - number: 18516
+    state: open
+  alerts:
+  - severity: critical
+    subject: activity_issue
+    message: The proposal PR has stalled for 15 days. Needs urgent resumption of work
+      or should be deferred from the release.
+  - severity: critical
+    subject: activity_issue
+    message: VEP 356 Enhancement PR has been inactive for 16 days, has WIP/Hold labels,
+      and Enhancement Freeze is 8 days away.
+  - severity: critical
+    subject: activity_issue
+    message: VEP-0356 has been inactive for 17 days and still has WIP/hold labels
+      just 7 days before EF. Either remove hold labels and resume or officially postpone.
+  - severity: high
+    subject: activity_issue
+    message: Proposal PR 357 has been inactive for 14 days and risks missing the upcoming
+      Enhancement Freeze.
+  - severity: high
+    subject: activity_issue
+    message: PR 357 has been inactive for 15 days and is at risk of missing the impending
+      deadline.
+- vep_number: 359
+  name: vep-0359
+  title: 'VEP: Public Pod Rendering API for Standalone VM Execution (pkg/render)'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 80
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 360
+    state: open
+  impl_prs:
+  - number: 18277
+    state: open
+  alerts:
+  - severity: high
+    subject: compliance_issue
+    message: VEP-359 is missing LGTM and approved labels with the Enhancement Freeze
+      deadline only 8 days away. Request reviews immediately to unblock merge.
+  - severity: high
+    subject: compliance_issue
+    message: VEP has no LGTM or approved labels and EF is in 7 days. Expedite review.
+  - severity: high
+    subject: deadline_violation
+    message: 'Enhancement Freeze is 8 days away. Proposal PR #360 has no approvals
+      and was last updated 6 days ago. Review cycle needs to be expedited.'
+  - severity: medium
+    subject: deadline_violation
+    message: Enhancement Freeze is 9 days away, and this proposal still lacks LGTM
+      and approved labels.
+- vep_number: 362
+  name: vep-0362
+  title: 'VEP 362: Guest Termination State'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 75
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 363
+    state: open
+  impl_prs: []
+  alerts:
+  - severity: high
+    subject: compliance_issue
+    message: VEP has no LGTM or approved labels and EF is in 7 days. Expedite review.
+  - severity: medium
+    subject: compliance_issue
+    message: VEP-362 is active but lacks LGTM and approved labels. Secure approvals
+      to meet the Enhancement Freeze deadline in 8 days.
+  - severity: medium
+    subject: deadline_violation
+    message: Enhancement Freeze is 9 days away, and this proposal still lacks LGTM
+      and approved labels.
+  - severity: medium
+    subject: deadline_violation
+    message: 'Enhancement Freeze is 8 days away. The proposal PR #363 is actively
+      updated but requires immediate review and approvals to merge on time.'
+- vep_number: 366
+  name: vep-0366
+  title: 'VEP 366: Multiple concurrent VNC connections per VMI'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 75
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 367
+    state: open
+  impl_prs: []
+  alerts:
+  - severity: critical
+    subject: activity_issue
+    message: VEP-366 has been inactive for 46 days. Enhancement Freeze is in 8 days.
+      Immediate escalation is needed to determine if this will be completed for this
+      cycle.
+  - severity: critical
+    subject: activity_issue
+    message: 'Proposal PR #367 has been inactive for 46 days. Enhancement Freeze is
+      in 8 days. Action required to verify abandonment or expedite reviews.'
+  - severity: critical
+    subject: activity_issue
+    message: Proposal PR 367 has been inactive for 47 days. EF is in 7 days. Needs
+      urgent update or will miss the deadline.
+  - severity: high
+    subject: activity_issue
+    message: VEP 366's proposal PR has had no activity for 44 days. With Enhancement
+      Freeze only 10 days away, this needs immediate attention to determine if it
+      is still targeted for v1.10.
+  - severity: high
+    subject: activity_issue
+    message: 'The proposal PR #367 has been inactive for 45 days. Immediate action
+      is needed to avoid missing the upcoming Enhancement Freeze.'
+- vep_number: 371
+  name: vep-0371
+  title: 'VEP #371: KubeVirt Integration Test Framework'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 80
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 348
+    state: open
+  impl_prs:
+  - number: 18726
+    state: open
+  - number: 18727
+    state: open
+  - number: 18728
+    state: open
+  - number: 18729
+    state: open
+  - number: 18730
+    state: open
+  - number: 18731
+    state: open
+  - number: 18841
+    state: open
+  alerts:
+  - severity: medium
+    subject: compliance_issue
+    message: VEP-371 is highly active but still needs formal LGTM and approved labels
+      to be merged before the Enhancement Freeze deadline in 8 days.
+  - severity: medium
+    subject: compliance_issue
+    message: 'Proposal PR #348 is missing the API section in the VEP template. This
+      must be corrected before the PR can be approved.'
+  - severity: medium
+    subject: compliance_issue
+    message: VEP has LGTM but missing 'approved' label. Needs maintainer approval.
+  - severity: medium
+    subject: deadline_violation
+    message: Enhancement Freeze is 9 days away, and this proposal still lacks LGTM
+      and approved labels.
+  - severity: medium
+    subject: deadline_violation
+    message: 'Enhancement Freeze is 8 days away. Proposal PR #348 is active but lacks
+      LGTM and approvals.'
+- vep_number: 373
+  name: vep-0373
+  title: 'VEP: Structured Operation Logging with Username Enrichment'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 75
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 372
+    state: open
+  impl_prs: []
+  alerts:
+  - severity: high
+    subject: compliance_issue
+    message: VEP has no LGTM or approved labels and EF is in 7 days.
+  - severity: medium
+    subject: activity_issue
+    message: VEP 373's proposal PR has not been updated in 12 days. Approaching Enhancement
+      Freeze (10 days away), activity needs to resume to secure approvals in time.
+  - severity: medium
+    subject: compliance_issue
+    message: VEP-373 is active but is currently missing LGTM and approved labels with
+      only 8 days until Enhancement Freeze.
+  - severity: medium
+    subject: deadline_violation
+    message: Enhancement Freeze is 9 days away, and this proposal still lacks LGTM
+      and approved labels.
+  - severity: medium
+    subject: deadline_violation
+    message: 'Enhancement Freeze is 8 days away. Proposal PR #372 is actively updated
+      but needs reviewer approvals.'
+- vep_number: 374
+  name: vep-0374
+  title: 'VEP 374: vhost-net Thread CPU Pinning'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 80
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 378
+    state: open
+  impl_prs:
+  - number: 18192
+    state: open
+  alerts:
+  - severity: critical
+    subject: activity_issue
+    message: VEP-374 has seen no activity for 26 days. With the Enhancement Freeze
+      in 8 days, escalation is required immediately to avoid missing the deadline.
+  - severity: critical
+    subject: activity_issue
+    message: 'Proposal PR #378 has been inactive for 26 days. Enhancement Freeze is
+      in 8 days. Action required to verify abandonment or expedite reviews.'
+  - severity: critical
+    subject: activity_issue
+    message: Proposal PR 378 has been inactive for 27 days. EF is in 7 days.
+  - severity: high
+    subject: activity_issue
+    message: VEP 374's proposal PR has had no activity for 24 days. With Enhancement
+      Freeze only 10 days away, this needs immediate attention to determine if it
+      is still targeted for v1.10.
+  - severity: high
+    subject: activity_issue
+    message: 'The proposal PR #378 has been inactive for 25 days. Immediate action
+      is needed to avoid missing the upcoming Enhancement Freeze.'
+- vep_number: 376
+  name: vep-0376
+  title: 'VEP 376: Standardize Generation Tracking for VM and VMI'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 75
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 377
+    state: open
+  impl_prs: []
+  alerts:
+  - severity: critical
+    subject: activity_issue
+    message: VEP-376 is stale with no updates in 27 days. The Enhancement Freeze is
+      only 8 days away. Action is required to determine the status of this feature.
+  - severity: critical
+    subject: activity_issue
+    message: 'Proposal PR #377 has been inactive for 27 days. Enhancement Freeze is
+      in 8 days. Action required to verify abandonment or expedite reviews.'
+  - severity: critical
+    subject: activity_issue
+    message: Proposal PR 377 has been inactive for 28 days. EF is in 7 days.
+  - severity: high
+    subject: activity_issue
+    message: VEP 376's proposal PR has had no activity for 25 days. With Enhancement
+      Freeze only 10 days away, this needs immediate attention to determine if it
+      is still targeted for v1.10.
+  - severity: high
+    subject: activity_issue
+    message: 'The proposal PR #377 has been inactive for 26 days. Immediate action
+      is needed to avoid missing the upcoming Enhancement Freeze.'
+- vep_number: 379
+  name: vep-0379
+  title: 'VEP 379: DataVolume Ownership Protection Against Name Collisions'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 75
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 380
+    state: open
+  impl_prs: []
+  alerts:
+  - severity: critical
+    subject: activity_issue
+    message: The proposal PR has not been updated in 45 days and has no reviews. With
+      Enhancement Freeze in 10 days, immediate action is required to determine if
+      this is still targeted for the current release.
+  - severity: critical
+    subject: activity_issue
+    message: VEP-379 has seen no activity for over 40 days on its proposal PR. With
+      the Enhancement Freeze in 9 days, it is critically behind and at high risk of
+      slipping.
+  - severity: critical
+    subject: activity_issue
+    message: The proposal PR 380 has not been updated in 47 days. With Enhancement
+      Freeze 8 days away, it is highly at risk.
+  - severity: critical
+    subject: activity_issue
+    message: The proposal PR has not been updated in 48 days and has no reviews. With
+      7 days to Enhancement Freeze, it is at critical risk of missing the deadline.
+      Immediate owner action required.
+  - severity: high
+    subject: deadline_violation
+    message: The proposal PR has been stale since early July (~47 days) and EF is
+      in 8 days. Immediate action or deferral is required.
+- vep_number: 381
+  name: vep-0381
+  title: 'VEP 381: KSM Zero-Pages-Only Mode and Sleep Scaling Improvement'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: At risk
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 75
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 382
+    state: closed
+  impl_prs: []
+  alerts:
+  - severity: critical
+    subject: activity_issue
+    message: The proposal PR has been inactive for 31 days. Enhancement Freeze is
+      in 10 days. Needs immediate attention.
+  - severity: high
+    subject: general_risk
+    message: The proposal PR 382 was closed and the VEP is marked 'At risk'/'CLOSED'.
+      It requires cleanup or an exception if continuing.
+  - severity: high
+    subject: general_risk
+    message: The proposal PR for this VEP has been closed without merging, suggesting
+      the effort is abandoned or blocked. Please confirm and update tracking status.
+  - severity: low
+    subject: general_risk
+    message: VEP-381's tracking issue and proposal PR have been closed, implying the
+      VEP is withdrawn or rejected. Confirm state to clean up tracking.
+- vep_number: 383
+  name: vep-0383
+  title: 'VEP 383: THP Memory Backing for Virtual Machines'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 75
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 384
+    state: open
+  impl_prs: []
+  alerts:
+  - severity: high
+    subject: compliance_issue
+    message: The proposal PR 384 is active but lacks LGTM and Approved labels with
+      Enhancement Freeze 8 days away.
+  - severity: medium
+    subject: compliance_issue
+    message: PR 384 has LGTM but is missing the approved label. Needs approval before
+      EF in 8 days.
+  - severity: medium
+    subject: deadline_violation
+    message: PR is active but has no reviews. Enhancement Freeze is in 10 days. Please
+      request reviews from SIG Compute.
+  - severity: low
+    subject: compliance_issue
+    message: VEP has LGTM but is missing the final approved label.
+- vep_number: 385
+  name: vep-0385
+  title: 'VEP 385: Guest Device Info Metrics'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 80
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 386
+    state: open
+  impl_prs:
+  - number: 18771
+    state: open
+  alerts:
+  - severity: high
+    subject: compliance_issue
+    message: The proposal PR 386 is active but lacks LGTM and Approved labels with
+      Enhancement Freeze 8 days away.
+  - severity: medium
+    subject: compliance_issue
+    message: PR 386 is active but lacks LGTM and approved labels with only 8 days
+      left until Enhancement Freeze.
+  - severity: medium
+    subject: compliance_issue
+    message: Proposal PR is missing the API section, LGTM, and approved label.
+- vep_number: 389
+  name: vep-0389
+  title: 'VEP 389: Introduce Server-Side Apply'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 75
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 390
+    state: open
+  impl_prs: []
+  alerts:
+  - severity: high
+    subject: compliance_issue
+    message: The proposal PR 390 has been inactive for 6 days and lacks LGTM and Approved
+      labels. Enhancement Freeze is in 8 days.
+  - severity: medium
+    subject: activity_issue
+    message: No activity in 7 days and missing LGTM/Approve. Reviewers need a ping
+      before Enhancement Freeze.
+  - severity: medium
+    subject: compliance_issue
+    message: PR 390 has no approvals yet. Progress is needed rapidly to meet Enhancement
+      Freeze in 8 days.
+  - severity: medium
+    subject: deadline_violation
+    message: PR is active but has no reviews. Enhancement Freeze is in 10 days. Please
+      request reviews from SIGs.
+- vep_number: 392
+  name: vep-0392
+  title: 'VEP 392: Remove Bazel from KubeVirt Build System'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Tracked
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 80
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 393
+    state: open
+  impl_prs:
+  - number: 18286
+    state: open
+  alerts:
+  - severity: high
+    subject: activity_issue
+    message: The proposal PR has been inactive for 10 days. With Enhancement Freeze
+      in 10 days, reviewers need to be pinged to ensure it merges in time.
+  - severity: high
+    subject: activity_issue
+    message: VEP-392 has lacked activity for 11 days. With the Enhancement Freeze
+      9 days away, reviewer engagement is necessary to prevent slipping.
+  - severity: high
+    subject: compliance_issue
+    message: The proposal PR 393 is active but lacks LGTM and Approved labels. Enhancement
+      Freeze is in 8 days.
+  - severity: medium
+    subject: compliance_issue
+    message: PR 393 lacks LGTM and approved labels with only 8 days left until Enhancement
+      Freeze.
+  - severity: medium
+    subject: compliance_issue
+    message: Proposal PR is missing the API section, LGTM, and approved label.
+- vep_number: 395
+  name: vep-0395
+  title: 'VEP 395: OCI Artifact Import for VirtualMachines and VirtualMachineTemplates'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 75
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 396
+    state: open
+  impl_prs: []
+  alerts:
+  - severity: high
+    subject: compliance_issue
+    message: The proposal PR 396 has been inactive for 5 days and lacks LGTM and Approved
+      labels. Enhancement Freeze is in 8 days.
+  - severity: medium
+    subject: compliance_issue
+    message: PR 396 has LGTM but is missing the approved label. Needs approval before
+      EF in 8 days.
+  - severity: medium
+    subject: deadline_violation
+    message: PR is active but has no reviews. Enhancement Freeze is in 10 days. Please
+      request reviews from SIG Compute.
+  - severity: low
+    subject: compliance_issue
+    message: VEP has LGTM but is missing the final approved label.
+- vep_number: 399
+  name: vep-0025
+  title: 'VEP 25.1: Multi-checkpoint Incremental Backup'
+  owner: unknown
+  sig: unknown
+  target_release: v1.6
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 50
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs: []
+  impl_prs: []
+  alerts:
+  - severity: high
+    subject: compliance_issue
+    message: VEP lacks proper linking to its enhancement PR in the system. The board
+      references PR 398, but it is not tracked, risking compliance ahead of EF.
+  - severity: high
+    subject: compliance_issue
+    message: 'PR #398 is mentioned on the board but not linked properly in context.
+      The Enhancement Freeze is in 8 days. Update the VEP tracking issue and ensure
+      the PR is reviewed.'
+  - severity: high
+    subject: general_risk
+    message: The VEP targets v1.10 and EF is in 7 days, but no proposal PRs are actively
+      tracked in the VEP data. Verify if PR 398 needs to be linked.
+  - severity: medium
+    subject: compliance_issue
+    message: VEP is tracked on board for v1.10 and mentions PR 398, but no proposal
+      PRs are properly linked in the enhancement system. Please link PR 398.
+  - severity: low
+    subject: general_risk
+    message: This VEP targets v1.6 but is still open with no PRs or activity. Consider
+      closing or updating the target release.
+- vep_number: 401
+  name: vep-0401
+  title: 'VEP 401: Offline Incremental Backup'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 75
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 402
+    state: open
+  impl_prs: []
+  alerts:
+  - severity: high
+    subject: deadline_violation
+    message: 'Enhancement Freeze is 8 days away and PR #402 lacks LGTM and approved
+      labels. Expedite review.'
+  - severity: high
+    subject: deadline_violation
+    message: Proposal PR 402 is open and lacks LGTM/approved labels with Enhancement
+      Freeze in 7 days.
+  - severity: medium
+    subject: compliance_issue
+    message: Enhancement PR 402 is open and lacking necessary LGTM/approved labels
+      with Enhancement Freeze 9 days away.
+  - severity: medium
+    subject: compliance_issue
+    message: 'Proposal PR #402 lacks LGTM and approved labels. Enhancement Freeze
+      is in 8 days.'
+- vep_number: 403
+  name: vep-0403
+  title: 'VEP : Add a VirtualMachineInstance NMI injection subresource'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Tracked
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 75
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 404
+    state: open
+  impl_prs: []
+  alerts:
+  - severity: high
+    subject: deadline_violation
+    message: 'Enhancement Freeze is 8 days away and PR #404 lacks LGTM and approved
+      labels. Expedite review.'
+  - severity: high
+    subject: deadline_violation
+    message: Proposal PR 404 is open and lacks LGTM/approved labels with Enhancement
+      Freeze in 7 days.
+  - severity: medium
+    subject: compliance_issue
+    message: Enhancement PR 404 is open and lacking necessary LGTM/approved labels
+      with Enhancement Freeze 9 days away.
+  - severity: medium
+    subject: compliance_issue
+    message: 'Proposal PR #404 lacks LGTM and approved labels. Enhancement Freeze
+      is in 8 days.'
+- vep_number: 405
+  name: vep-0405
+  title: 'VEP 405: Resolve the virt-launcher pod IP in the portforward subresource'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: At risk
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 80
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 406
+    state: open
+  impl_prs:
+  - number: 18564
+    state: open
+  alerts:
+  - severity: medium
+    subject: compliance_issue
+    message: Enhancement PR 406 is open and lacking necessary LGTM/approved labels
+      with Enhancement Freeze 9 days away.
+  - severity: medium
+    subject: compliance_issue
+    message: 'Proposal PR #406 lacks LGTM and approved labels. Enhancement Freeze
+      is in 8 days.'
+  - severity: medium
+    subject: compliance_issue
+    message: 'PR #406 has LGTM but is missing the ''approved'' label and an API section.
+      Fix missing section and request final approval before freeze in 8 days.'
+  - severity: medium
+    subject: compliance_issue
+    message: Proposal PR 406 requires an 'approved' label and completion of the API
+      section in the template.
+- vep_number: 411
+  name: vep-0411
+  title: 'VEP 411: Standardized Benchmarking Specification for KubeVirt'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 75
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 412
+    state: open
+  impl_prs: []
+  alerts:
+  - severity: critical
+    subject: activity_issue
+    message: PR 412 has been inactive for 22 days. With EF in 8 days, immediate intervention
+      is required.
+  - severity: high
+    subject: activity_issue
+    message: PR 412 has been inactive for 20 days. Expedite review to meet the Enhancement
+      Freeze in 10 days.
+  - severity: high
+    subject: activity_issue
+    message: 'Proposal PR #412 has been inactive for 21 days with EF 9 days away.
+      Expedited review is required.'
+  - severity: high
+    subject: activity_issue
+    message: Proposal PR 412 has been inactive for 22 days. With Enhancement Freeze
+      only 8 days away, it must be revived immediately.
+  - severity: high
+    subject: activity_issue
+    message: Proposal PR 412 has seen no activity for 23 days. With Enhancement Freeze
+      only 7 days away, immediate action is needed.
+- vep_number: 416
+  name: vep-0025
+  title: 'VEP 25.2: Auto provision backup volumes PVC'
+  owner: unknown
+  sig: unknown
+  target_release: v1.6
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: GREEN
+  merge_probability: 80
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 417
+    state: open
+  impl_prs:
+  - number: 18750
+    state: open
+  alerts:
+  - severity: medium
+    subject: activity_issue
+    message: PR 417 has not been updated in 7 days. Action is needed to ensure merge
+      before EF (8 days away).
+  - severity: medium
+    subject: activity_issue
+    message: Proposal PR 417 has seen no activity for 8 days. Action is needed to
+      ensure it meets the imminent EF deadline.
+  - severity: medium
+    subject: deadline_violation
+    message: Proposal PR 417 has been inactive for 7 days and lacks approvals. Enhancement
+      Freeze is in 8 days.
+- vep_number: 418
+  name: vep-0418
+  title: 'VEP-418: Attestation-Ready KubeVirt CVMs on Arm CCA with Confidential GPUs
+    (NVIDIA Vera-Rubin)'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Tracked
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 50
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs: []
+  impl_prs: []
+  alerts:
+  - severity: critical
+    subject: deadline_violation
+    message: Enhancement Freeze is 9 days away, but no enhancement proposal PR is
+      linked. This feature is at critical risk of missing v1.10 EF.
+  - severity: high
+    subject: activity_issue
+    message: No active proposal PR is linked for this VEP, and Enhancement Freeze
+      is in 8 days. Action required to avoid missing the release.
+  - severity: high
+    subject: activity_issue
+    message: The tracking issue has been inactive for 14 days and lacks a linked proposal
+      PR, with EF only 7 days away.
+  - severity: high
+    subject: compliance_issue
+    message: No enhancement PR is linked 8 days before EF. This blocks further tracking
+      and review.
+  - severity: high
+    subject: deadline_violation
+    message: No enhancement PR is linked, and Enhancement Freeze is 10 days away.
+      Require owner to open PR immediately.
+- vep_number: 419
+  name: vep-0419
+  title: 'VEP 419: Configurable external certificate strategy'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Proposed for consideration
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 55
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: true
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs: []
+  impl_prs:
+  - number: 18652
+    state: open
+  alerts:
+  - severity: high
+    subject: activity_issue
+    message: Proposal PR is missing or untracked in the enhancements list. With Enhancement
+      Freeze in 8 days, this needs urgent correction.
+  - severity: high
+    subject: activity_issue
+    message: The tracking issue is inactive for 11 days and is missing a linked proposal
+      PR, endangering readiness for EF.
+  - severity: high
+    subject: compliance_issue
+    message: 'The board refers to PR #420 but it is not accurately linked in automated
+      systems, obscuring true status 9 days before EF.'
+  - severity: high
+    subject: compliance_issue
+    message: PR 420 is noted in the board but not linked to the tracking issue. Fix
+      linkages to enable tracking before EF.
+  - severity: medium
+    subject: compliance_issue
+    message: PR 420 is referenced in the issue description but not properly linked
+      or resolvable. Fix links for progress tracking.
+- vep_number: 426
+  name: vep-0426
+  title: 'VEP: Per-interface MTU configuration on VMI spec'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: Tracked
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 50
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs: []
+  impl_prs: []
+  alerts:
+  - severity: critical
+    subject: compliance_issue
+    message: VEP 426 has no linked Enhancement PR. Enhancement Freeze is in 8 days.
+      A proposal PR needs to be opened, reviewed, and merged urgently.
+  - severity: critical
+    subject: deadline_violation
+    message: Enhancement Freeze is only 10 days away, but no enhancement PR has been
+      created or linked to the tracking issue.
+  - severity: critical
+    subject: deadline_violation
+    message: VEP 426 is targeting v1.10 but currently lacks a Proposal PR. With the
+      Enhancement Freeze in 9 days, a PR must be opened and reviewed immediately or
+      it risks missing the release cycle.
+  - severity: high
+    subject: deadline_violation
+    message: Enhancement Freeze is in 8 days but the VEP PR has not been opened yet.
+      A proposal PR must be created and reviewed immediately.
+  - severity: high
+    subject: deadline_violation
+    message: VEP lacks a proposal PR with Enhancement Freeze only 7 days away.
+- vep_number: 427
+  name: vep-0427
+  title: 'VEP 427: Source a Multus network''s device from a DRA ResourceClaim'
+  owner: unknown
+  sig: unknown
+  target_release: v1.10
+  status: At risk
+  promotion_phase: Net New
+  urgency: YELLOW
+  merge_probability: 75
+  sentiment: neutral
+  compliance:
+    template: true
+    sigs_signed_off: false
+    vep_merged: false
+    prs_linked: false
+    docs_pr: false
+    labels: false
+  days_since_update: 0
+  review_lag_days: null
+  deadlines:
+    ef: '2026-09-02'
+    cf: '2026-10-21'
+  proposal_prs:
+  - number: 428
+    state: open
+  impl_prs: []
+  alerts:
+  - severity: high
+    subject: compliance_issue
+    message: 'VEP 427''s Proposal PR #428 is missing reviews and SIG sign-off. Given
+      the impending 9-day Enhancement Freeze deadline, reviewers must be engaged.'
+  - severity: high
+    subject: compliance_issue
+    message: 'Proposal PR #428 lacks approvals (LGTM/approved) with Enhancement Freeze
+      7 days away.'
+  - severity: high
+    subject: deadline_violation
+    message: 'Enhancement Freeze is in 10 days, but VEP PR #428 has no reviews or
+      approvals yet.'
+  - severity: high
+    subject: deadline_violation
+    message: 'Enhancement PR #428 is open but lacks LGTM and approvals. Enhancement
+      Freeze is in 8 days. Expedited reviews are required.'
+  - severity: medium
+    subject: activity_issue
+    message: 'VEP PR #428 is open but has 0 reviews with Enhancement Freeze only 8
+      days away. Requires immediate reviewer attention.'

@@ -9,6 +9,7 @@ from services.attribution import (
     extract_tracking_issue,
     parse_enumerated_impl_prs,
     resolve_impl_owner,
+    resolve_impl_pr_ownership,
 )
 
 
@@ -132,3 +133,68 @@ class TestResolveImplOwner:
 
     def test_unlinked(self):
         assert resolve_impl_owner(None, set()) == (None, False)
+
+
+class TestResolveImplPrOwnership:
+    def test_pr_18750_goes_to_vep_25_only(self):
+        # Real-world regression: PR #18750 self-refs VEP 25, but VEP 416's
+        # (25.2) issue body also happens to enumerate it. Both VEP 25 and VEP
+        # 416 must not claim it - only 25 (the self-ref) should.
+        issue_bodies = {
+            25: "no enumeration here",
+            416: "https://github.com/kubevirt/kubevirt/pull/18750",
+        }
+        pr_self_refs = {18750: 25}
+        ownership = resolve_impl_pr_ownership(issue_bodies, pr_self_refs)
+        assert ownership[18750] == (25, True)
+
+    def test_prs_18727_to_18731_go_to_349_only(self):
+        # Real-world regression: issue #371 enumerates 18726-18731, but
+        # 18727-18731 self-ref #349 (copy-paste from a sibling PR template).
+        # Only #349 should own 18727-18731; #371 should keep 18726.
+        issue_bodies = {
+            349: "",
+            371: (
+                "https://github.com/kubevirt/kubevirt/pull/18726\n"
+                "https://github.com/kubevirt/kubevirt/pull/18727\n"
+                "https://github.com/kubevirt/kubevirt/pull/18728\n"
+                "https://github.com/kubevirt/kubevirt/pull/18729\n"
+                "https://github.com/kubevirt/kubevirt/pull/18730\n"
+                "https://github.com/kubevirt/kubevirt/pull/18731\n"
+            ),
+        }
+        pr_self_refs = {
+            18726: 371,
+            18727: 349,
+            18728: 349,
+            18729: 349,
+            18730: 349,
+            18731: 349,
+        }
+        ownership = resolve_impl_pr_ownership(issue_bodies, pr_self_refs)
+        assert ownership[18726] == (371, False)
+        for pr_num in (18727, 18728, 18729, 18730, 18731):
+            assert ownership[pr_num] == (349, True)
+
+    def test_global_map_built_once_each_pr_single_owner(self):
+        # Global sanity check: every PR resolves to at most one owner, even
+        # when several issues enumerate overlapping PR sets.
+        issue_bodies = {
+            1: "https://github.com/kubevirt/kubevirt/pull/100",
+            2: "https://github.com/kubevirt/kubevirt/pull/100\nhttps://github.com/kubevirt/kubevirt/pull/200",
+            3: "https://github.com/kubevirt/kubevirt/pull/200",
+        }
+        ownership = resolve_impl_pr_ownership(issue_bodies, pr_self_refs={})
+        # No self-refs anywhere -> both PRs are ambiguous (2+ enumerating issues).
+        assert ownership[100] == (None, True)
+        assert ownership[200] == (None, True)
+
+    def test_pr_absent_from_both_inputs_not_returned(self):
+        ownership = resolve_impl_pr_ownership({1: ""}, {})
+        assert 999 not in ownership
+
+    def test_self_ref_only_pr_not_enumerated_anywhere(self):
+        # A PR with a self-ref but that no issue body enumerates - trusted
+        # outright, no conflict.
+        ownership = resolve_impl_pr_ownership({25: "", 416: ""}, {18750: 25})
+        assert ownership[18750] == (25, False)
