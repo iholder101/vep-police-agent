@@ -8,7 +8,11 @@ from pydantic import BaseModel
 
 from nodes.alert_formatting import build_vep_summary_table, format_pr_links_plain
 from services.indexer import create_indexed_context
-from services.llm_helper import NoToolsCalledException, invoke_llm_with_tools
+from services.llm_helper import (
+    NoToolsCalledException,
+    ToolCallFailedException,
+    invoke_llm_with_tools,
+)
 from services.utils import log
 from state import VEPState
 
@@ -100,14 +104,20 @@ def update_sheets_node(state: VEPState) -> Any:
             "next_tasks": next_tasks,  # Signal to fetch VEPs
         }
     
+    # Sheet/tab name the agent maintains within the target spreadsheet.
+    sheet_tab_name = "VEP Information"
+
     # Build system prompt
-    system_prompt = """You are a VEP governance agent syncing VEP data to Google Sheets.
+    system_prompt = f"""You are a VEP governance agent syncing VEP data to Google Sheets.
 
 CRITICAL: You MUST use the provided Google Sheets tools to write data.
 
 TOOL CALL FORMAT - Use keyword arguments:
-- update_cells(spreadsheet_id="...", range="Sheet1!A1", values=[[...]])
-- get_sheet_data(spreadsheet_id="...", range="Sheet1!A1:Z100")
+- update_cells(spreadsheet_id="...", sheet="{sheet_tab_name}", range="A1", data=[[...]])
+
+Note: "sheet" is the tab name, passed separately from "range". "range" is the
+A1 range WITHOUT the sheet name prefix (e.g. "A1", not "{sheet_tab_name}!A1").
+"data" (not "values") holds the rows to write.
 
 REQUIREMENTS:
 1. ONE ROW PER VEP - no skipping, filtering, or excluding
@@ -117,7 +127,7 @@ REQUIREMENTS:
 COLUMNS: VEP ID, Name, Title, Owner, SIG, Status, Target Release, Proposal PRs, Impl PRs, Urgency, Attention, Attention Reasons, Status Comment
 
 WORKFLOW:
-1. Call update_cells with spreadsheet_id, range="Sheet1!A1", and values as 2D array
+1. Call update_cells with spreadsheet_id, sheet="{sheet_tab_name}", range="A1", and data as a 2D array
 2. First row = header, remaining rows = VEP data
 
 Return: table_schema, sheet_id, rows_updated, rows_added."""
@@ -185,8 +195,9 @@ Return: table_schema, sheet_id, rows_updated, rows_added."""
 
     user_prompt = f"""Call update_cells NOW with these EXACT arguments:
 - spreadsheet_id: "{sheet_id}"
-- range: "VEP Information!A1"
-- values: 2D array with header row + {vep_count} data rows
+- sheet: "{sheet_tab_name}"
+- range: "A1"
+- data: 2D array with header row + {vep_count} data rows
 
 VEP DATA:
 {json.dumps(simplified_veps, indent=2, default=str)}
@@ -194,8 +205,9 @@ VEP DATA:
 EXAMPLE TOOL CALL (use this exact format):
 update_cells(
   spreadsheet_id="{sheet_id}",
-  range="VEP Information!A1",
-  values=[
+  sheet="{sheet_tab_name}",
+  range="A1",
+  data=[
     ["VEP ID", "Name", "Title", "Owner", "SIG", "Status", "Target Release", "Proposal PRs", "Impl PRs", "Urgency", "Attention", "Attention Reasons", "Status Comment"],
     [181, "vep-0181", "Example Title", "owner1", "compute", "Tracked", "v1.5", "#123", "#456, #457", "GREEN", "ok", "All implementation PRs are merged.", "All implementation PRs are merged."],
     ...
@@ -324,9 +336,10 @@ update_cells(
         
         return result
 
-    except NoToolsCalledException as e:
-        # LLM didn't call any tools - this means the sheet wasn't actually updated
-        log("Sheet update failed: LLM did not call any tools (likely hallucination)", node="update_sheets", level="ERROR")
+    except (NoToolsCalledException, ToolCallFailedException) as e:
+        # LLM didn't call any tools, or every tool call it made failed - either way
+        # the sheet wasn't actually updated, so treat this as a failure and retry.
+        log(f"Sheet update failed: {e}", node="update_sheets", level="ERROR")
 
         errors = state.get("errors", [])
         errors.append({

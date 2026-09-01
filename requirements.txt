@@ -1,7 +1,7 @@
 langchain-core
 langchain-google-genai
 langgraph
-mcp
+mcp==2.1.1
 pydantic
 google-api-python-client
 google-auth

@@ -69,6 +69,25 @@ class NoToolsCalledException(Exception):
     """Raised when LLM completes without calling any tools but tools were required."""
 
 
+class ToolCallFailedException(Exception):
+    """Raised when tools were required, at least one tool call was attempted,
+    but every attempted tool call failed (e.g. the MCP server returned an error
+    for each call). Without this, a run where every write errored would still
+    be reported as a success by the LLM's self-reported structured output."""
+
+
+def _is_tool_call_error(result: Any) -> bool:
+    """Conservatively detect whether a tool call's result string indicates failure.
+
+    Only matches clear, unambiguous error markers - as opposed to any output that
+    merely happens to mention the word "error" - to avoid false positives on
+    legitimate tool output.
+    """
+    if not isinstance(result, str):
+        return False
+    return result.startswith(("Error", "error")) or "MCP error" in result
+
+
 def invoke_llm_with_tools(
     operation_type: str,
     state_context: dict[str, Any],
@@ -94,6 +113,8 @@ def invoke_llm_with_tools(
 
     Raises:
         NoToolsCalledException: If require_tools=True and no tools were called
+        ToolCallFailedException: If require_tools=True, at least one tool call
+            was attempted, and every attempted tool call failed
     """
     try:
         # Get MCP tools
@@ -142,6 +163,7 @@ def invoke_llm_with_tools(
             max_iterations = 30 if operation_type == "fetch_veps" else 10
         iteration = 0
         tool_call_counts = {}  # Track tool calls for summary
+        tool_call_failures = 0  # Track how many attempted tool calls errored
         while iteration < max_iterations:
             iteration += 1
             log(f"Invoking LLM for {operation_type} (iteration {iteration}/{max_iterations})...", node=operation_type)
@@ -193,7 +215,10 @@ def invoke_llm_with_tools(
                 if tool_result is None:
                     tool_result = f"Tool {tool_name} not found"
                     log(f"Tool {tool_name} not found in available tools: {[t.name for t in tools]}", node=operation_type, level="WARNING")
-                
+
+                if _is_tool_call_error(tool_result):
+                    tool_call_failures += 1
+
                 # Create tool message
                 tool_messages.append(ToolMessage(
                     content=str(tool_result),
@@ -221,6 +246,13 @@ def invoke_llm_with_tools(
         if tool_call_counts:
             summary = ", ".join(f"{name}: {count}" for name, count in sorted(tool_call_counts.items()))
             log(f"Tool calls summary: {summary}", node=operation_type)
+
+            total_tool_calls = sum(tool_call_counts.values())
+            if require_tools and total_tool_calls > 0 and tool_call_failures == total_tool_calls:
+                log(f"WARNING: All {total_tool_calls} tool call(s) failed for {operation_type} - "
+                    "treating as failure instead of reporting false success",
+                    node=operation_type, level="WARNING")
+                raise ToolCallFailedException(f"All {total_tool_calls} tool call(s) failed for {operation_type}")
         else:
             # No tools were called - this is often a sign of LLM hallucination
             log(f"WARNING: LLM completed {operation_type} without calling any tools!", node=operation_type, level="WARNING")
@@ -228,7 +260,12 @@ def invoke_llm_with_tools(
                 raise NoToolsCalledException(f"LLM completed {operation_type} without calling any tools")
 
         return result
-        
+
+    except (NoToolsCalledException, ToolCallFailedException):
+        # These signal a specific, actionable failure mode to the caller (e.g.
+        # update_sheets.py retries the update) - let them propagate instead of
+        # being swallowed by the generic fallback below.
+        raise
     except Exception as e:
         log(f"Error invoking LLM for {operation_type}: {e}", node=operation_type, level="ERROR")
         import traceback
