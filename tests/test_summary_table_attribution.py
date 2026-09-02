@@ -145,7 +145,16 @@ def test_widen_attributes_enumerated_pr_absent_from_prs_index():
         _vep(901, "vep-0901", "VEP 901"),
         _vep(902, "vep-0902", "VEP 902"),
     ]
-    rows = {r["vep_number"]: r for r in build_vep_summary_table(veps, indexed_context=context)}
+
+    # This test targets attribution, not cycle-scoping, so the fake fetcher
+    # reports 99999 as open (a current-cycle candidate regardless of age) to
+    # keep it clear of the cycle filter.
+    def fake_fetcher(nums):
+        assert nums == [99999]
+        return {99999: {"state": "open", "merged_at": None, "base_ref": "main"}}
+
+    rows = {r["vep_number"]: r for r in build_vep_summary_table(
+        veps, indexed_context=context, pr_metadata_fetcher=fake_fetcher)}
 
     # Unambiguous: 99999 is enumerated only by 900, though absent from prs_index.
     assert 99999 in _numbers(rows[900]["impl_prs"])
@@ -187,6 +196,75 @@ def test_widen_fetches_real_metadata_and_applies_cycle_filters():
     impl_numbers = _numbers(rows[950]["impl_prs"])
     assert 77001 not in impl_numbers
     assert 77002 in impl_numbers
+
+
+def test_impl_pr_merged_on_cycle_start_is_dropped():
+    """A PR merged exactly on cycle_start (the previous release's Code Freeze)
+    is previous-cycle work and must be dropped; one merged the next day is
+    current-cycle and must be kept.
+    """
+    context = {
+        "enhancements_prs": [],
+        "prs_index": [
+            {**_kv_pr(19001, 960), "state": "closed", "merged_at": "2026-06-24T19:30:44Z"},
+            {**_kv_pr(19002, 960), "state": "closed", "merged_at": "2026-06-25T00:00:00Z"},
+        ],
+        "issues_index": [],
+        "cycle_start_date": "2026-06-24",
+        "release_deadlines": {},
+        "current_release": "v1.10",
+    }
+    veps = [_vep(960, "vep-0960", "VEP 960")]
+    rows = {r["vep_number"]: r for r in build_vep_summary_table(veps, indexed_context=context)}
+    impl_numbers = _numbers(rows[960]["impl_prs"])
+    assert 19001 not in impl_numbers
+    assert 19002 in impl_numbers
+
+
+def test_widen_with_empty_fetcher_metadata_is_dropped():
+    """A widened impl PR (enumerated by an issue, absent from prs_index) whose
+    metadata fetch fails (empty dict) must be dropped by the cycle filter
+    rather than kept indefinitely with state=None/merged_at=None.
+    """
+    context = {
+        "enhancements_prs": [],
+        "prs_index": [],
+        "issues_index": [
+            {"number": 961, "body": f"Impl PRs: {_kv_url(77003)}"},
+        ],
+        "cycle_start_date": "2026-06-24",
+        "release_deadlines": {},
+        "current_release": "v1.10",
+    }
+    veps = [_vep(961, "vep-0961", "VEP 961")]
+
+    def fake_fetcher(nums):
+        assert nums == [77003]
+        return {}
+
+    rows = {r["vep_number"]: r for r in build_vep_summary_table(
+        veps, indexed_context=context, pr_metadata_fetcher=fake_fetcher)}
+    assert 77003 not in _numbers(rows[961]["impl_prs"])
+
+
+def test_regression_impl_pr_18001_merged_on_cycle_start_dropped():
+    """Regression test for VEP 190 / kubevirt/kubevirt#18001: an impl PR
+    merged exactly on cycle_start (2026-06-24) must not leak onto the board
+    as a current-cycle PR.
+    """
+    context = {
+        "enhancements_prs": [],
+        "prs_index": [
+            {**_kv_pr(18001, 190), "state": "closed", "merged_at": "2026-06-24T19:30:44Z"},
+        ],
+        "issues_index": [],
+        "cycle_start_date": "2026-06-24",
+        "release_deadlines": {},
+        "current_release": "v1.10",
+    }
+    veps = [_vep(190, "vep-0190", "VEP 190")]
+    rows = {r["vep_number"]: r for r in build_vep_summary_table(veps, indexed_context=context)}
+    assert 18001 not in _numbers(rows[190]["impl_prs"])
 
 
 def test_no_pr_attributed_to_more_than_one_vep():

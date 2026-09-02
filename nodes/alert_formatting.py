@@ -16,6 +16,26 @@ from services.attribution import resolve_impl_pr_ownership
 from services.indexer import create_indexed_context
 from services.utils import log
 
+
+def _to_merged_date(merged_at: Any) -> date | None:
+    """Coerce a PR ``merged_at`` (datetime, ISO string, or None) to a date.
+
+    Returns None when the value is missing or unparseable. Tolerates a
+    trailing ``Z`` and a ``T``-separated time component.
+    """
+    if not merged_at:
+        return None
+    if isinstance(merged_at, datetime):
+        return merged_at.date()
+    if isinstance(merged_at, date):
+        return merged_at
+    try:
+        text = str(merged_at).replace("Z", "+00:00")
+        return datetime.fromisoformat(text).date()
+    except (ValueError, TypeError):
+        return None
+
+
 # Attention level -> (urgency text, color). Keeps the RED/YELLOW/GREEN color
 # vocabulary so email/slack/board/snapshot consumers are unaffected by the
 # switch from merge-probability to the attention contract.
@@ -206,7 +226,7 @@ def build_vep_summary_table(
             if not m:
                 log(
                     f"Impl PR #{pr_num}: could not fetch metadata for widened PR "
-                    f"-> including without cycle-scoping verification",
+                    f"-> will be dropped by the cycle filter (unverifiable)",
                     node="alert_formatting",
                     level="WARNING",
                 )
@@ -251,17 +271,9 @@ def build_vep_summary_table(
             before_count = len(proposal_prs)
             filtered = []
             for p in proposal_prs:
-                merged_at = p.get("_merged_at")
-                if merged_at:
-                    try:
-                        if isinstance(merged_at, datetime):
-                            merged_date = merged_at.date()
-                        else:
-                            merged_date = datetime.fromisoformat(merged_at).date()
-                        if merged_date < cycle_start:
-                            continue
-                    except (ValueError, TypeError):
-                        pass
+                merged_date = _to_merged_date(p.get("_merged_at"))
+                if merged_date is not None and merged_date <= cycle_start:
+                    continue
                 filtered.append(p)
             proposal_prs = filtered
             removed = before_count - len(proposal_prs)
@@ -319,29 +331,38 @@ def build_vep_summary_table(
             log(f"VEP {vep.name}: filtered {removed} backport impl PR(s)",
                 node="alert_formatting")
 
-        # Filter out merged PRs from before the current release cycle
+        # Cycle-window filter. Open PRs are current-cycle candidates regardless
+        # of age. A merged PR belongs to the cycle its merge date falls in: a PR
+        # merged on or before the previous release's Code Freeze (== cycle_start)
+        # is previous-cycle work. A PR we cannot verify as open or as merged
+        # in-window is dropped rather than left stale on the board.
         cycle_start_date = indexed_context.get("cycle_start_date")
         if cycle_start_date:
             cycle_start = date.fromisoformat(cycle_start_date)
             before_count = len(impl_prs)
             filtered = []
             for p in impl_prs:
+                state = p.get("_state")
                 merged_at = p.get("_merged_at")
-                if merged_at:
-                    try:
-                        if isinstance(merged_at, datetime):
-                            merged_date = merged_at.date()
-                        else:
-                            merged_date = datetime.fromisoformat(merged_at).date()
-                        if merged_date < cycle_start:
-                            continue
-                    except (ValueError, TypeError):
-                        pass
-                filtered.append(p)
+                if not state or merged_at is None:
+                    idx = prs_by_number.get(p["number"])
+                    if idx:
+                        state = state or idx.get("state")
+                        if merged_at is None:
+                            merged_at = idx.get("merged_at")
+                if state == "open":
+                    filtered.append(p)
+                    continue
+                merged_date = _to_merged_date(merged_at)
+                if merged_date is not None and merged_date > cycle_start:
+                    filtered.append(p)
+                    continue
+                impl_pr_numbers.discard(p["number"])
             impl_prs = filtered
             removed = before_count - len(impl_prs)
             if removed:
-                log(f"VEP {vep.name}: filtered {removed} pre-cycle impl PR(s) (cycle start: {cycle_start_date})",
+                log(f"VEP {vep.name}: filtered {removed} out-of-cycle impl PR(s) "
+                    f"(cycle start: {cycle_start_date})",
                     node="alert_formatting")
 
         # Filter out borderline impl PRs that were backported to the previous release.
