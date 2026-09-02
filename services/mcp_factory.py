@@ -69,6 +69,17 @@ def _fix_schema_for_gemini(schema: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _get_tool_input_schema(mcp_tool: Any) -> dict[str, Any] | None:
+    """Extract a tool's JSON input schema, tolerating both mcp SDK attribute names.
+
+    The mcp SDK (>=2.0) renamed the Python attribute from camelCase 'inputSchema'
+    to snake_case 'input_schema'; 'inputSchema' is only kept as a pydantic
+    serialization alias and is not accessible via getattr() on those versions.
+    Checking both means this works regardless of the installed SDK version.
+    """
+    return getattr(mcp_tool, 'input_schema', None) or getattr(mcp_tool, 'inputSchema', None)
+
+
 def _create_args_schema_from_json_schema(tool_name: str, json_schema: dict[str, Any]) -> type | None:
     """
     Create a Pydantic model from a JSON schema for use as args_schema.
@@ -166,7 +177,7 @@ MCP_CONFIGS = {
         # Note: @modelcontextprotocol/server-google-sheets doesn't exist
         # Using mcp-google-sheets instead (requires GOOGLE_APPLICATION_CREDENTIALS pointing to service account JSON)
         # Don't redirect stderr - we need to see authentication errors
-        "args": ["-c", "exec npx --yes mcp-google-sheets"],
+        "args": ["-c", "exec npx --yes mcp-google-sheets@2.0.1"],
         "env": {}  # Will be populated with GOOGLE_APPLICATION_CREDENTIALS at runtime
     },
 }
@@ -247,9 +258,7 @@ async def _get_mcp_tools_async(*mcp_configs: dict[str, Any]) -> list[StructuredT
                     continue
                 
                 # Get the tool's input schema to extract parameter names
-                input_schema = None
-                if hasattr(mcp_tool, 'inputSchema') and mcp_tool.inputSchema:
-                    input_schema = mcp_tool.inputSchema
+                input_schema = _get_tool_input_schema(mcp_tool)
                 
                 # Create a closure to capture the tool config and name
                 def make_tool_func(tool_name: str, tool_config: dict[str, Any], tool_schema: dict | None = None):
@@ -394,66 +403,32 @@ If you need both issues and PRs, make two separate queries.""",
 - Requires: owner, repo, pull_number
 - Returns full PR details including diff, reviews, comments, etc.""",
         
-        # Google Sheets MCP tools
-        "create_spreadsheet": """Create a new Google Spreadsheet.
-- Requires: title (string) - the name of the spreadsheet
-- Returns: spreadsheetId and other metadata
-- Note: Service accounts have limited Drive storage quota. If you get a quota error, use an existing shared spreadsheet instead.""",
-        
-        "read_range": """Read data from a specific range in a Google Sheet.
-- Requires: spreadsheetId (string), range (string, e.g., "Sheet1!A1:C10")
-- Returns: 2D array of cell values
-- Use this to check existing data before updating""",
-        
-        "write_range": """Write data to a specific range in a Google Sheet.
-- Requires: spreadsheetId (string), range (string, e.g., "Sheet1!A1:C10"), values (2D array)
-- Overwrites existing data in the range
-- Use this to write table data. After writing, format the sheet using other tools.""",
-        
-        "update_cells": """Update specific cells with values and/or formatting.
-- Requires: spreadsheetId (string), updates (array of cell update objects)
-- More flexible than write_range - can update individual cells with formatting
-- Use this for precise cell updates or when you need to set formatting along with values""",
-        
-        "format_cells": """Apply formatting to a range of cells.
-- Requires: spreadsheetId (string), range (string), format (object with formatting properties)
-- Format properties can include: backgroundColor, textFormat (bold, italic, etc.), borders, etc.
-- Use this to format the header row (bold text, background color) and data rows
-- Example format: {"backgroundColor": {"red": 0.9, "green": 0.9, "blue": 0.9}, "textFormat": {"bold": true}}""",
-        
-        "freeze_rows": """Freeze rows so they stay visible when scrolling.
-- Requires: spreadsheetId (string), sheetId (integer, optional), frozenRowCount (integer)
-- Use this to freeze the header row (row 1) so it stays visible
-- Typical usage: freeze_rows with frozenRowCount=1 to freeze the header""",
-        
-        "create_filter": """Create a filter on a range (typically the header row).
-- Requires: spreadsheetId (string), range (string, e.g., "Sheet1!A1:Z1" for header row)
-- Enables filter dropdown arrows in the header row
-- Use this after writing data to make the table filterable
-- This creates a proper "table" experience in Google Sheets""",
-        
+        # Google Sheets MCP tools (mcp-google-sheets@2.0.1 - 8-tool set)
         "list_spreadsheets": """List spreadsheets accessible to the service account.
-- Requires: query (string, optional) - search query
-- Returns: array of spreadsheet metadata
-- Use this to find existing spreadsheets or verify access""",
-        
-        "get_spreadsheet": """Get metadata about a specific spreadsheet.
-- Requires: spreadsheetId (string)
-- Returns: spreadsheet metadata including sheet names, properties, etc.
-- Use this to check if a spreadsheet exists and get its structure
-- If this fails with "Requested entity was not found", the service account doesn't have access to the spreadsheet""",
-        
+- Use this to find existing spreadsheets or verify access.""",
+
+        "create_spreadsheet": """Create a new Google Spreadsheet.
+- Note: Service accounts have limited Drive storage quota. If you get a quota error, use an existing shared spreadsheet instead.""",
+
         "get_sheet_data": """Read all data from a specific sheet/tab in a spreadsheet.
-- Requires: spreadsheetId (string), sheetName (string, optional - defaults to first sheet)
-- Returns: 2D array of all cell values in the sheet
-- Use this to read existing data from a sheet before updating
-- Alternative to read_range when you want all data from a sheet""",
-        
+- Use this to check existing data before updating.""",
+
+        "update_cells": """Write/overwrite cell values in a range of a sheet.
+- Requires: spreadsheet_id (string), sheet (string - the sheet/tab name), range (string, e.g. "A1" or "A1:E10" - WITHOUT the sheet name prefix, since sheet is a separate argument), data (array of arrays - rows of cell values)
+- Use this to write the VEP table.""",
+
         "list_sheets": """List all sheets/tabs in a spreadsheet.
-- Requires: spreadsheetId (string)
-- Returns: array of sheet names and metadata
-- Use this to see what sheets exist in the spreadsheet
-- If this fails with "Requested entity was not found", the service account doesn't have access""",
+- Use this to see what sheets exist in the spreadsheet.""",
+
+        "create_sheet": """Create a new sheet/tab within an existing spreadsheet.
+- Use this if the target sheet/tab does not exist yet.""",
+
+        "share_spreadsheet": """Share a spreadsheet with a given email address/role.
+- Use this to grant access to the spreadsheet.""",
+
+        "batch_update_cells": """Update multiple ranges of a sheet in one call.
+- Requires: spreadsheet_id (string), sheet (string - the sheet/tab name), ranges (range -> data updates)
+- Use this instead of several update_cells calls when writing multiple distinct ranges at once.""",
     }
     
     return docs.get(tool_name, "")
